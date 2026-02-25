@@ -414,16 +414,21 @@ input[type="number"] { width: 70px; }
     <a class="nav-btn active" href="/dj">DJ Console</a>
     <a class="nav-btn" href="/display" target="_blank">Now Playing ↗</a>
   </div>
+  <div style="display:flex;gap:10px;align-items:center;font-size:10px;letter-spacing:2px">
+    <span title="Last.fm">LFM <span id="ind-lastfm" style="color:var(--muted)">○</span></span>
+    <span title="Spotify">SP <span id="ind-spotify" style="color:var(--muted)">○</span></span>
+    <span title="AI">AI <span id="ind-ai" style="color:var(--muted)">○</span></span>
+  </div>
   <div class="clock-display" id="clock">--:--:--</div>
 </div>
 
 <div class="main-content">
   <div class="tab-bar">
-    <button class="tab active" onclick="showTab('mix')">Mix</button>
-    <button class="tab" onclick="showTab('queue')">Queue</button>
-    <button class="tab" onclick="showTab('library')">Library</button>
-    <button class="tab" onclick="showTab('discover')">Discover</button>
-    <button class="tab" onclick="showTab('settings')">Settings</button>
+    <button class="tab active" data-tab="mix" onclick="showTab('mix')">Mix</button>
+    <button class="tab" data-tab="queue" onclick="showTab('queue')">Queue</button>
+    <button class="tab" data-tab="library" onclick="showTab('library')">Library</button>
+    <button class="tab" data-tab="discover" onclick="showTab('discover')">Discover</button>
+    <button class="tab" data-tab="settings" onclick="showTab('settings')">Settings</button>
   </div>
 
   <!-- MIX TAB -->
@@ -441,7 +446,8 @@ input[type="number"] { width: 70px; }
           <div class="vu-bar" style="background:var(--yellow)"></div>
           <div class="vu-bar" style="background:var(--accent2)"></div>
         </div>
-        <div class="track-meta">
+        <div class="track-meta" style="position:relative">
+          <img id="artwork-a" style="width:48px;height:48px;border-radius:3px;object-fit:cover;float:right;margin-left:8px;display:none" alt="">
           <div class="t-title" id="title-a">— No Track —</div>
           <div class="t-artist" id="artist-a">Load a track to begin</div>
           <div class="t-album" id="album-a"></div>
@@ -500,7 +506,8 @@ input[type="number"] { width: 70px; }
           <div class="vu-bar" style="background:var(--yellow)"></div>
           <div class="vu-bar" style="background:var(--accent2)"></div>
         </div>
-        <div class="track-meta">
+        <div class="track-meta" style="position:relative">
+          <img id="artwork-b" style="width:48px;height:48px;border-radius:3px;object-fit:cover;float:right;margin-left:8px;display:none" alt="">
           <div class="t-title" id="title-b">— No Track —</div>
           <div class="t-artist" id="artist-b">Cued up next</div>
           <div class="t-album" id="album-b"></div>
@@ -607,7 +614,7 @@ input[type="number"] { width: 70px; }
                 <option value="online-only">Online Only (Auto-DJ)</option>
               </select>
             </div>
-            <button class="btn purple" onclick="aiRefillQueue()">🤖 AI Refill Queue</button>
+            <button class="btn purple ai-btn" onclick="aiRefillQueue()">🤖 AI Refill Queue</button>
             <button class="btn" onclick="fetchMoreOnline()">+ More Online</button>
           </div>
         </div>
@@ -662,7 +669,7 @@ input[type="number"] { width: 70px; }
               <option value="tag">Genre Tags Only</option>
             </select>
           </div>
-          <button class="btn accent" onclick="startAutoDiscover()">▶ Start Auto-Discovery</button>
+          <button class="btn accent" id="start-discover-btn" onclick="startAutoDiscover()">▶ Start Auto-Discovery</button>
           <button class="btn" onclick="fetchMoreOnline()">+ Fetch More Tracks</button>
         </div>
       </div>
@@ -678,14 +685,14 @@ input[type="number"] { width: 70px; }
               <option value="recommendations">Recommendations</option>
             </select>
           </div>
-          <button class="btn" style="border-color:#1db954;color:#1db954" onclick="spotifySearch()">🎵 Spotify Search</button>
+          <button class="btn" id="spotify-search-btn" style="border-color:#1db954;color:#1db954" onclick="spotifySearch()">🎵 Spotify Search</button>
           <div id="spotify-results"></div>
         </div>
       </div>
       <div class="panel" style="grid-column:1/-1">
         <div class="panel-header">
           <span class="panel-title">🤖 AI Track Intelligence</span>
-          <button class="btn purple" onclick="aiAnalyzeAndRecommend()">Analyze & Recommend</button>
+          <button class="btn purple ai-btn" onclick="aiAnalyzeAndRecommend()">Analyze &amp; Recommend</button>
         </div>
         <div class="panel-body">
           <div class="field" style="margin-bottom:8px"><label>Mood / Vibe Context</label><input type="text" id="ai-mood" placeholder="e.g. late night driving, beach sunset, high energy gym..."></div>
@@ -765,13 +772,6 @@ input[type="number"] { width: 70px; }
 <audio id="audio-a" preload="auto"></audio>
 <audio id="audio-b" preload="auto"></audio>
 
-<!-- Hidden YouTube -->
-<div style="display:none">
-  <div id="yt-a"></div>
-  <div id="yt-b"></div>
-</div>
-
-<script src="https://www.youtube.com/iframe_api"></script>
 <script src="/engine.js"></script>
 <script src="/dj.js"></script>
 </body>

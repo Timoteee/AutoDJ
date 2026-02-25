@@ -1,32 +1,48 @@
 /**
- * AutoDJ Engine v2.0
- * Handles: Audio loading, Web Audio API, crossfading, BPM/fade detection,
- * queue management, Last.fm discovery, Spotify, AI recommendations
+ * AutoDJ Engine v3.0
+ * Fixed: AudioContext timing, Piped direct audio streams, waveform canvas,
+ *        ID3 metadata extraction, artwork, crossfade bugs, SSE broadcast timing
  */
 
 const Engine = (() => {
-  // ─── Audio Context ──────────────────────────────────────────────────────────
   let audioCtx = null;
   const decks = {
-    a: { audio: null, source: null, gain: null, analyser: null, track: null, type: 'local', cuePoint: 0, bpm: null, fadePoint: null },
-    b: { audio: null, source: null, gain: null, analyser: null, track: null, type: 'local', cuePoint: 0, bpm: null, fadePoint: null }
+    a: { audio: null, source: null, gain: null, analyser: null, track: null,
+         cuePoint: 0, bpm: null, fadePoint: null, ytInterval: null },
+    b: { audio: null, source: null, gain: null, analyser: null, track: null,
+         cuePoint: 0, bpm: null, fadePoint: null, ytInterval: null }
   };
 
+  // ─── AudioContext — MUST be created on user gesture ──────────────────────────
   function initAudioCtx() {
-    if (audioCtx) return;
+    if (audioCtx && audioCtx.state !== 'closed') {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return;
+    }
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
 
-  function setupDeckAudio(deck, audioEl) {
-    if (!audioCtx) initAudioCtx();
+  // Connect an <audio> element to the Web Audio graph.
+  // Safe to call multiple times — disconnects old source first.
+  function connectDeckAudio(deck, audioEl) {
     const d = decks[deck];
+    // If element already has a source node, reuse it — can't createMediaElementSource twice
+    if (d.source && d.audio === audioEl) return;
     if (d.source) { try { d.source.disconnect(); } catch(e) {} }
 
+    if (!audioCtx) initAudioCtx();
+
     d.audio = audioEl;
-    d.source = audioCtx.createMediaElementSource(audioEl);
+    try {
+      d.source = audioCtx.createMediaElementSource(audioEl);
+    } catch(e) {
+      // Already connected to a different context — skip
+      console.warn('Engine: could not create source', e.message);
+      return;
+    }
     d.gain = audioCtx.createGain();
     d.analyser = audioCtx.createAnalyser();
-    d.analyser.fftSize = 256;
+    d.analyser.fftSize = 512;
 
     d.source.connect(d.gain);
     d.gain.connect(d.analyser);
@@ -34,127 +50,199 @@ const Engine = (() => {
     d.gain.gain.value = 1.0;
   }
 
-  // ─── BPM Detection ──────────────────────────────────────────────────────────
-  async function analyzeBPM(audioEl) {
-    if (!audioEl.src || !audioCtx) return null;
+  // Called once on page load to set up the audio elements
+  function setupDeckAudio(deck, audioEl) {
+    decks[deck].audio = audioEl;
+    // Don't connect to WebAudio yet — wait for user gesture
+  }
+
+  // Called on first play (after user gesture)
+  function ensureDeckConnected(deck) {
+    initAudioCtx();
+    const d = decks[deck];
+    if (!d.source && d.audio) connectDeckAudio(deck, d.audio);
+  }
+
+  // ─── ID3 / Metadata extraction via browser ───────────────────────────────────
+  // Reads ID3v2 tags from an ArrayBuffer (first 128KB of file)
+  function extractID3(buffer) {
+    const meta = { title: '', artist: '', album: '', year: '', artwork: null };
     try {
-      // Offline decode for BPM
-      const resp = await fetch(audioEl.src, { headers: { Range: 'bytes=0-500000' } });
+      const view = new DataView(buffer);
+      const bytes = new Uint8Array(buffer);
+
+      // Check for ID3v2 header
+      if (bytes[0] !== 0x49 || bytes[1] !== 0x44 || bytes[2] !== 0x33) return meta;
+      const id3ver = bytes[3];
+      const tagSize = ((bytes[6]&0x7f)<<21)|((bytes[7]&0x7f)<<14)|((bytes[8]&0x7f)<<7)|(bytes[9]&0x7f);
+
+      let pos = 10;
+      const enc = { 0: 'iso-8859-1', 1: 'utf-16', 3: 'utf-8' };
+
+      const readStr = (start, len, encoding) => {
+        try {
+          const slice = bytes.slice(start, start + len);
+          const e = enc[encoding] || 'utf-8';
+          return new TextDecoder(e).decode(slice).replace(/\0/g,'').trim();
+        } catch(e) { return ''; }
+      };
+
+      while (pos < tagSize + 10 && pos < buffer.byteLength - 10) {
+        const frameId = String.fromCharCode(...bytes.slice(pos, pos+4));
+        if (frameId === '\0\0\0\0') break;
+
+        let frameSize;
+        if (id3ver >= 4) {
+          frameSize = ((bytes[pos+4]&0x7f)<<21)|((bytes[pos+5]&0x7f)<<14)|((bytes[pos+6]&0x7f)<<7)|(bytes[pos+7]&0x7f);
+        } else {
+          frameSize = (bytes[pos+4]<<24)|(bytes[pos+5]<<16)|(bytes[pos+6]<<8)|bytes[pos+7];
+        }
+        if (frameSize <= 0 || pos + 10 + frameSize > buffer.byteLength) break;
+
+        const dataStart = pos + 10;
+        const encoding = bytes[dataStart];
+
+        if (frameId === 'TIT2') meta.title = readStr(dataStart+1, frameSize-1, encoding);
+        else if (frameId === 'TPE1') meta.artist = readStr(dataStart+1, frameSize-1, encoding);
+        else if (frameId === 'TALB') meta.album = readStr(dataStart+1, frameSize-1, encoding);
+        else if (frameId === 'TDRC' || frameId === 'TYER') meta.year = readStr(dataStart+1, frameSize-1, encoding);
+        else if (frameId === 'APIC') {
+          // Artwork: encoding(1) + mimeType + \0 + picType(1) + desc + \0 + imageData
+          let i = dataStart + 1;
+          while (i < dataStart + frameSize && bytes[i] !== 0) i++; // end of mime
+          i++; // skip \0
+          i++; // skip picture type
+          while (i < dataStart + frameSize && bytes[i] !== 0) i++; // end of desc
+          i++; // skip \0
+          const imgData = bytes.slice(i, dataStart + frameSize);
+          const mime = bytes.slice(dataStart+1, dataStart + (i - dataStart - 2)).reduce((s,c)=>s+String.fromCharCode(c),'').split('\0')[0];
+          const blob = new Blob([imgData], { type: mime || 'image/jpeg' });
+          meta.artwork = URL.createObjectURL(blob);
+        }
+        pos += 10 + frameSize;
+      }
+    } catch(e) {}
+    return meta;
+  }
+
+  async function readFileMetadata(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(extractID3(e.target.result));
+      reader.onerror = () => resolve({ title:'', artist:'', album:'', artwork: null });
+      // Read first 512KB — enough for ID3 tags and embedded artwork
+      reader.readAsArrayBuffer(file.slice(0, 512 * 1024));
+    });
+  }
+
+  // ─── BPM Detection ───────────────────────────────────────────────────────────
+  async function analyzeBPM(url) {
+    if (!url || !audioCtx) return null;
+    try {
+      const resp = await fetch(url, { headers: { Range: 'bytes=0-400000' } });
       const buf = await resp.arrayBuffer();
       const decoded = await audioCtx.decodeAudioData(buf);
-
       const data = decoded.getChannelData(0);
-      const sampleRate = decoded.sampleRate;
-      const windowSize = Math.round(sampleRate * 0.01);
+      const sr = decoded.sampleRate;
+      const wSize = Math.round(sr * 0.01);
       const energies = [];
-
-      for (let i = 0; i < data.length - windowSize; i += windowSize) {
-        let energy = 0;
-        for (let j = i; j < i + windowSize; j++) energy += data[j] * data[j];
-        energies.push(energy / windowSize);
+      for (let i = 0; i < data.length - wSize; i += wSize) {
+        let e = 0; for (let j = i; j < i+wSize; j++) e += data[j]*data[j];
+        energies.push(e / wSize);
       }
-
-      // Find peaks
-      const avg = energies.reduce((a, b) => a + b, 0) / energies.length;
-      const threshold = avg * 1.5;
-      const minGap = Math.round(0.3 * sampleRate / windowSize);
-
+      const avg = energies.reduce((a,b)=>a+b,0)/energies.length;
+      const thresh = avg * 1.5;
+      const minGap = Math.round(0.3 * sr / wSize);
       const peaks = [];
-      for (let i = 1; i < energies.length - 1; i++) {
-        if (energies[i] > threshold && energies[i] > energies[i-1] && energies[i] > energies[i+1]) {
-          if (peaks.length === 0 || i - peaks[peaks.length-1] >= minGap) peaks.push(i);
+      for (let i = 1; i < energies.length-1; i++) {
+        if (energies[i] > thresh && energies[i] > energies[i-1] && energies[i] > energies[i+1]) {
+          if (!peaks.length || i - peaks[peaks.length-1] >= minGap) peaks.push(i);
         }
       }
-
       if (peaks.length < 4) return null;
       const intervals = [];
-      for (let i = 1; i < Math.min(peaks.length, 20); i++) {
-        intervals.push(peaks[i] - peaks[i-1]);
-      }
-      const avgInterval = intervals.reduce((a,b)=>a+b,0)/intervals.length;
-      const bpm = Math.round(60 / (avgInterval * windowSize / sampleRate));
+      for (let i = 1; i < Math.min(peaks.length,20); i++) intervals.push(peaks[i]-peaks[i-1]);
+      const avgInterval = intervals.reduce((a,b)=>a+b)/intervals.length;
+      const bpm = Math.round(60/(avgInterval * wSize / sr));
       return (bpm >= 60 && bpm <= 200) ? bpm : null;
     } catch(e) { return null; }
   }
 
-  // ─── Smart Fade Point ───────────────────────────────────────────────────────
-  async function detectFadePoint(audioEl) {
-    // Detect quiet section near end of track for best crossfade entry
-    if (!audioEl.src || !audioCtx) return null;
+  // ─── Smart Fade Point ────────────────────────────────────────────────────────
+  async function detectFadePoint(url, duration) {
+    if (!url || !duration || duration < 20) return duration ? Math.max(duration - 8, duration * 0.8) : null;
     try {
-      const dur = audioEl.duration;
-      if (!dur || dur < 30) return dur ? dur - 8 : null;
-
-      // Analyze last 30% of track
-      const startPct = 0.7;
-      const startByte = Math.round(startPct * 500000);
-      const resp = await fetch(audioEl.src, { headers: { Range: `bytes=${startByte}-600000` } });
+      // Try to fetch the last ~20% of the file
+      const resp = await fetch(url, { headers: { Range: 'bytes=800000-1200000' } });
+      if (!resp.ok) return duration - 10;
       const buf = await resp.arrayBuffer();
-
-      if (buf.byteLength < 1000) return dur - 10;
-
+      if (buf.byteLength < 1000) return duration - 10;
       const decoded = await audioCtx.decodeAudioData(buf);
       const data = decoded.getChannelData(0);
-      const chunkSize = Math.round(decoded.sampleRate * 0.5);
+      const chunkSec = 0.5;
+      const chunkSize = Math.round(decoded.sampleRate * chunkSec);
+      const startTime = duration * 0.7;
       const chunks = [];
-
       for (let i = 0; i < data.length - chunkSize; i += chunkSize) {
         let rms = 0;
-        for (let j = i; j < i + chunkSize; j++) rms += data[j] * data[j];
-        chunks.push({ rms: Math.sqrt(rms / chunkSize), time: startPct * dur + (i / decoded.sampleRate) });
+        for (let j = i; j < i+chunkSize; j++) rms += data[j]*data[j];
+        chunks.push({ rms: Math.sqrt(rms/chunkSize), time: startTime + (i/decoded.sampleRate) });
       }
-
-      // Find a quiet dip in the last 30%
-      chunks.sort((a, b) => a.rms - b.rms);
-      const quietChunk = chunks.slice(0, 3).find(c => c.time > dur * 0.6 && c.time < dur - 5);
-      return quietChunk ? quietChunk.time : dur - 10;
-    } catch(e) { return null; }
+      chunks.sort((a,b) => a.rms - b.rms);
+      const quiet = chunks.slice(0,5).find(c => c.time > duration*0.65 && c.time < duration - 4);
+      return quiet ? quiet.time : duration - 10;
+    } catch(e) { return duration - 10; }
   }
 
-  // ─── Crossfade ──────────────────────────────────────────────────────────────
-  let fadeInterval = null;
+  // ─── Crossfade ───────────────────────────────────────────────────────────────
+  let fadeRaf = null;
   let isFading = false;
 
   function crossfade(fromDeck, toDeck, durationSec, onComplete) {
     if (isFading) return;
     isFading = true;
-    if (fadeInterval) clearInterval(fadeInterval);
-
-    const steps = durationSec * 30;
-    let step = 0;
 
     const from = decks[fromDeck];
     const to = decks[toDeck];
 
-    if (to.audio && to.audio.paused) {
-      to.audio.play().catch(() => {});
-    }
+    ensureDeckConnected(toDeck);
     if (to.gain) to.gain.gain.value = 0;
+    if (to.audio?.paused) to.audio.play().catch(() => {});
 
-    fadeInterval = setInterval(() => {
-      step++;
-      const t = step / steps;
-      const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+    const startTime = audioCtx.currentTime;
+    const endTime = startTime + durationSec;
 
-      if (from.gain) from.gain.gain.value = Math.max(0, 1 - ease);
-      if (to.gain) to.gain.gain.value = Math.min(1, ease);
+    // Use AudioContext scheduler for sample-accurate fade
+    if (from.gain) {
+      from.gain.gain.setValueAtTime(1, startTime);
+      from.gain.gain.linearRampToValueAtTime(0, endTime);
+    }
+    if (to.gain) {
+      to.gain.gain.setValueAtTime(0, startTime);
+      to.gain.gain.linearRampToValueAtTime(1, endTime);
+    }
 
-      // Also move crossfader slider visually
+    // Poll for crossfader UI + completion
+    const poll = () => {
+      const now = audioCtx.currentTime;
+      const t = Math.min((now - startTime) / durationSec, 1);
       const xf = document.getElementById('crossfader');
-      if (xf) xf.value = fromDeck === 'a' ? ease : 1 - ease;
+      if (xf) xf.value = fromDeck === 'a' ? t : 1 - t;
 
-      if (step >= steps) {
-        clearInterval(fadeInterval);
+      if (t >= 1) {
         isFading = false;
+        if (from.audio) { from.audio.pause(); from.audio.currentTime = 0; }
         if (from.gain) from.gain.gain.value = 0;
         if (to.gain) to.gain.gain.value = 1;
-        if (from.audio) { from.audio.pause(); from.audio.currentTime = 0; }
         if (onComplete) onComplete();
+        return;
       }
-    }, 1000 / 30);
+      fadeRaf = requestAnimationFrame(poll);
+    };
+    fadeRaf = requestAnimationFrame(poll);
   }
 
-  // ─── VU Meter Reads ─────────────────────────────────────────────────────────
+  // ─── VU Meters ───────────────────────────────────────────────────────────────
   function getVULevel(deck) {
     const d = decks[deck];
     if (!d.analyser) return new Array(6).fill(0);
@@ -163,110 +251,108 @@ const Engine = (() => {
     const bands = [0, 4, 12, 30, 60, 100];
     return bands.map((start, i) => {
       const end = bands[i+1] || buf.length;
-      let sum = 0;
-      for (let j = start; j < end; j++) sum += buf[j];
+      let sum = 0; for (let j = start; j < end; j++) sum += buf[j];
       return sum / ((end - start) * 255);
     });
   }
 
-  // ─── Waveform Draw ──────────────────────────────────────────────────────────
+  // ─── Waveform ────────────────────────────────────────────────────────────────
   function drawWaveform(deck, canvas, progress) {
+    if (!canvas || canvas.width === 0) {
+      canvas.width = canvas.offsetWidth || 300;
+    }
     const ctx2 = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
+    const w = canvas.width, h = canvas.height;
     ctx2.clearRect(0, 0, w, h);
+    ctx2.fillStyle = '#0b0f1a';
+    ctx2.fillRect(0, 0, w, h);
 
     const d = decks[deck];
-    if (!d.analyser) {
-      ctx2.fillStyle = '#1a2035';
-      ctx2.fillRect(0, 0, w, h);
-      return;
-    }
+    if (!d.analyser) return;
 
     const buf = new Uint8Array(d.analyser.frequencyBinCount);
     d.analyser.getByteFrequencyData(buf);
 
-    const barW = w / buf.length * 2;
+    const barW = Math.max(1, (w / buf.length) * 2);
     const playedX = w * progress;
 
     for (let i = 0; i < buf.length; i++) {
-      const barH = (buf[i] / 255) * h;
+      const barH = Math.max(1, (buf[i] / 255) * h);
       const x = i * barW;
-      const isPlayed = x < playedX;
-      ctx2.fillStyle = isPlayed ? '#00e5ff' : '#1a2035';
-      ctx2.fillRect(x, h - barH, barW - 1, barH);
+      const played = x < playedX;
+      ctx2.fillStyle = played ? '#00e5ff' : '#1e2a40';
+      ctx2.fillRect(x, h - barH, barW - 0.5, barH);
     }
 
-    // Fade point line
+    // Fade point marker
     if (d.fadePoint && d.audio?.duration) {
       const fpX = (d.fadePoint / d.audio.duration) * w;
-      ctx2.fillStyle = '#ffcc0088';
-      ctx2.fillRect(fpX, 0, 2, h);
+      ctx2.fillStyle = '#ffcc00aa';
+      ctx2.fillRect(fpX - 1, 0, 2, h);
     }
   }
 
-  // ─── Last.fm API ────────────────────────────────────────────────────────────
+  // ─── Piped direct audio stream ────────────────────────────────────────────────
+  async function getPipedAudioUrl(videoId) {
+    try {
+      const r = await fetch(`/api/piped/streams?videoId=${videoId}`);
+      if (!r.ok) return null;
+      const data = await r.json();
+      if (data.audioStreams?.length > 0) {
+        return { url: data.audioStreams[0].url, thumbnail: data.thumbnail,
+                 title: data.title, uploader: data.uploader, duration: data.duration };
+      }
+    } catch(e) {}
+    return null;
+  }
+
+  // ─── Last.fm ─────────────────────────────────────────────────────────────────
   async function lfm(params) {
     const url = new URL('/api/lastfm', window.location.origin);
     Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
     const r = await fetch(url);
-    if (!r.ok) throw new Error(`Last.fm error: ${r.status}`);
-    return r.json();
+    if (!r.ok) throw new Error(`Last.fm ${r.status}`);
+    const d = await r.json();
+    if (d.error) throw new Error(d.message || `Last.fm error ${d.error}`);
+    return d;
   }
 
   async function getSimilarArtists(artist, limit=8) {
-    try {
-      const d = await lfm({ method: 'artist.getsimilar', artist, limit });
-      return (d.similarartists?.artist || []).map(a => a.name);
-    } catch { return []; }
+    try { const d = await lfm({method:'artist.getsimilar',artist,limit}); return (d.similarartists?.artist||[]).map(a=>a.name); }
+    catch(e) { return []; }
   }
-
   async function getTopTracks(artist, limit=5) {
-    try {
-      const d = await lfm({ method: 'artist.gettoptracks', artist, limit });
-      return (d.toptracks?.track || []).map(t => ({ title: t.name, artist, duration: parseInt(t.duration) || 0 }));
-    } catch { return []; }
+    try { const d = await lfm({method:'artist.gettoptracks',artist,limit});
+      return (d.toptracks?.track||[]).map(t=>({title:t.name,artist,duration:parseInt(t.duration)||0})); }
+    catch(e) { return []; }
   }
-
   async function getSimilarTracks(artist, track, limit=5) {
-    try {
-      const d = await lfm({ method: 'track.getsimilar', artist, track, limit });
-      return (d.similartracks?.track || []).map(t => ({ title: t.name, artist: t.artist?.name, duration: parseInt(t.duration) || 0 }));
-    } catch { return []; }
+    try { const d = await lfm({method:'track.getsimilar',artist,track,limit});
+      return (d.similartracks?.track||[]).map(t=>({title:t.name,artist:t.artist?.name||artist,duration:parseInt(t.duration)||0})); }
+    catch(e) { return []; }
   }
-
   async function getTagTracks(tag, limit=8) {
-    try {
-      const d = await lfm({ method: 'tag.gettoptracks', tag, limit });
-      return (d.tracks?.track || []).map(t => ({ title: t.name, artist: t.artist?.name }));
-    } catch { return []; }
+    try { const d = await lfm({method:'tag.gettoptracks',tag,limit});
+      return (d.tracks?.track||[]).map(t=>({title:t.name,artist:t.artist?.name||''})); }
+    catch(e) { return []; }
   }
-
   async function getTrackInfo(artist, track) {
-    try {
-      const d = await lfm({ method: 'track.getinfo', artist, track });
+    try { const d = await lfm({method:'track.getinfo',artist,track});
       const info = d.track;
-      return {
-        tags: (info?.toptags?.tag || []).slice(0, 6).map(t => t.name.toLowerCase()),
-        duration: parseInt(info?.duration) || 0,
-        album: info?.album?.title || '',
-        image: info?.album?.image?.find(i => i.size === 'extralarge')?.['#text'] || ''
-      };
-    } catch { return { tags: [], duration: 0, album: '', image: '' }; }
+      return { tags:(info?.toptags?.tag||[]).slice(0,6).map(t=>t.name.toLowerCase()),
+        duration:parseInt(info?.duration)||0, album:info?.album?.title||'',
+        image:(info?.album?.image||[]).find(i=>i.size==='extralarge')?.['#text']||'' }; }
+    catch(e) { return {tags:[],duration:0,album:'',image:''}; }
   }
-
   async function getArtistInfo(artist) {
-    try {
-      const d = await lfm({ method: 'artist.getinfo', artist });
-      return {
-        tags: (d.artist?.tags?.tag || []).slice(0, 5).map(t => t.name.toLowerCase()),
-        image: d.artist?.image?.find(i => i.size === 'extralarge')?.['#text'] || ''
-      };
-    } catch { return { tags: [] }; }
+    try { const d = await lfm({method:'artist.getinfo',artist});
+      return { tags:(d.artist?.tags?.tag||[]).slice(0,5).map(t=>t.name.toLowerCase()),
+        image:(d.artist?.image||[]).find(i=>i.size==='extralarge')?.['#text']||'' }; }
+    catch(e) { return {tags:[],image:''}; }
   }
 
-  // ─── YouTube Search ─────────────────────────────────────────────────────────
-  async function findYouTubeId(artist, title) {
+  // ─── Video Search ─────────────────────────────────────────────────────────────
+  async function searchVideo(artist, title) {
     try {
       const q = `${artist} ${title} audio`;
       const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`);
@@ -275,33 +361,34 @@ const Engine = (() => {
     } catch { return null; }
   }
 
-  // ─── AI Recommendations ─────────────────────────────────────────────────────
+  // ─── AI ───────────────────────────────────────────────────────────────────────
   async function aiRecommend(currentTrack, history, tags, mood) {
     const r = await fetch('/api/ai/recommend', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentTrack, history, tags, mood })
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({currentTrack, history, tags, mood})
     });
     if (!r.ok) throw new Error('AI request failed');
     return r.json();
   }
 
-  // ─── Now Playing SSE Update ─────────────────────────────────────────────────
+  // ─── SSE Broadcast ───────────────────────────────────────────────────────────
   async function broadcastNowPlaying(data) {
     try {
       await fetch('/api/nowplaying/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify(data)
       });
     } catch(e) {}
   }
 
   return {
-    decks, initAudioCtx, setupDeckAudio,
-    analyzeBPM, detectFadePoint, crossfade, getVULevel, drawWaveform,
+    decks, initAudioCtx, setupDeckAudio, ensureDeckConnected, connectDeckAudio,
+    readFileMetadata, extractID3,
+    analyzeBPM, detectFadePoint,
+    crossfade, getVULevel, drawWaveform,
+    getPipedAudioUrl, searchVideo,
     lfm, getSimilarArtists, getTopTracks, getSimilarTracks, getTagTracks, getTrackInfo, getArtistInfo,
-    findYouTubeId, aiRecommend, broadcastNowPlaying,
+    aiRecommend, broadcastNowPlaying,
     get isFading() { return isFading; },
     get audioCtx() { return audioCtx; }
   };
