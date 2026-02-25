@@ -1,0 +1,24 @@
+services:
+  autodj:
+    build: .
+    container_name: autodj
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./music:/music:ro
+      - ./config.json:/app/config.json
+    environment:
+      - PORT=3000
+      - MUSIC_DIR=/music
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    networks:
+      - autodj-net
+
+networks:
+  autodj-net:
+    driver: bridge

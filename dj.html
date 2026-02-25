@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoDJ — Control Room</title>
+<link rel="stylesheet" href="/css/shared.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #06080d;
+  --surface: #0b0f1a;
+  --surface2: #101520;
+  --border: #1a2035;
+  --accent: #00e5ff;
+  --accent2: #ff3366;
+  --accent3: #a855f7;
+  --green: #00ff88;
+  --yellow: #ffcc00;
+  --text: #b8c5d6;
+  --bright: #e8f0ff;
+  --muted: #3d4f6b;
+  --glow-c: rgba(0,229,255,0.25);
+  --glow-r: rgba(255,51,102,0.25);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  display: flex; flex-direction: column;
+  height: 100vh;
+}
+
+/* Grid bg */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none; z-index: 0;
+}
+
+/* ─── Layout ─────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 10; flex-shrink: 0;
+}
+
+.logo { font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: 900; color: var(--accent); letter-spacing: 3px; text-shadow: 0 0 20px var(--glow-c); }
+.logo span { color: var(--accent2); }
+
+.nav-btns { display: flex; gap: 6px; margin-left: auto; }
+.nav-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; padding: 6px 14px; cursor: pointer; border-radius: 2px; text-decoration: none; transition: all 0.2s; }
+.nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+.nav-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,0.07); }
+
+.status-ticker {
+  font-size: 10px; color: var(--accent); letter-spacing: 1px;
+  background: rgba(0,229,255,0.05); border: 1px solid rgba(0,229,255,0.15);
+  padding: 4px 12px; border-radius: 2px; max-width: 400px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.clock-display { font-size: 12px; color: var(--muted); letter-spacing: 1px; }
+
+.main-content {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  position: relative; z-index: 1;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.main-content::-webkit-scrollbar { width: 4px; }
+.main-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ─── Tabs ───────────────────────────────────── */
+.tab-bar {
+  display: flex; gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px; flex-shrink: 0;
+}
+.tab {
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  padding: 8px 18px; cursor: pointer; border: 1px solid transparent;
+  border-bottom: none; color: var(--muted); transition: all 0.2s;
+  background: transparent; font-family: 'Share Tech Mono', monospace;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-color: var(--border); border-bottom: 1px solid var(--bg); background: var(--surface); }
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ─── Panels / Cards ─────────────────────────── */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.panel-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+}
+.panel-title { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); }
+.panel-body { padding: 14px 16px; }
+
+/* ─── Decks ──────────────────────────────────── */
+.decks-row {
+  display: grid; grid-template-columns: 1fr 120px 1fr; gap: 8px; align-items: stretch;
+}
+
+.deck {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px; padding: 14px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  position: relative;
+}
+.deck.live {
+  border-color: var(--accent2);
+  box-shadow: 0 0 20px rgba(255,51,102,0.15);
+}
+.deck.live::after {
+  content: '● LIVE';
+  position: absolute; top: 10px; right: 12px;
+  font-size: 8px; letter-spacing: 2px; color: var(--accent2);
+  animation: blink 1s ease-in-out infinite alternate;
+}
+@keyframes blink { from { opacity: 0.4; } to { opacity: 1; } }
+
+.deck-id { font-size: 9px; letter-spacing: 4px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+
+.waveform-canvas {
+  width: 100%; height: 48px;
+  background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 2px;
+  margin-bottom: 10px; cursor: pointer;
+}
+
+.track-meta { margin-bottom: 12px; }
+.t-title { font-size: 13px; color: var(--bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.t-artist { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+.t-album { font-size: 10px; color: var(--muted); opacity: 0.6; }
+.t-tags { font-size: 9px; color: var(--accent3); margin-top: 3px; }
+
+.progress-wrap { position: relative; margin-bottom: 6px; cursor: pointer; }
+.progress-bg { height: 4px; background: var(--border); border-radius: 2px; }
+.progress-fill { height: 100%; border-radius: 2px; transition: width 0.3s linear; }
+.deck.live .progress-fill { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); }
+.deck:not(.live) .progress-fill { background: var(--accent); }
+.cue-marker { position: absolute; top: -3px; width: 2px; height: 10px; background: var(--yellow); border-radius: 1px; }
+
+.time-row { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-bottom: 8px; }
+.time-remaining { color: var(--accent2); }
+
+.deck-controls { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
+.ctrl-btn {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); font-size: 12px; padding: 6px 10px;
+  cursor: pointer; border-radius: 2px; transition: all 0.15s;
+  font-family: 'Share Tech Mono', monospace;
+}
+.ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ctrl-btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+.vol-row { display: flex; align-items: center; gap: 8px; font-size: 9px; color: var(--muted); }
+.vol-row input { flex: 1; }
+
+/* ─── Center Mixer ───────────────────────────── */
+.mixer {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 12px 8px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 12px;
+}
+.mixer-label { font-size: 9px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; }
+.xfader-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
+#crossfader { width: 100%; writing-mode: horizontal-tb; accent-color: var(--accent2); cursor: pointer; }
+.xfader-labels { display: flex; justify-content: space-between; width: 100%; font-size: 9px; color: var(--muted); }
+
+.fade-trigger {
+  background: var(--surface2); border: 1px solid var(--accent2);
+  color: var(--accent2); font-family: 'Share Tech Mono', monospace;
+  font-size: 9px; letter-spacing: 1px; padding: 8px 6px;
+  cursor: pointer; border-radius: 2px; text-transform: uppercase;
+  width: 100%; transition: all 0.2s; text-align: center;
+}
+.fade-trigger:hover { background: var(--accent2); color: white; }
+.fade-trigger.fading { background: var(--accent2); color: white; animation: blink 0.5s infinite; }
+
+.bpm-display { font-size: 22px; color: var(--accent); font-family: 'Orbitron'; text-align: center; }
+.bpm-label { font-size: 8px; color: var(--muted); letter-spacing: 2px; }
+
+/* ─── Queue ──────────────────────────────────── */
+.queue-grid { display: grid; grid-template-columns: 1fr 280px; gap: 10px; }
+
+.queue-list { max-height: 340px; overflow-y: auto; }
+.queue-list::-webkit-scrollbar { width: 4px; }
+.queue-list::-webkit-scrollbar-thumb { background: var(--border); }
+
+.qitem {
+  display: grid;
+  grid-template-columns: 28px auto 1fr auto 60px 60px 24px;
+  gap: 8px; align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s; cursor: default;
+  font-size: 11px;
+}
+.qitem:hover { background: rgba(0,229,255,0.03); }
+.qitem.playing { background: rgba(255,51,102,0.07); border-left: 2px solid var(--accent2); }
+.qitem.next { background: rgba(0,229,255,0.05); border-left: 2px solid var(--accent); }
+.qitem.past { opacity: 0.35; }
+.qitem.local .q-src { color: var(--green); }
+.qitem.online .q-src { color: var(--accent3); }
+
+.q-num { color: var(--muted); text-align: right; font-size: 10px; }
+.q-src { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; }
+.q-info { overflow: hidden; }
+.q-title { color: var(--bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-artist { color: var(--muted); font-size: 10px; }
+.q-dur { color: var(--muted); font-size: 10px; text-align: right; }
+.q-tags { font-size: 8px; color: var(--accent3); }
+.q-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
+.q-remove:hover { color: var(--accent2); }
+
+.q-badge { font-size: 8px; padding: 2px 5px; border-radius: 2px; text-transform: uppercase; letter-spacing: 1px; }
+.badge-play { background: rgba(255,51,102,0.2); color: var(--accent2); }
+.badge-next { background: rgba(0,229,255,0.15); color: var(--accent); }
+.badge-q { background: rgba(168,85,247,0.15); color: var(--accent3); }
+.badge-loc { background: rgba(0,255,136,0.12); color: var(--green); }
+
+/* Queue sidebar */
+.q-sidebar { display: flex; flex-direction: column; gap: 8px; }
+.btn { background: transparent; border: 1px solid var(--border); color: var(--text); font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 8px 14px; cursor: pointer; border-radius: 2px; transition: all 0.2s; display: block; width: 100%; text-align: center; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.accent { border-color: var(--accent); color: var(--accent); }
+.btn.accent:hover { background: var(--accent); color: var(--bg); }
+.btn.danger { border-color: var(--accent2); color: var(--accent2); }
+.btn.danger:hover { background: var(--accent2); color: white; }
+.btn.green { border-color: var(--green); color: var(--green); }
+.btn.green:hover { background: var(--green); color: var(--bg); }
+.btn.purple { border-color: var(--accent3); color: var(--accent3); }
+.btn.purple:hover { background: var(--accent3); color: white; }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ─── Settings ───────────────────────────────── */
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+.field input, .field select, .field textarea {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Share Tech Mono', monospace;
+  font-size: 12px; padding: 8px 12px; border-radius: 2px; outline: none;
+  transition: border-color 0.2s;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+.field textarea { resize: vertical; min-height: 80px; }
+.field-hint { font-size: 9px; color: var(--muted); margin-top: 2px; }
+
+.toggle-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.toggle-row label { font-size: 11px; color: var(--text); }
+input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+input[type="range"] { accent-color: var(--accent); cursor: pointer; }
+input[type="number"] { width: 70px; }
+
+/* ─── AI Analysis ────────────────────────────── */
+.analysis-result {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 2px; padding: 12px; font-size: 11px;
+  white-space: pre-wrap; color: var(--text); min-height: 60px;
+}
+.analysis-result .highlight { color: var(--accent); }
+
+/* ─── File drop zone ─────────────────────────── */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 3px; padding: 30px;
+  text-align: center; cursor: pointer;
+  transition: all 0.2s; color: var(--muted);
+  font-size: 12px; letter-spacing: 1px;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(0,229,255,0.04);
+}
+.drop-zone input { display: none; }
+
+/* Meters */
+.vu-meters { display: flex; gap: 4px; height: 32px; align-items: flex-end; margin-bottom: 8px; }
+.vu-bar { flex: 1; border-radius: 1px; min-height: 2px; transition: height 0.08s; }
+
+/* Local track list */
+.local-file-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
+.local-file { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 11px; }
+.local-file:hover { background: rgba(0,229,255,0.03); }
+.local-file-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.local-file-meta { color: var(--muted); font-size: 10px; margin-left: 8px; white-space: nowrap; }
+
+/* Message editor */
+.msg-list { max-height: 160px; overflow-y: auto; }
+.msg-item { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.msg-item span { flex: 1; font-size: 11px; color: var(--text); }
+.msg-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
+.msg-del:hover { color: var(--accent2); }
+
+/* Spotify result */
+.spotify-result { display: flex; gap: 10px; align-items: center; padding: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 2px; margin-bottom: 6px; }
+.sp-img { width: 40px; height: 40px; border-radius: 2px; object-fit: cover; }
+.sp-info { flex: 1; overflow: hidden; }
+.sp-name { font-size: 12px; color: var(--bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-artist { font-size: 10px; color: var(--muted); }
+
+/* Draggable queue */
+.qitem[draggable="true"] { cursor: grab; }
+.qitem.dragging { opacity: 0.4; }
+.qitem.drag-over { border-top: 2px solid var(--accent); }
+
+/* ─── System Stats ───────────────────────────── */
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 10px 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  border-radius: 0 0 3px 3px;
+  transition: width 0.6s ease;
+}
+.stat-card.cpu::before { background: var(--accent); }
+.stat-card.ram::before { background: var(--accent3); }
+.stat-card.disk::before { background: var(--green); }
+.stat-card.temp-storage::before { background: #ffcc00; }
+
+.stat-label {
+  font-size: 8px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 6px;
+}
+
+.stat-value {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 22px; font-weight: 700;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.stat-card.cpu .stat-value { color: var(--accent); }
+.stat-card.ram .stat-value { color: var(--accent3); }
+.stat-card.disk .stat-value { color: var(--green); }
+.stat-card.temp-storage .stat-value { color: #ffcc00; }
+
+.stat-sub {
+  font-size: 9px; color: var(--muted); line-height: 1.4;
+}
+
+.stat-bar-bg {
+  height: 3px; background: var(--border); border-radius: 2px;
+  margin-top: 6px; overflow: hidden;
+}
+.stat-bar-fill {
+  height: 100%; border-radius: 2px; transition: width 0.6s ease;
+}
+.stat-card.cpu .stat-bar-fill { background: var(--accent); }
+.stat-card.ram .stat-bar-fill { background: var(--accent3); }
+.stat-card.disk .stat-bar-fill { background: var(--green); }
+.stat-card.temp-storage .stat-bar-fill { background: #ffcc00; }
+
+.stat-warn { color: var(--accent2) !important; }
+
+/* Temp files list */
+.temp-file-list { max-height: 120px; overflow-y: auto; margin-top: 6px; }
+.temp-file-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 8px; font-size: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.temp-file-item .tf-name { color: #ffcc00; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.temp-file-item .tf-size { color: var(--muted); margin-left: 8px; white-space: nowrap; }
+.temp-file-item .tf-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 2px; }
+.temp-file-item .tf-del:hover { color: var(--accent2); }
+
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="logo">AUTO<span>DJ</span></span>
+  <div class="status-ticker" id="status">Initializing...</div>
+  <div class="nav-btns">
+    <a class="nav-btn active" href="/dj">DJ Console</a>
+    <a class="nav-btn" href="/display" target="_blank">Now Playing ↗</a>
+  </div>
+  <div class="clock-display" id="clock">--:--:--</div>
+</div>
+
+<div class="main-content">
+  <div class="tab-bar">
+    <button class="tab active" onclick="showTab('mix')">Mix</button>
+    <button class="tab" onclick="showTab('queue')">Queue</button>
+    <button class="tab" onclick="showTab('library')">Library</button>
+    <button class="tab" onclick="showTab('discover')">Discover</button>
+    <button class="tab" onclick="showTab('settings')">Settings</button>
+  </div>
+
+  <!-- MIX TAB -->
+  <div id="tab-mix" class="tab-content active">
+    <div class="decks-row">
+      <!-- Deck A -->
+      <div class="deck live" id="deck-a">
+        <div class="deck-id">⬡ Deck A</div>
+        <canvas class="waveform-canvas" id="wave-a" height="48"></canvas>
+        <div class="vu-meters" id="vu-a">
+          <div class="vu-bar" style="background:var(--green)"></div>
+          <div class="vu-bar" style="background:var(--green)"></div>
+          <div class="vu-bar" style="background:var(--green)"></div>
+          <div class="vu-bar" style="background:var(--yellow)"></div>
+          <div class="vu-bar" style="background:var(--yellow)"></div>
+          <div class="vu-bar" style="background:var(--accent2)"></div>
+        </div>
+        <div class="track-meta">
+          <div class="t-title" id="title-a">— No Track —</div>
+          <div class="t-artist" id="artist-a">Load a track to begin</div>
+          <div class="t-album" id="album-a"></div>
+          <div class="t-tags" id="tags-a"></div>
+        </div>
+        <div class="progress-wrap" id="prog-wrap-a" onclick="seekDeck('a', event)">
+          <div class="progress-bg"><div class="progress-fill" id="prog-a" style="width:0%"></div></div>
+          <div class="cue-marker" id="cue-a" style="display:none"></div>
+        </div>
+        <div class="time-row">
+          <span id="time-a">0:00</span>
+          <span class="time-remaining" id="remain-a">-0:00</span>
+          <span id="dur-a">0:00</span>
+        </div>
+        <div class="deck-controls">
+          <button class="ctrl-btn" onclick="deckPlay('a')">▶</button>
+          <button class="ctrl-btn" onclick="deckPause('a')">⏸</button>
+          <button class="ctrl-btn" onclick="deckStop('a')">⏹</button>
+          <button class="ctrl-btn" id="cue-btn-a" onclick="setCue('a')">CUE</button>
+          <button class="ctrl-btn" onclick="deckSkip('a')">⏭</button>
+        </div>
+        <div class="vol-row">VOL <input type="range" id="vol-a" min="0" max="1" step="0.01" value="1" oninput="setVol('a',this.value)"> <span id="vol-val-a">100%</span></div>
+      </div>
+
+      <!-- Mixer -->
+      <div class="mixer">
+        <div class="mixer-label">Mixer</div>
+        <div class="bpm-display" id="bpm-a">—</div>
+        <div class="bpm-label">BPM A</div>
+        <div class="xfader-wrap">
+          <div class="xfader-labels"><span>A</span><span>B</span></div>
+          <input type="range" id="crossfader" min="0" max="1" step="0.01" value="0" oninput="onXfader(this.value)">
+        </div>
+        <div class="bpm-display" id="bpm-b">—</div>
+        <div class="bpm-label">BPM B</div>
+        <button class="fade-trigger" id="fade-btn" onclick="triggerCrossfade()">⇄ CROSSFADE</button>
+        <div style="width:100%">
+          <div class="field">
+            <label>Fade Dur (s)</label>
+            <input type="number" id="fade-dur" value="8" min="2" max="60" style="width:100%">
+          </div>
+        </div>
+        <div class="toggle-row"><input type="checkbox" id="automix" checked><label>Auto-Mix</label></div>
+        <div class="toggle-row"><input type="checkbox" id="smart-fade" checked><label>Smart Fade</label></div>
+      </div>
+
+      <!-- Deck B -->
+      <div class="deck" id="deck-b">
+        <div class="deck-id">⬡ Deck B</div>
+        <canvas class="waveform-canvas" id="wave-b" height="48"></canvas>
+        <div class="vu-meters" id="vu-b">
+          <div class="vu-bar" style="background:var(--green)"></div>
+          <div class="vu-bar" style="background:var(--green)"></div>
+          <div class="vu-bar" style="background:var(--green)"></div>
+          <div class="vu-bar" style="background:var(--yellow)"></div>
+          <div class="vu-bar" style="background:var(--yellow)"></div>
+          <div class="vu-bar" style="background:var(--accent2)"></div>
+        </div>
+        <div class="track-meta">
+          <div class="t-title" id="title-b">— No Track —</div>
+          <div class="t-artist" id="artist-b">Cued up next</div>
+          <div class="t-album" id="album-b"></div>
+          <div class="t-tags" id="tags-b"></div>
+        </div>
+        <div class="progress-wrap" id="prog-wrap-b" onclick="seekDeck('b', event)">
+          <div class="progress-bg"><div class="progress-fill" id="prog-b" style="width:0%"></div></div>
+          <div class="cue-marker" id="cue-b" style="display:none"></div>
+        </div>
+        <div class="time-row">
+          <span id="time-b">0:00</span>
+          <span class="time-remaining" id="remain-b">-0:00</span>
+          <span id="dur-b">0:00</span>
+        </div>
+        <div class="deck-controls">
+          <button class="ctrl-btn" onclick="deckPlay('b')">▶</button>
+          <button class="ctrl-btn" onclick="deckPause('b')">⏸</button>
+          <button class="ctrl-btn" onclick="deckStop('b')">⏹</button>
+          <button class="ctrl-btn" id="cue-btn-b" onclick="setCue('b')">CUE</button>
+          <button class="ctrl-btn" onclick="deckSkip('b')">⏭</button>
+        </div>
+        <div class="vol-row">VOL <input type="range" id="vol-b" min="0" max="1" step="0.01" value="1" oninput="setVol('b',this.value)"> <span id="vol-val-b">100%</span></div>
+      </div>
+    </div>
+
+    <!-- System Stats Bar -->
+    <div class="stats-bar">
+      <div class="stat-card cpu">
+        <div class="stat-label">CPU Usage</div>
+        <div class="stat-value" id="stat-cpu">—%</div>
+        <div class="stat-sub" id="stat-cpu-sub">— cores</div>
+        <div class="stat-bar-bg"><div class="stat-bar-fill" id="stat-cpu-bar" style="width:0%"></div></div>
+      </div>
+      <div class="stat-card ram">
+        <div class="stat-label">RAM</div>
+        <div class="stat-value" id="stat-ram">—%</div>
+        <div class="stat-sub" id="stat-ram-sub">— / —</div>
+        <div class="stat-bar-bg"><div class="stat-bar-fill" id="stat-ram-bar" style="width:0%"></div></div>
+      </div>
+      <div class="stat-card disk">
+        <div class="stat-label">Disk</div>
+        <div class="stat-value" id="stat-disk">—%</div>
+        <div class="stat-sub" id="stat-disk-sub">— free of —</div>
+        <div class="stat-bar-bg"><div class="stat-bar-fill" id="stat-disk-bar" style="width:0%"></div></div>
+      </div>
+      <div class="stat-card temp-storage">
+        <div class="stat-label">Temp Queue</div>
+        <div class="stat-value" id="stat-temp">0</div>
+        <div class="stat-sub" id="stat-temp-sub">0 B · auto-clears on queue end</div>
+        <div class="stat-bar-bg"><div class="stat-bar-fill" id="stat-temp-bar" style="width:10%"></div></div>
+      </div>
+    </div>
+
+    <!-- Temp Files Panel -->
+    <div class="panel" id="temp-files-panel" style="display:none">
+      <div class="panel-header">
+        <span class="panel-title" style="color:#ffcc00">⏳ Temp Files — <span id="temp-count">0</span> held in memory</span>
+        <button class="btn danger" style="padding:4px 10px;font-size:9px" onclick="clearTempFiles()">✕ Clear All</button>
+      </div>
+      <div class="panel-body" style="padding:8px 12px">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px">Files are stored in server temp and auto-deleted when the queue is cleared or server stops.</div>
+        <div class="temp-file-list" id="temp-file-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUEUE TAB -->
+  <div id="tab-queue" class="tab-content">
+    <div class="queue-grid">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Queue <span id="q-count" style="color:var(--accent)">0</span> tracks</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn" onclick="shuffleQueue()">Shuffle</button>
+            <button class="btn danger" onclick="clearQueue()">Clear</button>
+          </div>
+        </div>
+        <div class="queue-list" id="queue-list">
+          <div style="padding:20px;text-align:center;color:var(--muted);font-size:11px">Queue empty</div>
+        </div>
+      </div>
+      <div class="q-sidebar">
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Add to Queue</span></div>
+          <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn accent" onclick="document.getElementById('file-input').click()">+ Add Files</button>
+            <input type="file" id="file-input" multiple accept="audio/*" style="display:none" onchange="addLocalFiles(this.files)">
+            <button class="btn green" onclick="document.getElementById('folder-input').click()">+ Add Folder</button>
+            <input type="file" id="folder-input" webkitdirectory mozdirectory accept="audio/*" style="display:none" onchange="addLocalFiles(this.files)">
+            <hr style="border-color:var(--border)">
+            <button class="btn" style="border-color:#ffcc00;color:#ffcc00" onclick="document.getElementById('temp-upload-input').click()">⏳ Upload (Temp)</button>
+            <input type="file" id="temp-upload-input" multiple accept="audio/*" style="display:none" onchange="uploadTempFiles(this.files)">
+            <button class="btn" style="border-color:#ffcc00;color:#ffcc00" onclick="document.getElementById('temp-folder-input').click()">⏳ Upload Folder (Temp)</button>
+            <input type="file" id="temp-folder-input" webkitdirectory mozdirectory accept="audio/*" style="display:none" onchange="uploadTempFiles(this.files)">
+            <div id="temp-status" style="font-size:10px;color:#ffcc00;display:none;padding:4px 0"></div>
+            <hr style="border-color:var(--border)">
+            <div class="field">
+              <label>Queue Mode</label>
+              <select id="queue-mode">
+                <option value="local-first">Local First, then Online</option>
+                <option value="online-first">Online First, then Local</option>
+                <option value="shuffle-mix">Shuffle Mix (Interleave)</option>
+                <option value="local-only">Local Only</option>
+                <option value="online-only">Online Only (Auto-DJ)</option>
+              </select>
+            </div>
+            <button class="btn purple" onclick="aiRefillQueue()">🤖 AI Refill Queue</button>
+            <button class="btn" onclick="fetchMoreOnline()">+ More Online</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Now Playing</span></div>
+          <div class="panel-body">
+            <div style="font-size:12px;color:var(--bright);margin-bottom:4px" id="np-sidebar-title">—</div>
+            <div style="font-size:10px;color:var(--muted)" id="np-sidebar-artist">—</div>
+            <div style="font-size:10px;color:var(--accent3);margin-top:4px" id="np-sidebar-genre">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIBRARY TAB -->
+  <div id="tab-library" class="tab-content">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Local Library</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn accent" onclick="scanLibrary()">Scan Folders</button>
+          <button class="btn green" onclick="addAllToQueue()">Add All to Queue</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('lib-file-input').click()">
+          <input type="file" id="lib-file-input" multiple accept="audio/*" onchange="addLocalFiles(this.files)">
+          <div>⊕ Drop audio files here or click to browse</div>
+          <div style="font-size:10px;margin-top:4px;color:var(--muted)">Supports MP3, FLAC, WAV, OGG, M4A, AAC, OPUS</div>
+        </div>
+        <div class="local-file-list" id="local-file-list">
+          <div style="padding:16px;text-align:center;color:var(--muted);font-size:11px">No files loaded</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DISCOVER TAB -->
+  <div id="tab-discover" class="tab-content">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Last.fm Discovery</span></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
+          <div class="field"><label>Seed Artist</label><input type="text" id="seed-artist" placeholder="e.g. Aphex Twin"></div>
+          <div class="field"><label>Seed Track (optional)</label><input type="text" id="seed-track" placeholder="e.g. Come to Daddy"></div>
+          <div class="field">
+            <label>Discovery Mode</label>
+            <select id="discovery-mode">
+              <option value="both" selected>Similar Artists + Genre Tags</option>
+              <option value="similar">Similar Artists Only</option>
+              <option value="tag">Genre Tags Only</option>
+            </select>
+          </div>
+          <button class="btn accent" onclick="startAutoDiscover()">▶ Start Auto-Discovery</button>
+          <button class="btn" onclick="fetchMoreOnline()">+ Fetch More Tracks</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Spotify Discovery</span></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
+          <div class="field"><label>Search</label><input type="text" id="spotify-search" placeholder="Artist, track, or mood..."></div>
+          <div class="field">
+            <label>Type</label>
+            <select id="spotify-type">
+              <option value="track">Tracks</option>
+              <option value="artist">Artist (get top tracks)</option>
+              <option value="recommendations">Recommendations</option>
+            </select>
+          </div>
+          <button class="btn" style="border-color:#1db954;color:#1db954" onclick="spotifySearch()">🎵 Spotify Search</button>
+          <div id="spotify-results"></div>
+        </div>
+      </div>
+      <div class="panel" style="grid-column:1/-1">
+        <div class="panel-header">
+          <span class="panel-title">🤖 AI Track Intelligence</span>
+          <button class="btn purple" onclick="aiAnalyzeAndRecommend()">Analyze & Recommend</button>
+        </div>
+        <div class="panel-body">
+          <div class="field" style="margin-bottom:8px"><label>Mood / Vibe Context</label><input type="text" id="ai-mood" placeholder="e.g. late night driving, beach sunset, high energy gym..."></div>
+          <div class="analysis-result" id="ai-result">AI recommendations will appear here after analysis...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS TAB -->
+  <div id="tab-settings" class="tab-content">
+    <div class="settings-grid">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">API Keys</span></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+          <div class="field">
+            <label>Last.fm API Key <a href="https://www.last.fm/api/account/create" target="_blank" style="color:var(--accent);font-size:9px">GET FREE →</a></label>
+            <input type="password" id="cfg-lastfm" placeholder="Enter Last.fm API key...">
+          </div>
+          <div class="field">
+            <label>Spotify Client ID <a href="https://developer.spotify.com/dashboard" target="_blank" style="color:var(--green);font-size:9px">GET FREE →</a></label>
+            <input type="text" id="cfg-sp-id" placeholder="Spotify Client ID">
+          </div>
+          <div class="field">
+            <label>Spotify Client Secret</label>
+            <input type="password" id="cfg-sp-secret" placeholder="Spotify Client Secret">
+          </div>
+          <div class="field">
+            <label>AI Provider</label>
+            <select id="cfg-ai-provider">
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI (GPT)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Anthropic API Key</label>
+            <input type="password" id="cfg-anthropic" placeholder="sk-ant-...">
+          </div>
+          <div class="field">
+            <label>OpenAI API Key</label>
+            <input type="password" id="cfg-openai" placeholder="sk-...">
+          </div>
+          <button class="btn accent" onclick="saveConfig()">Save Keys</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Playback Settings</span></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+          <div class="field"><label>Default Crossfade (s)</label><input type="number" id="cfg-fade" value="8" min="2" max="60"></div>
+          <div class="field"><label>Queue Ahead (tracks)</label><input type="number" id="cfg-queue-ahead" value="5" min="2" max="15"></div>
+          <div class="field">
+            <label>Music Folders (one per line)</label>
+            <textarea id="cfg-dirs" rows="3" placeholder="/music&#10;/home/user/Music"></textarea>
+            <div class="field-hint">Server-side paths. Restart server after changing.</div>
+          </div>
+          <div class="toggle-row"><input type="checkbox" id="cfg-smartfade" checked><label>Smart Fade Point Analysis</label></div>
+          <div class="toggle-row"><input type="checkbox" id="cfg-ai-queue" checked><label>AI Queue Intelligence</label></div>
+          <div class="toggle-row"><input type="checkbox" id="cfg-genre-lock"><label>Genre Lock</label></div>
+          <button class="btn accent" onclick="saveConfig()">Save Settings</button>
+        </div>
+      </div>
+      <div class="panel" style="grid-column:1/-1">
+        <div class="panel-header"><span class="panel-title">Display Messages (shown on Now Playing screen)</span></div>
+        <div class="panel-body">
+          <div class="msg-list" id="msg-list"></div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input type="text" id="new-msg" placeholder="Add a message..." style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:6px 10px;font-size:11px;border-radius:2px;outline:none">
+            <button class="btn accent" onclick="addMessage()">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden audio elements -->
+<audio id="audio-a" preload="auto"></audio>
+<audio id="audio-b" preload="auto"></audio>
+
+<!-- Hidden YouTube -->
+<div style="display:none">
+  <div id="yt-a"></div>
+  <div id="yt-b"></div>
+</div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script src="/engine.js"></script>
+<script src="/dj.js"></script>
+</body>
+</html>
