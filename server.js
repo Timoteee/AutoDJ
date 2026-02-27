@@ -6,13 +6,124 @@ const { execSync } = require('child_process');
 const cors = require('cors');
 const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
 const multer = require('multer');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// ─── Session Middleware ──────────────────────────────────────────────────────
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'autodj-secret-' + Math.random().toString(36).slice(2),
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: false, // set true if behind HTTPS proxy
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// ─── Auth Credentials ────────────────────────────────────────────────────────
+const AUTH_FILE = path.join(__dirname, '.auth.json');
+const DEFAULT_USER = 'admin';
+const DEFAULT_PASS = 'adminroot123';
+
+function loadAuth() {
+  if (fs.existsSync(AUTH_FILE)) {
+    try { return JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8')); } catch(e) {}
+  }
+  // Initialize with default credentials
+  const auth = { username: DEFAULT_USER, passwordHash: bcrypt.hashSync(DEFAULT_PASS, 10) };
+  fs.writeFileSync(AUTH_FILE, JSON.stringify(auth, null, 2));
+  return auth;
+}
+
+function saveAuth(auth) {
+  fs.writeFileSync(AUTH_FILE, JSON.stringify(auth, null, 2));
+}
+
+let authData = loadAuth();
+
+// ─── Auth Middleware ─────────────────────────────────────────────────────────
+function requireAuth(req, res, next) {
+  if (req.session && req.session.authenticated) return next();
+  // For API calls return 401, for pages redirect to login
+  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Not authenticated' });
+  return res.redirect('/login');
+}
+
+// ─── Public Routes (login page, display page, static assets) ────────────────
+app.get('/login', (req, res) => {
+  if (req.session && req.session.authenticated) return res.redirect('/dj');
+  res.sendFile(path.join(__dirname, 'login.html'));
+});
+
+// Serve static files selectively — protect dj.js and engine.js
+app.use((req, res, next) => {
+  const protectedFiles = ['/dj.js', '/engine.js', '/dj.html'];
+  if (protectedFiles.includes(req.path)) {
+    if (req.session && req.session.authenticated) {
+      return res.sendFile(path.join(__dirname, req.path.slice(1)));
+    }
+    return res.redirect('/login');
+  }
+  next();
+});
+
 app.use(express.static(__dirname));
+
+// ─── Auth API ────────────────────────────────────────────────────────────────
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
+
+  if (username !== authData.username) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+
+  if (!bcrypt.compareSync(password, authData.passwordHash)) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+
+  req.session.authenticated = true;
+  req.session.username = username;
+  res.json({ ok: true, username });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ ok: true });
+  });
+});
+
+app.get('/api/auth/check', (req, res) => {
+  if (req.session && req.session.authenticated) {
+    return res.json({ authenticated: true, username: req.session.username });
+  }
+  res.json({ authenticated: false });
+});
+
+app.post('/api/auth/change-password', requireAuth, (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Both current and new password required' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  }
+
+  if (!bcrypt.compareSync(currentPassword, authData.passwordHash)) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+
+  authData.passwordHash = bcrypt.hashSync(newPassword, 10);
+  saveAuth(authData);
+  res.json({ ok: true, message: 'Password changed successfully' });
+});
 
 // ─── Temp Upload Storage ──────────────────────────────────────────────────────
 const TEMP_DIR = path.join(os.tmpdir(), 'autodj-temp');
@@ -87,8 +198,8 @@ function broadcastState() {
   for (const c of sseClients) { try { c.write(`data: ${data}\n\n`); } catch(e) { sseClients.delete(c); } }
 }
 
-// ─── Config API ───────────────────────────────────────────────────────────────
-app.get('/api/config', (req, res) => res.json({
+// ─── Config API (protected) ──────────────────────────────────────────────────
+app.get('/api/config', requireAuth, (req, res) => res.json({
   lastfmKey: config.lastfmKey ? '●●●set●●●' : '',
   spotifyClientId: config.spotifyClientId || '',
   openaiKey: config.openaiKey ? '●●●set●●●' : '',
@@ -101,7 +212,7 @@ app.get('/api/config', (req, res) => res.json({
   hasAI: !!(config.anthropicKey || config.openaiKey)
 }));
 
-app.post('/api/config', (req, res) => {
+app.post('/api/config', requireAuth, (req, res) => {
   const b = req.body;
   if (b.lastfmKey && !b.lastfmKey.includes('●')) config.lastfmKey = b.lastfmKey;
   if (b.spotifyClientId) config.spotifyClientId = b.spotifyClientId;
@@ -472,8 +583,11 @@ app.post('/api/nowplaying/update', (req, res) => {
 app.get('/api/nowplaying', (req, res) => res.json(sharedState));
 
 // ─── Pages ────────────────────────────────────────────────────────────────────
-app.get('/', (req, res) => res.redirect('/dj'));
-app.get('/dj', (req, res) => res.sendFile(path.join(__dirname, 'dj.html')));
+app.get('/', (req, res) => {
+  if (req.session && req.session.authenticated) return res.redirect('/dj');
+  res.redirect('/login');
+});
+app.get('/dj', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'dj.html')));
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'display.html')));
 
 app.listen(PORT, () => {

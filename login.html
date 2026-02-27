@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoDJ — Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #06080d;
+  --surface: #0b0f1a;
+  --surface2: #101520;
+  --border: #1a2035;
+  --accent: #00e5ff;
+  --accent2: #ff3366;
+  --accent3: #a855f7;
+  --green: #00ff88;
+  --text: #b8c5d6;
+  --bright: #e8f0ff;
+  --muted: #3d4f6b;
+  --glow-c: rgba(0,229,255,0.25);
+  --glow-r: rgba(255,51,102,0.25);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none; z-index: 0;
+}
+
+.login-card {
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 40px 36px 36px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 0 60px rgba(0,229,255,0.06), 0 0 120px rgba(0,0,0,0.4);
+}
+
+.login-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent3));
+  border-radius: 4px 4px 0 0;
+}
+
+.logo {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--accent);
+  letter-spacing: 4px;
+  text-shadow: 0 0 20px var(--glow-c);
+  text-align: center;
+  margin-bottom: 6px;
+}
+.logo span { color: var(--accent2); }
+
+.subtitle {
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 32px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.field label {
+  font-size: 9px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.field input {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--bright);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 2px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(0,229,255,0.1);
+}
+.field input::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.login-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  padding: 12px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.25s;
+  margin-top: 6px;
+}
+.login-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+  box-shadow: 0 0 20px var(--glow-c);
+}
+.login-btn:active {
+  transform: scale(0.98);
+}
+.login-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.error-msg {
+  background: rgba(255,51,102,0.08);
+  border: 1px solid rgba(255,51,102,0.25);
+  color: var(--accent2);
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 8px 12px;
+  border-radius: 2px;
+  text-align: center;
+  margin-bottom: 16px;
+  display: none;
+}
+.error-msg.visible { display: block; }
+
+.footer-hint {
+  text-align: center;
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 24px;
+  letter-spacing: 1px;
+}
+
+/* Spinner animation for login button */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.login-btn.loading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="logo">AUTO<span>DJ</span></div>
+  <div class="subtitle">Control Room Access</div>
+
+  <div class="error-msg" id="error-msg"></div>
+
+  <div class="field">
+    <label>Username</label>
+    <input type="text" id="username" placeholder="Enter username" autocomplete="username" autofocus>
+  </div>
+  <div class="field">
+    <label>Password</label>
+    <input type="password" id="password" placeholder="Enter password" autocomplete="current-password">
+  </div>
+
+  <button class="login-btn" id="login-btn" onclick="doLogin()">Authenticate</button>
+
+  <div class="footer-hint">Authorized personnel only</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// Allow Enter key to submit
+$('password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+$('username').addEventListener('keydown', e => { if (e.key === 'Enter') $('password').focus(); });
+
+async function doLogin() {
+  const btn = $('login-btn');
+  const errEl = $('error-msg');
+  const username = $('username').value.trim();
+  const password = $('password').value;
+
+  errEl.classList.remove('visible');
+
+  if (!username || !password) {
+    errEl.textContent = 'Please enter both username and password';
+    errEl.classList.add('visible');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = 'Authenticating...';
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      btn.textContent = 'Access Granted';
+      btn.style.borderColor = 'var(--green)';
+      btn.style.color = 'var(--green)';
+      setTimeout(() => { window.location.href = '/dj'; }, 400);
+    } else {
+      errEl.textContent = data.error || 'Invalid credentials';
+      errEl.classList.add('visible');
+      $('password').value = '';
+      $('password').focus();
+      btn.disabled = false;
+      btn.classList.remove('loading');
+      btn.textContent = 'Authenticate';
+    }
+  } catch (e) {
+    errEl.textContent = 'Connection error — is the server running?';
+    errEl.classList.add('visible');
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.textContent = 'Authenticate';
+  }
+}
+</script>
+</body>
+</html>

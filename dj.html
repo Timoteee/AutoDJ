@@ -413,6 +413,7 @@ input[type="number"] { width: 70px; }
   <div class="nav-btns">
     <a class="nav-btn active" href="/dj">DJ Console</a>
     <a class="nav-btn" href="/display" target="_blank">Now Playing ↗</a>
+    <button class="nav-btn" onclick="doLogout()" style="cursor:pointer" title="Sign out">⏻ Logout</button>
   </div>
   <div style="display:flex;gap:10px;align-items:center;font-size:10px;letter-spacing:2px">
     <span title="Last.fm">LFM <span id="ind-lastfm" style="color:var(--muted)">○</span></span>
@@ -762,6 +763,25 @@ input[type="number"] { width: 70px; }
             <input type="text" id="new-msg" placeholder="Add a message..." style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:6px 10px;font-size:11px;border-radius:2px;outline:none">
             <button class="btn accent" onclick="addMessage()">Add</button>
           </div>
+        </div>
+      </div>
+      <div class="panel" style="grid-column:1/-1">
+        <div class="panel-header"><span class="panel-title">🔒 Account Security</span></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:10px;max-width:400px">
+          <div class="field">
+            <label>Current Password</label>
+            <input type="password" id="cfg-current-pw" placeholder="Enter current password" autocomplete="current-password">
+          </div>
+          <div class="field">
+            <label>New Password</label>
+            <input type="password" id="cfg-new-pw" placeholder="Enter new password (min 6 chars)" autocomplete="new-password">
+          </div>
+          <div class="field">
+            <label>Confirm New Password</label>
+            <input type="password" id="cfg-confirm-pw" placeholder="Confirm new password" autocomplete="new-password">
+          </div>
+          <div id="pw-change-status" style="font-size:11px;display:none;padding:6px 10px;border-radius:2px;letter-spacing:1px"></div>
+          <button class="btn accent" onclick="changePassword()">Change Password</button>
         </div>
       </div>
     </div>

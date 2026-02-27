@@ -983,3 +983,68 @@ function setStatus(msg) {
   if (el) el.textContent = msg;
   console.log('[AutoDJ]', msg);
 }
+
+// ─── Authentication ─────────────────────────────────────────────────────────
+async function doLogout() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch(e) {}
+  window.location.href = '/login';
+}
+
+async function changePassword() {
+  const statusEl = document.getElementById('pw-change-status');
+  const currentPw = document.getElementById('cfg-current-pw').value;
+  const newPw = document.getElementById('cfg-new-pw').value;
+  const confirmPw = document.getElementById('cfg-confirm-pw').value;
+
+  statusEl.style.display = 'none';
+
+  if (!currentPw || !newPw || !confirmPw) {
+    showPwStatus('Please fill in all password fields', false);
+    return;
+  }
+  if (newPw !== confirmPw) {
+    showPwStatus('New passwords do not match', false);
+    return;
+  }
+  if (newPw.length < 6) {
+    showPwStatus('New password must be at least 6 characters', false);
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      showPwStatus('Password changed successfully', true);
+      document.getElementById('cfg-current-pw').value = '';
+      document.getElementById('cfg-new-pw').value = '';
+      document.getElementById('cfg-confirm-pw').value = '';
+    } else {
+      showPwStatus(data.error || 'Failed to change password', false);
+    }
+  } catch(e) {
+    showPwStatus('Connection error', false);
+  }
+}
+
+function showPwStatus(msg, success) {
+  const el = document.getElementById('pw-change-status');
+  el.style.display = 'block';
+  el.textContent = msg;
+  if (success) {
+    el.style.background = 'rgba(0,255,136,0.08)';
+    el.style.border = '1px solid rgba(0,255,136,0.25)';
+    el.style.color = 'var(--green)';
+  } else {
+    el.style.background = 'rgba(255,51,102,0.08)';
+    el.style.border = '1px solid rgba(255,51,102,0.25)';
+    el.style.color = 'var(--accent2)';
+  }
+}

@@ -1,0 +1,27 @@
+/* ─── AutoDJ Shared Styles ─────────────────────────────────────────────────── */
+/* Common variables and resets shared across login, DJ, and display pages       */
+
+:root {
+  --bg: #06080d;
+  --surface: #0b0f1a;
+  --surface2: #101520;
+  --border: #1a2035;
+  --accent: #00e5ff;
+  --accent2: #ff3366;
+  --accent3: #a855f7;
+  --green: #00ff88;
+  --yellow: #ffcc00;
+  --text: #b8c5d6;
+  --bright: #e8f0ff;
+  --muted: #3d4f6b;
+  --glow-c: rgba(0,229,255,0.25);
+  --glow-r: rgba(255,51,102,0.25);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
