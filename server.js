@@ -59,7 +59,11 @@ function requireAuth(req, res, next) {
 // ─── Public Routes (login page, display page, static assets) ────────────────
 app.get('/login', (req, res) => {
   if (req.session && req.session.authenticated) return res.redirect('/dj');
-  res.sendFile(path.join(__dirname, 'login.html'));
+  const loginPath = path.join(__dirname, 'login.html');
+  if (!fs.existsSync(loginPath)) {
+    return res.status(500).send('login.html not found at ' + loginPath + '. Ensure it was copied into the Docker image.');
+  }
+  res.sendFile(loginPath);
 });
 
 // Serve static files selectively — protect dj.js and engine.js
@@ -367,26 +371,28 @@ Respond ONLY with a JSON array of 5 objects: [{"title":string,"artist":string,"r
 app.get('/api/youtube/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.json([]);
+  console.log(`[Search] Looking for: "${q}"`);
 
-  // Piped instances (NewPipe alternative, open source YouTube frontend)
+  // Piped instances (NewPipe alternative, updated Feb 2026)
   const pipedInstances = [
     'https://pipedapi.kavin.rocks',
-    'https://pipedapi.reallyaweso.me',
     'https://pipedapi.tokhmi.xyz',
-    'https://piped-api.garudalinux.org',
-    'https://api.piped.projectsegfau.lt',
+    'https://pipedapi.moomoo.me',
+    'https://pipedapi.syncpundit.io',
   ];
 
   // Try Piped first
   for (const instance of pipedInstances) {
     try {
       const url = `${instance}/search?q=${encodeURIComponent(q)}&filter=videos`;
+      console.log(`[Search] Trying Piped: ${instance}`);
       const r = await fetch(url, { signal: AbortSignal.timeout(5000),
         headers: { 'User-Agent': 'AutoDJ/2.0' } });
-      if (!r.ok) continue;
+      if (!r.ok) { console.error(`[Search] Piped ${instance}: HTTP ${r.status}`); continue; }
       const data = await r.json();
       const items = (data.items || []).filter(i => i.type === 'stream' || i.url).slice(0, 3);
       if (items.length > 0) {
+        console.log(`[Search] Found ${items.length} results via Piped (${instance})`);
         return res.json(items.map(i => ({
           videoId: i.url?.replace('/watch?v=','') || i.videoId,
           title: i.title,
@@ -394,25 +400,30 @@ app.get('/api/youtube/search', async (req, res) => {
           lengthSeconds: i.duration || 0
         })));
       }
-    } catch(e) { continue; }
+    } catch(e) { console.error(`[Search] Piped ${instance} error: ${e.message}`); continue; }
   }
 
-  // Invidious fallback
+  // Invidious fallback (updated Feb 2026)
   const invidiousInstances = [
-    'https://invidious.privacyredirect.com',
-    'https://iv.datura.network',
+    'https://inv.nadeko.net',
+    'https://yewtu.be',
     'https://invidious.nerdvpn.de',
   ];
   for (const instance of invidiousInstances) {
     try {
+      console.log(`[Search] Trying Invidious: ${instance}`);
       const url = `${instance}/api/v1/search?q=${encodeURIComponent(q)}&type=video&fields=videoId,title,author,lengthSeconds`;
       const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (!r.ok) continue;
+      if (!r.ok) { console.error(`[Search] Invidious ${instance}: HTTP ${r.status}`); continue; }
       const data = await r.json();
-      if (Array.isArray(data) && data.length > 0) return res.json(data.slice(0, 3));
-    } catch(e) { continue; }
+      if (Array.isArray(data) && data.length > 0) {
+        console.log(`[Search] Found ${data.length} results via Invidious (${instance})`);
+        return res.json(data.slice(0, 3));
+      }
+    } catch(e) { console.error(`[Search] Invidious ${instance} error: ${e.message}`); continue; }
   }
 
+  console.warn(`[Search] No results for: "${q}"`);
   res.json([]);
 });
 
@@ -423,10 +434,9 @@ app.get('/api/piped/streams', async (req, res) => {
 
   const pipedInstances = [
     'https://pipedapi.kavin.rocks',
-    'https://pipedapi.reallyaweso.me',
     'https://pipedapi.tokhmi.xyz',
-    'https://piped-api.garudalinux.org',
-    'https://api.piped.projectsegfau.lt',
+    'https://pipedapi.moomoo.me',
+    'https://pipedapi.syncpundit.io',
   ];
 
   for (const instance of pipedInstances) {
@@ -435,7 +445,7 @@ app.get('/api/piped/streams', async (req, res) => {
         signal: AbortSignal.timeout(8000),
         headers: { 'User-Agent': 'AutoDJ/2.0' }
       });
-      if (!r.ok) continue;
+      if (!r.ok) { console.error(`Piped stream ${instance}: HTTP ${r.status}`); continue; }
       const data = await r.json();
       if (data.audioStreams && data.audioStreams.length > 0) {
         // Sort by quality, prefer high bitrate
@@ -563,6 +573,49 @@ app.get('/api/piped/relay', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     upstream.body.pipe(res);
   } catch(e) { res.status(502).send('Relay error: ' + e.message); }
+});
+
+// ─── Instance Health Check ──────────────────────────────────────────────────
+app.get('/api/instances/test', async (req, res) => {
+  const pipedInstances = [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.tokhmi.xyz',
+    'https://pipedapi.moomoo.me',
+    'https://pipedapi.syncpundit.io',
+  ];
+  const invidiousInstances = [
+    'https://inv.nadeko.net',
+    'https://yewtu.be',
+    'https://invidious.nerdvpn.de',
+  ];
+
+  const results = { piped: [], invidious: [] };
+
+  for (const inst of pipedInstances) {
+    try {
+      const start = Date.now();
+      const r = await fetch(`${inst}/search?q=test&filter=videos`, {
+        signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'AutoDJ/2.0' }
+      });
+      results.piped.push({ url: inst, status: r.ok ? 'up' : `http-${r.status}`, latency: Date.now() - start });
+    } catch(e) {
+      results.piped.push({ url: inst, status: 'down', error: e.message });
+    }
+  }
+
+  for (const inst of invidiousInstances) {
+    try {
+      const start = Date.now();
+      const r = await fetch(`${inst}/api/v1/search?q=test&type=video`, {
+        signal: AbortSignal.timeout(5000)
+      });
+      results.invidious.push({ url: inst, status: r.ok ? 'up' : `http-${r.status}`, latency: Date.now() - start });
+    } catch(e) {
+      results.invidious.push({ url: inst, status: 'down', error: e.message });
+    }
+  }
+
+  res.json(results);
 });
 
 // ─── SSE / Now Playing ────────────────────────────────────────────────────────

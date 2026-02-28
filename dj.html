@@ -599,6 +599,13 @@ input[type="number"] { width: 70px; }
             <button class="btn green" onclick="document.getElementById('folder-input').click()">+ Add Folder</button>
             <input type="file" id="folder-input" webkitdirectory mozdirectory accept="audio/*" style="display:none" onchange="addLocalFiles(this.files)">
             <hr style="border-color:var(--border)">
+            <div class="field">
+              <label>Add Online Song</label>
+              <input type="text" id="online-song-input" placeholder="Artist - Title  or  search query" style="font-size:11px">
+              <div id="online-add-status" style="font-size:9px;color:var(--muted);min-height:14px"></div>
+            </div>
+            <button class="btn" style="border-color:var(--accent3);color:var(--accent3)" onclick="addOnlineSong()">🔍 Search &amp; Queue</button>
+            <hr style="border-color:var(--border)">
             <button class="btn" style="border-color:#ffcc00;color:#ffcc00" onclick="document.getElementById('temp-upload-input').click()">⏳ Upload (Temp)</button>
             <input type="file" id="temp-upload-input" multiple accept="audio/*" style="display:none" onchange="uploadTempFiles(this.files)">
             <button class="btn" style="border-color:#ffcc00;color:#ffcc00" onclick="document.getElementById('temp-folder-input').click()">⏳ Upload Folder (Temp)</button>
@@ -688,6 +695,15 @@ input[type="number"] { width: 70px; }
           </div>
           <button class="btn" id="spotify-search-btn" style="border-color:#1db954;color:#1db954" onclick="spotifySearch()">🎵 Spotify Search</button>
           <div id="spotify-results"></div>
+        </div>
+      </div>
+      <div class="panel" style="grid-column:1/-1">
+        <div class="panel-header">
+          <span class="panel-title">🔍 Discovery Results</span>
+          <button class="btn" style="padding:3px 10px;font-size:9px" onclick="clearDiscoverResults()">Clear</button>
+        </div>
+        <div id="discover-results" style="max-height:300px;overflow-y:auto">
+          <div style="color:var(--muted);font-size:11px;padding:12px;text-align:center">Run a discovery to see results here</div>
         </div>
       </div>
       <div class="panel" style="grid-column:1/-1">

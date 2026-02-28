@@ -295,14 +295,24 @@ const Engine = (() => {
   // ─── Piped direct audio stream ────────────────────────────────────────────────
   async function getPipedAudioUrl(videoId) {
     try {
+      console.log(`[Engine] Getting Piped stream for videoId: ${videoId}`);
       const r = await fetch(`/api/piped/streams?videoId=${videoId}`);
-      if (!r.ok) return null;
+      if (!r.ok) {
+        console.error(`[Engine] Piped streams HTTP ${r.status} for ${videoId}`);
+        return null;
+      }
       const data = await r.json();
       if (data.audioStreams?.length > 0) {
+        console.log(`[Engine] Got ${data.audioStreams.length} audio streams for ${videoId}`);
         return { url: data.audioStreams[0].url, thumbnail: data.thumbnail,
                  title: data.title, uploader: data.uploader, duration: data.duration };
       }
-    } catch(e) {}
+      if (data.error) {
+        console.error(`[Engine] Piped error for ${videoId}: ${data.error}`);
+      }
+    } catch(e) {
+      console.error(`[Engine] getPipedAudioUrl error:`, e);
+    }
     return null;
   }
 
@@ -355,10 +365,23 @@ const Engine = (() => {
   async function searchVideo(artist, title) {
     try {
       const q = `${artist} ${title} audio`;
+      console.log(`[Engine] Searching video: "${q}"`);
       const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`);
+      if (!r.ok) {
+        console.error(`[Engine] Video search HTTP ${r.status}`);
+        return null;
+      }
       const results = await r.json();
-      return results[0]?.videoId || null;
-    } catch { return null; }
+      if (!results.length) {
+        console.warn(`[Engine] No video results for: ${artist} — ${title}`);
+        return null;
+      }
+      console.log(`[Engine] Found video: ${results[0].videoId} — ${results[0].title}`);
+      return results[0].videoId;
+    } catch(e) {
+      console.error(`[Engine] Video search error:`, e);
+      return null;
+    }
   }
 
   // ─── AI ───────────────────────────────────────────────────────────────────────

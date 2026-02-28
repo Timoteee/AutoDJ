@@ -29,6 +29,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadConfig();
   startClock();
   setupDropZone();
+  // Enter key for online song input
+  const onlineInput = document.getElementById('online-song-input');
+  if (onlineInput) onlineInput.addEventListener('keydown', e => { if (e.key === 'Enter') addOnlineSong(); });
   setStatus('Ready — add local files or set a seed artist in Discover tab');
   // Start render loop after a brief paint delay
   setTimeout(startRenderLoop, 200);
@@ -628,6 +631,7 @@ async function startAutoDiscover() {
   DJ.knownArtists = [artist];
   DJ.usedTracks.clear();
   DJ.seedTags = [];
+  clearDiscoverResults();
 
   try {
     const info = track ? await Engine.getTrackInfo(artist, track) : await Engine.getArtistInfo(artist);
@@ -637,6 +641,9 @@ async function startAutoDiscover() {
     let seeds = track ? [{title:track,artist}] : [];
     const tops = await Engine.getTopTracks(artist, 4);
     seeds.push(...tops);
+
+    // Show found tracks in the Discover results panel before queuing
+    showDiscoverResults(seeds, 'Top tracks');
 
     for (const t of seeds.slice(0, 3)) await enqueueOnlineTrack(t);
 
@@ -648,7 +655,7 @@ async function startAutoDiscover() {
 
     // Keep filling
     setTimeout(() => fetchMoreOnline(), 2000);
-  } catch(e) { setStatus('Discovery error: ' + e.message); }
+  } catch(e) { setStatus('Discovery error: ' + e.message); console.error('[Discovery]', e); }
 }
 
 async function fetchMoreOnline() {
@@ -660,6 +667,7 @@ async function fetchMoreOnline() {
   try {
     if ((mode === 'similar' || mode === 'both') && DJ.knownArtists.length) {
       const base = DJ.knownArtists[Math.floor(Math.random() * Math.min(DJ.knownArtists.length, 5))];
+      setStatus(`Finding artists similar to ${base}...`);
       const similar = await Engine.getSimilarArtists(base, 6);
       for (const a of similar.slice(0, 3)) {
         const tracks = await Engine.getTopTracks(a, 2);
@@ -668,11 +676,12 @@ async function fetchMoreOnline() {
     }
     if ((mode === 'tag' || mode === 'both') && DJ.seedTags.length) {
       const tag = DJ.seedTags[Math.floor(Math.random() * DJ.seedTags.length)];
+      setStatus(`Finding tracks tagged "${tag}"...`);
       const tagTracks = await Engine.getTagTracks(tag, 5);
       candidates.push(...tagTracks);
     }
     const cur = DJ.queue[DJ.trackIndex];
-    if (cur && cur.type === 'online') {
+    if (cur && cur.artist && cur.title) {
       const sim = await Engine.getSimilarTracks(cur.artist, cur.title, 5);
       candidates.push(...sim);
     }
@@ -682,13 +691,18 @@ async function fetchMoreOnline() {
       return !DJ.usedTracks.has(key) && c.artist && c.title;
     }).sort(() => Math.random() - 0.5);
 
+    // Show what we found
+    if (candidates.length > 0) showDiscoverResults(candidates, 'Discovered');
+
     let added = 0;
     for (const t of candidates) {
       if (added >= 4) break;
       if (await enqueueOnlineTrack(t)) added++;
     }
     if (added > 0) { renderQueue(); setStatus(`Queued ${added} new track${added!==1?'s':''} from discovery`); }
-  } catch(e) { setStatus('Discovery error: ' + e.message); }
+    else if (candidates.length === 0) { setStatus('No new candidates found — try broadening seed tags'); }
+    else { setStatus('Found candidates but could not resolve streams — instances may be down'); }
+  } catch(e) { setStatus('Discovery error: ' + e.message); console.error('[Discovery]', e); }
   finally { DJ.discovering = false; }
 }
 
@@ -696,26 +710,169 @@ async function enqueueOnlineTrack(t) {
   const key = `${t.artist?.toLowerCase()}::${t.title?.toLowerCase()}`;
   if (DJ.usedTracks.has(key) || !t.artist || !t.title) return false;
 
-  setStatus(`Searching: ${t.title} — ${t.artist}`);
-  const videoId = await Engine.searchVideo(t.artist, t.title);
-  if (!videoId) return false;
+  setStatus(`Searching: ${t.artist} — ${t.title}`);
+  try {
+    const videoId = await Engine.searchVideo(t.artist, t.title);
+    if (!videoId) {
+      console.warn(`[Enqueue] No video found for: ${t.artist} — ${t.title}`);
+      setStatus(`No video found for: ${t.artist} — ${t.title}`);
+      updateDiscoverItemStatus(t, 'not-found');
+      return false;
+    }
 
-  const info = await Engine.getTrackInfo(t.artist, t.title);
-  DJ.usedTracks.add(key);
+    const info = await Engine.getTrackInfo(t.artist, t.title);
+    DJ.usedTracks.add(key);
 
-  const track = {
-    type: 'online', youtubeId: videoId,
-    title: t.title, artist: t.artist,
-    album: info.album || '', tags: info.tags || [],
-    duration: info.duration || t.duration || 0,
-    image: info.image || '', artwork: info.image || ''
-  };
-  DJ.queue.push(track);
-  if (!DJ.knownArtists.includes(t.artist)) DJ.knownArtists.push(t.artist);
-  (info.tags||[]).forEach(tag => { if (!DJ.seedTags.includes(tag)) DJ.seedTags.push(tag); });
-  renderQueue();
-  return true;
+    const track = {
+      type: 'online', youtubeId: videoId,
+      title: t.title, artist: t.artist,
+      album: info.album || '', tags: info.tags || [],
+      duration: info.duration || t.duration || 0,
+      image: info.image || '', artwork: info.image || ''
+    };
+    DJ.queue.push(track);
+    if (!DJ.knownArtists.includes(t.artist)) DJ.knownArtists.push(t.artist);
+    (info.tags||[]).forEach(tag => { if (!DJ.seedTags.includes(tag)) DJ.seedTags.push(tag); });
+    renderQueue();
+    updateDiscoverItemStatus(t, 'queued');
+    setStatus(`Queued: ${t.artist} — ${t.title}`);
+    return true;
+  } catch(e) {
+    console.error(`[Enqueue] Error for ${t.artist} — ${t.title}:`, e);
+    setStatus(`Error queuing ${t.artist} — ${t.title}: ${e.message}`);
+    updateDiscoverItemStatus(t, 'error');
+    return false;
+  }
 }
+
+// ─── Discovery Results Panel ─────────────────────────────────────────────────
+function clearDiscoverResults() {
+  const el = document.getElementById('discover-results');
+  if (el) el.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:12px;text-align:center">Run a discovery to see results here</div>';
+}
+
+function showDiscoverResults(tracks, label) {
+  const el = document.getElementById('discover-results');
+  if (!el || !tracks.length) return;
+
+  const existingHtml = el.innerHTML.includes('disc-item') ? el.innerHTML : '';
+  const newHtml = tracks.map(t => {
+    const id = `disc-${(t.artist||'').replace(/\W/g,'')}-${(t.title||'').replace(/\W/g,'')}`.slice(0,60);
+    return `<div class="disc-item" id="${id}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px">
+      <div style="flex:1;overflow:hidden">
+        <div style="color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.title || '?')}</div>
+        <div style="color:var(--muted);font-size:10px">${escHtml(t.artist || '?')}</div>
+      </div>
+      <span class="disc-status" style="font-size:9px;color:var(--muted);min-width:50px;text-align:center">—</span>
+      <button class="btn" style="padding:3px 10px;font-size:9px;white-space:nowrap"
+        onclick="manualEnqueueDiscover('${escAttr(t.artist)}','${escAttr(t.title)}',this)">+ Queue</button>
+    </div>`;
+  }).join('');
+
+  if (existingHtml.includes('disc-item')) {
+    // Append
+    el.insertAdjacentHTML('beforeend', newHtml);
+  } else {
+    el.innerHTML = `<div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding:6px 12px;border-bottom:1px solid var(--border)">${label}</div>` + newHtml;
+  }
+}
+
+function updateDiscoverItemStatus(t, status) {
+  const id = `disc-${(t.artist||'').replace(/\W/g,'')}-${(t.title||'').replace(/\W/g,'')}`.slice(0,60);
+  const el = document.getElementById(id);
+  if (!el) return;
+  const statusEl = el.querySelector('.disc-status');
+  const btn = el.querySelector('button');
+  if (status === 'queued') {
+    if (statusEl) { statusEl.textContent = '✓ Queued'; statusEl.style.color = 'var(--green)'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Queued'; }
+  } else if (status === 'not-found') {
+    if (statusEl) { statusEl.textContent = '✗ No video'; statusEl.style.color = 'var(--accent2)'; }
+  } else if (status === 'error') {
+    if (statusEl) { statusEl.textContent = '✗ Error'; statusEl.style.color = 'var(--accent2)'; }
+  } else if (status === 'searching') {
+    if (statusEl) { statusEl.textContent = '⟳ ...'; statusEl.style.color = 'var(--accent)'; }
+  }
+}
+
+async function manualEnqueueDiscover(artist, title, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  const result = await enqueueOnlineTrack({ artist, title });
+  if (!result && btn) {
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+    btn.style.borderColor = 'var(--accent2)';
+    btn.style.color = 'var(--accent2)';
+  }
+}
+
+// ─── Add Online Song by Search (Queue Tab) ──────────────────────────────────
+async function addOnlineSong() {
+  const input = document.getElementById('online-song-input');
+  const statusEl = document.getElementById('online-add-status');
+  if (!input) return;
+  const query = input.value.trim();
+  if (!query) { if (statusEl) statusEl.textContent = 'Enter an artist and title'; return; }
+
+  if (statusEl) { statusEl.textContent = 'Searching...'; statusEl.style.color = 'var(--accent)'; }
+
+  // Try to parse "artist - title" or just search as-is
+  let artist = '', title = '';
+  if (query.includes(' - ')) {
+    const parts = query.split(' - ');
+    artist = parts[0].trim();
+    title = parts.slice(1).join(' - ').trim();
+  } else if (query.includes(' — ')) {
+    const parts = query.split(' — ');
+    artist = parts[0].trim();
+    title = parts.slice(1).join(' — ').trim();
+  } else {
+    // Search as-is, use the result title/author
+    title = query;
+    artist = '';
+  }
+
+  try {
+    const searchQ = artist ? `${artist} ${title}` : query;
+    const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(searchQ + ' audio')}`);
+    const results = await r.json();
+
+    if (!results.length) {
+      if (statusEl) { statusEl.textContent = `No results for "${query}"`; statusEl.style.color = 'var(--accent2)'; }
+      return;
+    }
+
+    const best = results[0];
+    const videoId = best.videoId;
+    const trackTitle = title || best.title || query;
+    const trackArtist = artist || best.author || 'Unknown';
+
+    // Try to get metadata from Last.fm
+    let info = { tags: [], album: '', image: '', duration: 0 };
+    if (DJ.hasLastfm) {
+      try { info = await Engine.getTrackInfo(trackArtist, trackTitle); } catch(e) {}
+    }
+
+    const track = {
+      type: 'online', youtubeId: videoId,
+      title: trackTitle, artist: trackArtist,
+      album: info.album || '', tags: info.tags || [],
+      duration: info.duration || best.lengthSeconds || 0,
+      image: info.image || '', artwork: info.image || ''
+    };
+    DJ.queue.push(track);
+    renderQueue();
+    input.value = '';
+    if (statusEl) { statusEl.textContent = `Queued: ${trackArtist} — ${trackTitle}`; statusEl.style.color = 'var(--green)'; }
+    setStatus(`Queued: ${trackArtist} — ${trackTitle}`);
+  } catch(e) {
+    console.error('[AddOnline]', e);
+    if (statusEl) { statusEl.textContent = `Error: ${e.message}`; statusEl.style.color = 'var(--accent2)'; }
+  }
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 
 // ─── Spotify ──────────────────────────────────────────────────────────────────
 async function spotifySearch() {
@@ -743,21 +900,39 @@ async function spotifySearch() {
     }
     div.innerHTML = tracks.length ? tracks.map((t,i) => `
       <div class="spotify-result">
-        ${t.image?`<img class="sp-img" src="${t.image}">`:'<div class="sp-img" style="background:var(--border)">♪</div>'}
-        <div class="sp-info"><div class="sp-name">${t.title}</div><div class="sp-artist">${t.artist}${t.album?' · '+t.album:''}</div></div>
-        <button class="btn" style="padding:3px 8px;font-size:9px" onclick='queueSpotifyTrack(${JSON.stringify(t).replace(/'/g,"&#39;")})'>Queue</button>
+        ${t.image?`<img class="sp-img" src="${escHtml(t.image)}">`:'<div class="sp-img" style="background:var(--border);display:flex;align-items:center;justify-content:center">♪</div>'}
+        <div class="sp-info">
+          <div class="sp-name">${escHtml(t.title)}</div>
+          <div class="sp-artist">${escHtml(t.artist)}${t.album?' · '+escHtml(t.album):''}</div>
+        </div>
+        <button class="btn" style="padding:3px 8px;font-size:9px" onclick="queueSpotifyResult(${i})">+ Queue</button>
       </div>`).join('') : '<div style="color:var(--muted);font-size:11px;padding:8px">No results</div>';
+    // Store results for button reference
+    window._spotifyResults = tracks;
   } catch(e) { div.innerHTML = `<div style="color:var(--accent2);font-size:11px;padding:8px">Error: ${e.message}</div>`; }
 }
 
+async function queueSpotifyResult(index) {
+  const t = window._spotifyResults?.[index];
+  if (!t) return;
+  await queueSpotifyTrack(t);
+}
+
 async function queueSpotifyTrack(t) {
-  setStatus(`Finding "${t.title}"...`);
-  const videoId = await Engine.searchVideo(t.artist, t.title);
-  if (videoId) {
-    DJ.queue.push({...t, type:'online', youtubeId:videoId, artwork:t.image});
-    renderQueue();
-    setStatus(`Queued: ${t.title}`);
-  } else { setStatus(`Not found: ${t.title}`); }
+  setStatus(`Finding stream for "${t.artist} — ${t.title}"...`);
+  try {
+    const videoId = await Engine.searchVideo(t.artist, t.title);
+    if (videoId) {
+      DJ.queue.push({...t, type:'online', youtubeId:videoId, artwork:t.image});
+      renderQueue();
+      setStatus(`Queued: ${t.artist} — ${t.title}`);
+    } else {
+      setStatus(`No video found for: ${t.artist} — ${t.title}`);
+    }
+  } catch(e) {
+    console.error('[SpotifyQueue]', e);
+    setStatus(`Error queuing ${t.title}: ${e.message}`);
+  }
 }
 
 // ─── AI ───────────────────────────────────────────────────────────────────────
@@ -768,22 +943,48 @@ async function aiAnalyzeAndRecommend() {
   try {
     const cur = DJ.queue[DJ.trackIndex];
     const recs = await Engine.aiRecommend(cur, DJ.history, DJ.seedTags, document.getElementById('ai-mood')?.value);
-    el.innerHTML = (Array.isArray(recs) ? recs : []).map(r =>
+    const results = Array.isArray(recs) ? recs : [];
+    window._aiResults = results;
+    el.innerHTML = results.length ? results.map((r, i) =>
       `<div style="margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:6px">
-        <div style="color:var(--bright)">${r.title} — ${r.artist}</div>
-        <div style="color:var(--accent3);font-size:10px">${r.reason||''}</div>
+        <div style="color:var(--bright)">${escHtml(r.artist)} — ${escHtml(r.title)}</div>
+        <div style="color:var(--accent3);font-size:10px">${escHtml(r.reason||'')}</div>
         <button class="btn" style="padding:3px 8px;font-size:9px;margin-top:4px"
-          onclick="enqueueAITrack('${r.artist.replace(/'/g,"\\'")}','${r.title.replace(/'/g,"\\'")}')">+ Queue</button>
-      </div>`).join('') || '<span style="color:var(--muted)">No recommendations returned</span>';
+          onclick="enqueueAIResult(${i},this)">+ Queue</button>
+      </div>`).join('') : '<span style="color:var(--muted)">No recommendations returned</span>';
   } catch(e) { el.innerHTML = `<span style="color:var(--accent2)">Error: ${e.message}</span>`; }
 }
 
+async function enqueueAIResult(index, btn) {
+  const r = window._aiResults?.[index];
+  if (!r) return;
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    const videoId = await Engine.searchVideo(r.artist, r.title);
+    if (videoId) {
+      DJ.queue.push({type:'online',youtubeId:videoId,title:r.title,artist:r.artist,tags:DJ.seedTags.slice(0,3)});
+      renderQueue();
+      setStatus(`Queued: ${r.artist} — ${r.title}`);
+      if (btn) { btn.textContent = '✓'; btn.style.color = 'var(--green)'; btn.style.borderColor = 'var(--green)'; }
+    } else {
+      setStatus(`No video found for: ${r.artist} — ${r.title}`);
+      if (btn) { btn.disabled = false; btn.textContent = 'Retry'; btn.style.color = 'var(--accent2)'; btn.style.borderColor = 'var(--accent2)'; }
+    }
+  } catch(e) {
+    console.error('[AIQueue]', e);
+    setStatus(`Error: ${e.message}`);
+    if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+  }
+}
+
 async function enqueueAITrack(artist, title) {
-  const videoId = await Engine.searchVideo(artist, title);
-  if (videoId) {
-    DJ.queue.push({type:'online',youtubeId:videoId,title,artist,tags:DJ.seedTags.slice(0,3)});
-    renderQueue(); setStatus(`Queued: ${title}`);
-  } else setStatus(`Not found: ${title}`);
+  try {
+    const videoId = await Engine.searchVideo(artist, title);
+    if (videoId) {
+      DJ.queue.push({type:'online',youtubeId:videoId,title,artist,tags:DJ.seedTags.slice(0,3)});
+      renderQueue(); setStatus(`Queued: ${artist} — ${title}`);
+    } else setStatus(`No video found for: ${artist} — ${title}`);
+  } catch(e) { setStatus(`Error: ${e.message}`); }
 }
 
 async function aiRefillQueue() {

@@ -10,10 +10,12 @@ RUN npm install --production
 COPY server.js ./
 COPY dj.html ./
 COPY display.html ./
+COPY login.html ./
 COPY dj.js ./
 COPY engine.js ./
+COPY css/ ./css/
 
-RUN mkdir -p /music
+RUN mkdir -p /music /app/playlists
 
 EXPOSE 3000
 
