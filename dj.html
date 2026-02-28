@@ -211,7 +211,7 @@ body::before {
 
 .qitem {
   display: grid;
-  grid-template-columns: 28px auto 1fr auto 60px 60px 24px;
+  grid-template-columns: 24px auto 1fr auto 60px auto;
   gap: 8px; align-items: center;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
@@ -469,6 +469,7 @@ input[type="number"] { width: 70px; }
           <button class="ctrl-btn" onclick="deckStop('a')">⏹</button>
           <button class="ctrl-btn" id="cue-btn-a" onclick="setCue('a')">CUE</button>
           <button class="ctrl-btn" onclick="deckSkip('a')">⏭</button>
+          <button class="ctrl-btn" onclick="loadNextOnIdleDeck()" title="Load next queued track" style="font-size:9px;letter-spacing:1px">LOAD↓</button>
         </div>
         <div class="vol-row">VOL <input type="range" id="vol-a" min="0" max="1" step="0.01" value="1" oninput="setVol('a',this.value)"> <span id="vol-val-a">100%</span></div>
       </div>
@@ -529,6 +530,7 @@ input[type="number"] { width: 70px; }
           <button class="ctrl-btn" onclick="deckStop('b')">⏹</button>
           <button class="ctrl-btn" id="cue-btn-b" onclick="setCue('b')">CUE</button>
           <button class="ctrl-btn" onclick="deckSkip('b')">⏭</button>
+          <button class="ctrl-btn" onclick="loadNextOnIdleDeck()" title="Load next queued track" style="font-size:9px;letter-spacing:1px">LOAD↓</button>
         </div>
         <div class="vol-row">VOL <input type="range" id="vol-b" min="0" max="1" step="0.01" value="1" oninput="setVol('b',this.value)"> <span id="vol-val-b">100%</span></div>
       </div>
@@ -679,10 +681,11 @@ input[type="number"] { width: 70px; }
           </div>
           <button class="btn accent" id="start-discover-btn" onclick="startAutoDiscover()">▶ Start Auto-Discovery</button>
           <button class="btn" onclick="fetchMoreOnline()">+ Fetch More Tracks</button>
+          <button class="btn" style="border-color:var(--accent2);color:var(--accent2)" onclick="findSimilarToCurrent()">♫ Similar to Current</button>
         </div>
       </div>
       <div class="panel">
-        <div class="panel-header"><span class="panel-title">Spotify Discovery</span></div>
+        <div class="panel-header"><span class="panel-title">Spotify Discovery <span style="font-size:8px;color:var(--accent2);letter-spacing:1px">(OPTIONAL — free API retiring)</span></span></div>
         <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
           <div class="field"><label>Search</label><input type="text" id="spotify-search" placeholder="Artist, track, or mood..."></div>
           <div class="field">
@@ -723,19 +726,22 @@ input[type="number"] { width: 70px; }
   <div id="tab-settings" class="tab-content">
     <div class="settings-grid">
       <div class="panel">
-        <div class="panel-header"><span class="panel-title">API Keys</span></div>
+        <div class="panel-header"><span class="panel-title">API Keys &amp; Services</span></div>
         <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+          <div id="service-test-banner" style="display:none;font-size:10px;letter-spacing:1px;padding:6px 12px;border-radius:2px;border:1px solid;text-align:center"></div>
           <div class="field">
             <label>Last.fm API Key <a href="https://www.last.fm/api/account/create" target="_blank" style="color:var(--accent);font-size:9px">GET FREE →</a></label>
             <input type="password" id="cfg-lastfm" placeholder="Enter Last.fm API key...">
+            <div id="test-lastfm" style="font-size:9px;min-height:12px"></div>
           </div>
           <div class="field">
-            <label>Spotify Client ID <a href="https://developer.spotify.com/dashboard" target="_blank" style="color:var(--green);font-size:9px">GET FREE →</a></label>
+            <label>Spotify Client ID <a href="https://developer.spotify.com/dashboard" target="_blank" style="color:var(--green);font-size:9px">OPTIONAL →</a></label>
             <input type="text" id="cfg-sp-id" placeholder="Spotify Client ID">
           </div>
           <div class="field">
             <label>Spotify Client Secret</label>
             <input type="password" id="cfg-sp-secret" placeholder="Spotify Client Secret">
+            <div id="test-spotify" style="font-size:9px;min-height:12px"></div>
           </div>
           <div class="field">
             <label>AI Provider</label>
@@ -751,8 +757,19 @@ input[type="number"] { width: 70px; }
           <div class="field">
             <label>OpenAI API Key</label>
             <input type="password" id="cfg-openai" placeholder="sk-...">
+            <div id="test-ai" style="font-size:9px;min-height:12px"></div>
           </div>
-          <button class="btn accent" onclick="saveConfig()">Save Keys</button>
+          <hr style="border-color:var(--border)">
+          <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)">Free Services (no key needed)</div>
+          <div style="display:flex;gap:16px;font-size:10px">
+            <div>MusicBrainz: <span id="test-musicbrainz">—</span></div>
+            <div>Discogs: <span id="test-discogs">—</span></div>
+          </div>
+          <div id="test-streaming" style="font-size:10px;color:var(--muted)"></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn accent" onclick="saveConfig()">Save Keys</button>
+            <button class="btn" onclick="testAllServices()">🔍 Test All</button>
+          </div>
         </div>
       </div>
       <div class="panel">
@@ -772,12 +789,39 @@ input[type="number"] { width: 70px; }
         </div>
       </div>
       <div class="panel" style="grid-column:1/-1">
-        <div class="panel-header"><span class="panel-title">Display Messages (shown on Now Playing screen)</span></div>
+        <div class="panel-header"><span class="panel-title">Display &amp; Marquee Settings</span></div>
         <div class="panel-body">
-          <div class="msg-list" id="msg-list"></div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <input type="text" id="new-msg" placeholder="Add a message..." style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:6px 10px;font-size:11px;border-radius:2px;outline:none">
-            <button class="btn accent" onclick="addMessage()">Add</button>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
+            <div class="field">
+              <label>Marquee Mode</label>
+              <select id="cfg-marquee-mode" onchange="toggleRssPreview()">
+                <option value="static">Static Messages</option>
+                <option value="rss">RSS Feed</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Background Art Source</label>
+              <select id="cfg-bg-art">
+                <option value="track">Track / Album Art</option>
+                <option value="artist">Artist Image</option>
+              </select>
+            </div>
+          </div>
+          <div id="rss-config" style="display:none;margin-bottom:12px">
+            <div class="field">
+              <label>RSS Feed URL</label>
+              <input type="text" id="cfg-rss-url" placeholder="https://example.com/feed.xml">
+            </div>
+            <button class="btn" style="margin-top:6px;padding:4px 12px;font-size:9px" onclick="previewRSS()">Preview Feed</button>
+            <div id="rss-preview" style="max-height:120px;overflow-y:auto;margin-top:6px;font-size:10px;color:var(--muted)"></div>
+          </div>
+          <div id="static-msg-config">
+            <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Static Messages</div>
+            <div class="msg-list" id="msg-list"></div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <input type="text" id="new-msg" placeholder="Add a message..." style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:6px 10px;font-size:11px;border-radius:2px;outline:none">
+              <button class="btn accent" onclick="addMessage()">Add</button>
+            </div>
           </div>
         </div>
       </div>

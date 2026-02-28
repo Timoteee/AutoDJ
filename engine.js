@@ -361,7 +361,123 @@ const Engine = (() => {
     catch(e) { return {tags:[],image:''}; }
   }
 
-  // ─── Video Search ─────────────────────────────────────────────────────────────
+  // ─── MusicBrainz Fallback ────────────────────────────────────────────────────
+  async function mbSimilarArtists(artist, limit=5) {
+    try {
+      const r = await fetch(`/api/musicbrainz/artist?query=${encodeURIComponent(artist)}&limit=1`);
+      const d = await r.json();
+      const mbid = d.artists?.[0]?.id;
+      if (!mbid) return [];
+      // Get artist relations
+      const r2 = await fetch(`/api/musicbrainz/artist/${mbid}?inc=artist-rels`);
+      const d2 = await r2.json();
+      const related = (d2.relations || [])
+        .filter(r => r.type === 'member of band' || r.type === 'collaboration' || r.type === 'is person')
+        .map(r => r.artist?.name).filter(Boolean).slice(0, limit);
+      return related;
+    } catch(e) { console.error('[MB] similar artists error:', e); return []; }
+  }
+
+  async function mbSearchTracks(artist, limit=5) {
+    try {
+      const r = await fetch(`/api/musicbrainz/recording?query=artist:${encodeURIComponent(artist)}&limit=${limit}`);
+      const d = await r.json();
+      return (d.recordings || []).map(rec => ({
+        title: rec.title,
+        artist: rec['artist-credit']?.[0]?.name || artist,
+        duration: rec.length ? Math.round(rec.length / 1000) : 0,
+        source: 'musicbrainz'
+      }));
+    } catch(e) { console.error('[MB] search error:', e); return []; }
+  }
+
+  async function mbSimilarTracks(artist, title, limit=5) {
+    // MusicBrainz doesn't have direct "similar tracks" — search by same artist + related
+    try {
+      const tracks = await mbSearchTracks(artist, limit);
+      // Filter out the original track
+      return tracks.filter(t => t.title.toLowerCase() !== title.toLowerCase());
+    } catch(e) { return []; }
+  }
+
+  // ─── Discogs Fallback ──────────────────────────────────────────────────────────
+  async function discogsSimilarTracks(artist, title, limit=5) {
+    try {
+      const r = await fetch(`/api/discogs/search?artist=${encodeURIComponent(artist)}&type=release&per_page=3`);
+      const d = await r.json();
+      const results = [];
+      for (const release of (d.results || []).slice(0, 2)) {
+        // Get tracklist from release
+        if (release.resource_url) {
+          try {
+            const r2 = await fetch(`/api/discogs/search?q=${encodeURIComponent(release.title + ' ' + artist)}&type=release&per_page=1`);
+            const d2 = await r2.json();
+            // Create track entries from the release info
+            if (d2.results?.[0]) {
+              results.push({
+                title: d2.results[0].title?.split(' - ')?.[1] || d2.results[0].title || release.title,
+                artist: artist,
+                duration: 0,
+                source: 'discogs'
+              });
+            }
+          } catch(e) {}
+        }
+      }
+      return results.filter(t => t.title.toLowerCase() !== title.toLowerCase()).slice(0, limit);
+    } catch(e) { console.error('[Discogs] error:', e); return []; }
+  }
+
+  // ─── Similar to Current (multi-source fallback chain) ─────────────────────────
+  async function findSimilarToCurrent(artist, title, limit=8) {
+    const results = { tracks: [], source: '' };
+
+    // 1. Last.fm track.getsimilar (primary)
+    try {
+      const lfmTracks = await getSimilarTracks(artist, title, limit);
+      if (lfmTracks.length > 0) {
+        results.tracks = lfmTracks.map(t => ({...t, source: 'lastfm'}));
+        results.source = 'Last.fm';
+        console.log(`[Similar] Got ${lfmTracks.length} from Last.fm`);
+        return results;
+      }
+    } catch(e) { console.warn('[Similar] Last.fm failed:', e.message); }
+
+    // 2. MusicBrainz fallback
+    try {
+      const mbTracks = await mbSimilarTracks(artist, title, limit);
+      if (mbTracks.length > 0) {
+        results.tracks = mbTracks;
+        results.source = 'MusicBrainz';
+        console.log(`[Similar] Got ${mbTracks.length} from MusicBrainz`);
+        return results;
+      }
+    } catch(e) { console.warn('[Similar] MusicBrainz failed:', e.message); }
+
+    // 3. Discogs fallback
+    try {
+      const dcTracks = await discogsSimilarTracks(artist, title, limit);
+      if (dcTracks.length > 0) {
+        results.tracks = dcTracks;
+        results.source = 'Discogs';
+        console.log(`[Similar] Got ${dcTracks.length} from Discogs`);
+        return results;
+      }
+    } catch(e) { console.warn('[Similar] Discogs failed:', e.message); }
+
+    // 4. Last.fm artist top tracks as last resort
+    try {
+      const topTracks = await getTopTracks(artist, limit);
+      if (topTracks.length > 0) {
+        results.tracks = topTracks.filter(t => t.title.toLowerCase() !== title.toLowerCase()).map(t => ({...t, source: 'lastfm-top'}));
+        results.source = 'Last.fm (top tracks)';
+        return results;
+      }
+    } catch(e) {}
+
+    results.source = 'none';
+    return results;
+  }
   async function searchVideo(artist, title) {
     try {
       const q = `${artist} ${title} audio`;
@@ -411,6 +527,8 @@ const Engine = (() => {
     crossfade, getVULevel, drawWaveform,
     getPipedAudioUrl, searchVideo,
     lfm, getSimilarArtists, getTopTracks, getSimilarTracks, getTagTracks, getTrackInfo, getArtistInfo,
+    mbSimilarArtists, mbSearchTracks, mbSimilarTracks,
+    discogsSimilarTracks, findSimilarToCurrent,
     aiRecommend, broadcastNowPlaying,
     get isFading() { return isFading; },
     get audioCtx() { return audioCtx; }

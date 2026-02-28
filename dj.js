@@ -79,6 +79,15 @@ async function loadConfig() {
     if (cfg.musicDirs) document.getElementById('cfg-dirs').value = cfg.musicDirs.join('\n');
     if (cfg.messages) { DJ.messages = cfg.messages; renderMessages(); }
 
+    // Display settings
+    const marqueeMode = document.getElementById('cfg-marquee-mode');
+    if (marqueeMode && cfg.marqueeMode) marqueeMode.value = cfg.marqueeMode;
+    const rssUrl = document.getElementById('cfg-rss-url');
+    if (rssUrl && cfg.rssUrl) rssUrl.value = cfg.rssUrl;
+    const bgArt = document.getElementById('cfg-bg-art');
+    if (bgArt && cfg.bgArtSource) bgArt.value = cfg.bgArtSource;
+    toggleRssPreview();
+
     updateServiceIndicators();
   } catch(e) {}
 }
@@ -122,11 +131,104 @@ async function saveConfig() {
     openaiKey: document.getElementById('cfg-openai').value,
     aiProvider: document.getElementById('cfg-ai-provider').value,
     musicDirs: document.getElementById('cfg-dirs').value.split('\n').map(s=>s.trim()).filter(Boolean),
-    messages: DJ.messages
+    messages: DJ.messages,
+    marqueeMode: document.getElementById('cfg-marquee-mode')?.value || 'static',
+    rssUrl: document.getElementById('cfg-rss-url')?.value || '',
+    bgArtSource: document.getElementById('cfg-bg-art')?.value || 'track'
   };
   await fetch('/api/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  await loadConfig(); // Refresh indicators
-  setStatus('Configuration saved ✓');
+  await loadConfig();
+  setStatus('Configuration saved ✓ — testing services...');
+  // Auto-test after save
+  await testAllServices();
+}
+
+// ─── API Service Testing ─────────────────────────────────────────────────────
+async function testAllServices() {
+  const banner = document.getElementById('service-test-banner');
+  if (banner) { banner.style.display = 'block'; banner.textContent = 'Testing services...'; banner.style.color = 'var(--accent)'; banner.style.background = 'rgba(0,229,255,0.06)'; banner.style.borderColor = 'rgba(0,229,255,0.2)'; }
+
+  try {
+    const r = await fetch('/api/test/services');
+    const results = await r.json();
+
+    // Update indicators
+    setTestResult('test-lastfm', results.lastfm);
+    setTestResult('test-spotify', results.spotify);
+    setTestResult('test-ai', results.ai);
+    setTestResult('test-musicbrainz', results.musicbrainz);
+    setTestResult('test-discogs', results.discogs);
+
+    // Update streaming instances
+    const streamEl = document.getElementById('test-streaming');
+    if (streamEl && results.streaming) {
+      const up = results.streaming.filter(s => s.ok).length;
+      streamEl.innerHTML = `<span style="color:${up > 0 ? 'var(--green)' : 'var(--accent2)'}">${up > 0 ? '●' : '✗'}</span> Streaming: ${up}/${results.streaming.length} instances up`;
+    }
+
+    // Update DJ state
+    DJ.hasLastfm = results.lastfm?.ok || false;
+    DJ.hasSpotify = results.spotify?.ok || false;
+    DJ.hasAI = results.ai?.ok || false;
+    updateServiceIndicators();
+
+    // Banner
+    if (banner) {
+      const s = results.summary;
+      banner.textContent = `${s.connected} of ${s.total} services connected · ${s.streamingUp} streaming instances up`;
+      banner.style.color = s.connected >= 3 ? 'var(--green)' : s.connected >= 1 ? 'var(--yellow)' : 'var(--accent2)';
+      banner.style.background = s.connected >= 3 ? 'rgba(0,255,136,0.06)' : s.connected >= 1 ? 'rgba(255,204,0,0.06)' : 'rgba(255,51,102,0.06)';
+      banner.style.borderColor = s.connected >= 3 ? 'rgba(0,255,136,0.2)' : s.connected >= 1 ? 'rgba(255,204,0,0.2)' : 'rgba(255,51,102,0.2)';
+    }
+    setStatus(`Services tested: ${results.summary.connected}/${results.summary.total} connected`);
+  } catch(e) {
+    if (banner) { banner.textContent = 'Test failed: ' + e.message; banner.style.color = 'var(--accent2)'; }
+  }
+}
+
+function setTestResult(elId, result) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (result?.ok) {
+    el.innerHTML = `<span style="color:var(--green)">● Connected</span>`;
+  } else {
+    el.innerHTML = `<span style="color:var(--accent2)">✗ ${escHtml(result?.error || 'Failed')}</span>`;
+  }
+}
+
+// ─── Similar to Current ──────────────────────────────────────────────────────
+async function findSimilarToCurrent() {
+  const cur = DJ.queue[DJ.trackIndex];
+  if (!cur || !cur.artist || !cur.title) {
+    setStatus('No track is currently playing');
+    return;
+  }
+  setStatus(`Finding tracks similar to "${cur.artist} — ${cur.title}"...`);
+
+  try {
+    const result = await Engine.findSimilarToCurrent(cur.artist, cur.title, 8);
+    if (result.tracks.length === 0) {
+      setStatus('No similar tracks found from any source');
+      return;
+    }
+
+    setStatus(`Found ${result.tracks.length} similar tracks from ${result.source}`);
+    showDiscoverResults(result.tracks, `Similar to "${cur.title}" (${result.source})`);
+
+    // Auto-queue the first few
+    let added = 0;
+    for (const t of result.tracks.slice(0, 4)) {
+      if (added >= 3) break;
+      if (await enqueueOnlineTrack(t)) added++;
+    }
+    if (added > 0) {
+      renderQueue();
+      setStatus(`Queued ${added} similar tracks from ${result.source}`);
+    }
+  } catch(e) {
+    console.error('[Similar]', e);
+    setStatus('Error finding similar tracks: ' + e.message);
+  }
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
@@ -450,10 +552,24 @@ function updateDeckUI(deck) {
   document.getElementById(`remain-${deck}`).textContent = remain > 0 ? '-' + fmt(remain) : '0:00';
   document.getElementById(`dur-${deck}`).textContent = fmt(dur);
 
-  // Periodically broadcast elapsed for display page interpolation
-  if (deck === DJ.currentDeck && Math.round(cur) % 5 === 0) {
+  // Periodically broadcast elapsed for display page interpolation (~every 1s)
+  if (deck === DJ.currentDeck && Math.floor(cur) !== Math.floor(cur - 0.3)) {
     const track = Engine.decks[deck].track;
-    if (track) Engine.broadcastNowPlaying({ nowPlaying: { ...track, elapsed: cur, duration: dur } });
+    const audioA = getDeckAudio('a');
+    const audioB = getDeckAudio('b');
+    const xfader = document.getElementById('crossfader');
+    if (track) Engine.broadcastNowPlaying({
+      nowPlaying: { title: track.title, artist: track.artist, album: track.album, artwork: track.artwork || track.image || '', elapsed: cur, duration: dur, fadePoint: Engine.decks[deck].fadePoint },
+      isPlaying: true,
+      deckState: {
+        activeDeck: DJ.currentDeck,
+        crossfader: parseFloat(xfader?.value || 0),
+        decks: {
+          a: { elapsed: audioA?.currentTime || 0, duration: audioA?.duration || 0, gain: Engine.decks.a.gain?.gain?.value ?? 0 },
+          b: { elapsed: audioB?.currentTime || 0, duration: audioB?.duration || 0, gain: Engine.decks.b.gain?.gain?.value ?? 0 }
+        }
+      }
+    });
   }
 
   // Auto-mix: fire once when remain enters the fade window
@@ -548,7 +664,8 @@ function renderQueue() {
   const list = document.getElementById('queue-list');
   document.getElementById('q-count').textContent = DJ.queue.length;
   if (!DJ.queue.length) {
-    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:11px">Queue empty</div>';
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:11px">Queue empty — add tracks from Library or Discover</div>';
+    updateIdleDeckPreview();
     return;
   }
   list.innerHTML = DJ.queue.map((t, i) => {
@@ -559,20 +676,24 @@ function renderQueue() {
     const badgeClass = isPlay ? 'badge-play' : isNext ? 'badge-next' : t.type==='local' ? 'badge-loc' : 'badge-q';
     const badgeText = isPlay ? '▶ NOW' : isNext ? 'NEXT' : t.type==='temp' ? 'TEMP' : src;
     const badgeStyle = t.type==='temp' ? 'style="background:rgba(255,204,0,0.15);color:#ffcc00"' : '';
+    const loadBtns = !isPlay && !isPast ? `<button class="ctrl-btn" style="padding:2px 5px;font-size:8px" onclick="loadToDeck('a',${i})" title="Load to Deck A">→A</button>
+      <button class="ctrl-btn" style="padding:2px 5px;font-size:8px" onclick="loadToDeck('b',${i})" title="Load to Deck B">→B</button>` : '';
     return `<div class="qitem${isPlay?' playing':''}${isNext?' next':''}${isPast?' past':''} ${t.type}"
       draggable="${!isPlay}" data-idx="${i}"
       ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)"
-      ondrop="onDrop(event,${i})" ondragleave="onDragLeave(event)">
-      <div class="q-num">${i+1}</div>
+      ondrop="onDrop(event,${i})" ondragleave="onDragLeave(event)"
+      ontouchstart="onTouchDragStart(event,${i})" ontouchmove="onTouchDragMove(event)" ontouchend="onTouchDragEnd(event,${i})">
+      <div class="q-num" style="cursor:grab;user-select:none" title="Drag to reorder">⠿</div>
       <div class="q-src">${src}</div>
       <div class="q-info">
-        <div class="q-title">${t.title}</div>
-        <div class="q-artist">${t.artist}${t.album?' · '+t.album:''}</div>
+        <div class="q-title">${escHtml(t.title || '?')}</div>
+        <div class="q-artist">${escHtml(t.artist || '?')}${t.album?' · '+escHtml(t.album):''}</div>
         ${t.tags?.length ? `<div class="q-tags">${t.tags.slice(0,3).join(' · ')}</div>` : ''}
       </div>
       <span class="q-badge ${badgeClass}" ${badgeStyle}>${badgeText}</span>
       <div class="q-dur">${t.duration ? fmt(t.duration) : '—'}</div>
-      <button class="q-remove" onclick="removeFromQueue(${i})">×</button>
+      <div style="display:flex;gap:2px;align-items:center">${loadBtns}
+      <button class="q-remove" onclick="removeFromQueue(${i})" ${isPlay?'disabled style="opacity:0.2"':''}>×</button></div>
     </div>`;
   }).join('');
   list.querySelector('.playing')?.scrollIntoView({ block:'nearest', behavior:'smooth' });
@@ -584,6 +705,74 @@ function renderQueue() {
     const ea = document.getElementById('np-sidebar-artist'); if (ea) ea.textContent = np.artist;
     const eg = document.getElementById('np-sidebar-genre'); if (eg) eg.textContent = np.tags?.slice(0,2).join(', ')||'—';
   }
+
+  updateIdleDeckPreview();
+}
+
+// Show preview of next track on the idle deck
+function updateIdleDeckPreview() {
+  const nextTrack = DJ.queue[DJ.trackIndex + 1];
+  const idleDeck = getNextDeck();
+  const titleEl = document.getElementById(`title-${idleDeck}`);
+  const artistEl = document.getElementById(`artist-${idleDeck}`);
+
+  // Only update if the idle deck doesn't have a track loaded
+  if (Engine.decks[idleDeck].track) return;
+  if (nextTrack && titleEl && artistEl) {
+    titleEl.textContent = `⏭ ${nextTrack.title || '?'}`;
+    titleEl.style.opacity = '0.5';
+    artistEl.textContent = nextTrack.artist || '?';
+    artistEl.style.opacity = '0.5';
+  }
+}
+
+// Load a specific queue item directly to a deck
+function loadToDeck(deck, queueIdx) {
+  const track = DJ.queue[queueIdx];
+  if (!track) return;
+  Engine.initAudioCtx();
+  Engine.ensureDeckConnected(deck);
+  loadTrackOnDeck(deck, track);
+  setStatus(`Loaded "${track.title}" on Deck ${deck.toUpperCase()}`);
+}
+
+// Load next queued track onto the idle deck
+function loadNextOnIdleDeck() {
+  const nextTrack = DJ.queue[DJ.trackIndex + 1];
+  if (!nextTrack) { setStatus('No next track in queue'); return; }
+  const idleDeck = getNextDeck();
+  loadToDeck(idleDeck, DJ.trackIndex + 1);
+}
+
+// ─── Touch drag-to-reorder support ──────────────────────────────────────────
+let touchDragIdx = null;
+let touchDragEl = null;
+
+function onTouchDragStart(e, idx) {
+  touchDragIdx = idx;
+  touchDragEl = e.currentTarget;
+  touchDragEl.style.opacity = '0.5';
+}
+
+function onTouchDragMove(e) {
+  if (touchDragIdx === null) return;
+  e.preventDefault();
+}
+
+function onTouchDragEnd(e, targetIdx) {
+  if (touchDragIdx === null || touchDragIdx === targetIdx) {
+    if (touchDragEl) touchDragEl.style.opacity = '1';
+    touchDragIdx = null;
+    touchDragEl = null;
+    return;
+  }
+  const item = DJ.queue.splice(touchDragIdx, 1)[0];
+  DJ.queue.splice(targetIdx, 0, item);
+  if (touchDragIdx < DJ.trackIndex) DJ.trackIndex--;
+  else if (targetIdx <= DJ.trackIndex) DJ.trackIndex++;
+  touchDragIdx = null;
+  touchDragEl = null;
+  renderQueue();
 }
 
 let dragIdx = null;
@@ -1003,28 +1192,79 @@ async function aiRefillQueue() {
 
 // ─── Broadcast Now Playing ────────────────────────────────────────────────────
 async function broadcastNP(track) {
+  if (!track) return;
   const next = DJ.queue[DJ.trackIndex+1];
-  const audio = getDeckAudio(DJ.currentDeck);
+  const audioA = getDeckAudio('a');
+  const audioB = getDeckAudio('b');
   const genre = track.tags?.[0] || DJ.seedTags[0] || '';
   // Build stream URL for display page audio relay
   let streamUrl = '';
   if (track.type === 'local') streamUrl = track.url || '';
   else if (track.type === 'temp') streamUrl = track.url || '';
-  // For online tracks, streamUrl is the Piped direct URL stored in track._streamUrl
   else if (track._streamUrl) streamUrl = '/api/piped/relay?url=' + encodeURIComponent(track._streamUrl);
 
+  // Build next track stream URL
+  let nextStreamUrl = '';
+  if (next) {
+    if (next.type === 'local' || next.type === 'temp') nextStreamUrl = next.url || '';
+    else if (next._streamUrl) nextStreamUrl = '/api/piped/relay?url=' + encodeURIComponent(next._streamUrl);
+  }
+
+  // Background art - try to get artist image if that mode is selected
+  let artistImageUrl = '';
+  const bgSource = document.getElementById('cfg-bg-art')?.value || 'track';
+  if (bgSource === 'artist' && track.artist && DJ.hasLastfm) {
+    try {
+      const info = await Engine.getArtistInfo(track.artist);
+      artistImageUrl = info.image || '';
+    } catch(e) {}
+  }
+
+  const xfader = document.getElementById('crossfader');
   await Engine.broadcastNowPlaying({
     nowPlaying: {
-      title: track.title, artist: track.artist, album: track.album,
-      duration: track.duration || audio?.duration || 0,
-      elapsed: audio?.currentTime || 0,
+      title: track.title || 'Unknown Title',
+      artist: track.artist || 'Unknown Artist',
+      album: track.album || '',
+      duration: track.duration || audioA?.duration || audioB?.duration || 0,
+      elapsed: getDeckAudio(DJ.currentDeck)?.currentTime || 0,
       fadePoint: Engine.decks[DJ.currentDeck].fadePoint,
-      tags: track.tags, artwork: track.artwork || track.image || '',
+      tags: track.tags || [],
+      artwork: track.artwork || track.image || '',
+      image: track.image || track.artwork || '',
       streamUrl
     },
-    nextUp: next ? { title: next.title, artist: next.artist, artwork: next.artwork||next.image||'' } : null,
+    nextUp: next ? {
+      title: next.title || '?',
+      artist: next.artist || '?',
+      artwork: next.artwork || next.image || '',
+      streamUrl: nextStreamUrl
+    } : null,
     genre: genre ? genre.charAt(0).toUpperCase()+genre.slice(1) : '',
-    isPlaying: true, messages: DJ.messages
+    isPlaying: true, messages: DJ.messages,
+    bgArtSource: bgSource,
+    bgImageUrl: track.artwork || track.image || '',
+    artistImageUrl,
+    deckState: {
+      activeDeck: DJ.currentDeck,
+      crossfader: parseFloat(xfader?.value || 0),
+      decks: {
+        a: {
+          track: Engine.decks.a.track ? { title: Engine.decks.a.track.title, artist: Engine.decks.a.track.artist, streamUrl: Engine.decks.a.track._streamUrl ? '/api/piped/relay?url=' + encodeURIComponent(Engine.decks.a.track._streamUrl) : (Engine.decks.a.track.url || '') } : null,
+          elapsed: audioA?.currentTime || 0,
+          duration: audioA?.duration || 0,
+          gain: Engine.decks.a.gain?.gain?.value ?? (DJ.currentDeck === 'a' ? 1 : 0),
+          fadePoint: Engine.decks.a.fadePoint
+        },
+        b: {
+          track: Engine.decks.b.track ? { title: Engine.decks.b.track.title, artist: Engine.decks.b.track.artist, streamUrl: Engine.decks.b.track._streamUrl ? '/api/piped/relay?url=' + encodeURIComponent(Engine.decks.b.track._streamUrl) : (Engine.decks.b.track.url || '') } : null,
+          elapsed: audioB?.currentTime || 0,
+          duration: audioB?.duration || 0,
+          gain: Engine.decks.b.gain?.gain?.value ?? (DJ.currentDeck === 'b' ? 1 : 0),
+          fadePoint: Engine.decks.b.fadePoint
+        }
+      }
+    }
   });
 }
 
@@ -1247,5 +1487,34 @@ function showPwStatus(msg, success) {
     el.style.background = 'rgba(255,51,102,0.08)';
     el.style.border = '1px solid rgba(255,51,102,0.25)';
     el.style.color = 'var(--accent2)';
+  }
+}
+
+// ─── RSS / Display Settings ─────────────────────────────────────────────────
+function toggleRssPreview() {
+  const mode = document.getElementById('cfg-marquee-mode')?.value;
+  const rssEl = document.getElementById('rss-config');
+  const staticEl = document.getElementById('static-msg-config');
+  if (rssEl) rssEl.style.display = mode === 'rss' ? 'block' : 'none';
+  if (staticEl) staticEl.style.display = mode === 'static' ? 'block' : 'none';
+}
+
+async function previewRSS() {
+  const url = document.getElementById('cfg-rss-url')?.value;
+  const preview = document.getElementById('rss-preview');
+  if (!url || !preview) return;
+  preview.innerHTML = '<div style="color:var(--accent)">Fetching...</div>';
+  try {
+    const r = await fetch(`/api/rss/proxy?url=${encodeURIComponent(url)}`);
+    const data = await r.json();
+    if (data.items?.length) {
+      preview.innerHTML = data.items.slice(0, 8).map(i =>
+        `<div style="padding:3px 0;border-bottom:1px solid var(--border)">📰 ${escHtml(i.title)}</div>`
+      ).join('') + `<div style="padding:3px 0;color:var(--green)">${data.items.length} items found</div>`;
+    } else {
+      preview.innerHTML = '<div style="color:var(--accent2)">No RSS items found — check the URL</div>';
+    }
+  } catch(e) {
+    preview.innerHTML = `<div style="color:var(--accent2)">Error: ${e.message}</div>`;
   }
 }
