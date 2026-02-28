@@ -290,6 +290,20 @@ const Engine = (() => {
       ctx2.fillStyle = '#ffcc00aa';
       ctx2.fillRect(fpX - 1, 0, 2, h);
     }
+
+    // Cue point marker
+    if (typeof d.cuePoint === 'number' && d.cuePoint > 0 && d.audio?.duration) {
+      const cpX = (d.cuePoint / d.audio.duration) * w;
+      ctx2.fillStyle = '#00e5ffcc';
+      ctx2.fillRect(cpX - 1, 0, 2, h);
+      // Small triangle at top
+      ctx2.beginPath();
+      ctx2.moveTo(cpX - 4, 0);
+      ctx2.lineTo(cpX + 4, 0);
+      ctx2.lineTo(cpX, 6);
+      ctx2.closePath();
+      ctx2.fill();
+    }
   }
 
   // ─── Piped direct audio stream ────────────────────────────────────────────────

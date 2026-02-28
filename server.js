@@ -197,10 +197,12 @@ function saveConfig() { fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, nul
 // ─── Shared State (SSE to display page) ──────────────────────────────────────
 let sharedState = {
   nowPlaying: null, nextUp: null, genre: '',
-  messages: config.messages, queue: [], isPlaying: false, isFading: false,
+  messages: config.marqueeMode === 'rss' ? ['📰 Loading RSS feed...'] : config.messages,
+  queue: [], isPlaying: false, isFading: false,
   recentlyPlayed: [], bgArtSource: config.bgArtSource || 'track',
   bgImageUrl: '', artistImageUrl: '',
-  deckState: { activeDeck: 'a', crossfader: 0, decks: { a: {}, b: {} } }
+  deckState: { activeDeck: 'a', crossfader: 0, decks: { a: {}, b: {} } },
+  marqueeMode: config.marqueeMode || 'static'
 };
 const sseClients = new Set();
 function broadcastState() {
@@ -234,11 +236,40 @@ app.post('/api/config', requireAuth, (req, res) => {
   if (b.anthropicKey && !b.anthropicKey.includes('●')) config.anthropicKey = b.anthropicKey;
   if (b.aiProvider) config.aiProvider = b.aiProvider;
   if (b.musicDirs) config.musicDirs = b.musicDirs;
-  if (b.messages) { config.messages = b.messages; sharedState.messages = b.messages; }
-  if (b.marqueeMode !== undefined) config.marqueeMode = b.marqueeMode;
+  if (b.messages) { config.messages = b.messages; if (config.marqueeMode !== 'rss') sharedState.messages = b.messages; }
+  if (b.marqueeMode !== undefined) {
+    config.marqueeMode = b.marqueeMode;
+    sharedState.marqueeMode = b.marqueeMode;
+    // If switching TO static mode, revert messages immediately
+    if (b.marqueeMode === 'static') {
+      sharedState.messages = config.messages;
+      broadcastState();
+    }
+  }
   if (b.rssUrl !== undefined) config.rssUrl = b.rssUrl;
   if (b.bgArtSource) { config.bgArtSource = b.bgArtSource; sharedState.bgArtSource = b.bgArtSource; }
   saveConfig();
+
+  // Immediately fetch RSS and broadcast if mode is rss
+  if (config.marqueeMode === 'rss' && config.rssUrl) {
+    sharedState.messages = ['📰 Loading RSS feed...'];
+    broadcastState(); // Push placeholder immediately so display clears old messages
+    fetchRSS(config.rssUrl).then(items => {
+      if (items.length) {
+        rssCache = { items, lastFetch: Date.now(), url: config.rssUrl };
+        sharedState.messages = items.map(i => `📰 ${i.title}`);
+        console.log(`[RSS] Loaded ${items.length} items on config save`);
+      } else {
+        sharedState.messages = ['📰 No RSS items found — check feed URL'];
+      }
+      broadcastState();
+    }).catch(e => {
+      console.error('[RSS] fetch on save failed:', e);
+      sharedState.messages = [`📰 RSS error: ${e.message}`];
+      broadcastState();
+    });
+  }
+
   res.json({ ok: true });
 });
 
@@ -379,18 +410,208 @@ Respond ONLY with a JSON array of 5 objects: [{"title":string,"artist":string,"r
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── Music Source Instances (centralized) ────────────────────────────────────
+const SOURCES = {
+  monochrome: [
+    'https://api.monochrome.tf',
+    'https://arran.monochrome.tf',
+    'https://monochrome-api.samidy.com',
+    'https://triton.squid.wtf',
+    'https://wolf.qqdl.site',
+    'https://maus.qqdl.site',
+    'https://hifi-one.spotisaver.net',
+    'https://tidal-api.binimum.org',
+    'https://tidal.kinoplus.online',
+  ],
+  piped: [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.tokhmi.xyz',
+    'https://pipedapi.moomoo.me',
+    'https://pipedapi.syncpundit.io',
+  ],
+  invidious: [
+    'https://inv.nadeko.net',
+    'https://yewtu.be',
+    'https://invidious.nerdvpn.de',
+  ],
+  dab: ['https://api.zozoki.com']
+};
+
+// Track instance health
+let instanceHealth = {};
+function markInstance(url, ok, latency) {
+  instanceHealth[url] = { ok, latency: latency||0, checkedAt: Date.now() };
+}
+function getHealthyInstances(list) {
+  // Prefer instances with known-good status, then unknown, then known-bad
+  return [...list].sort((a,b) => {
+    const ha = instanceHealth[a], hb = instanceHealth[b];
+    if (ha?.ok && !hb?.ok) return -1;
+    if (!ha?.ok && hb?.ok) return 1;
+    if (ha?.ok && hb?.ok) return (ha.latency||9999) - (hb.latency||9999);
+    return 0;
+  });
+}
+
+// ─── Monochrome / HiFi API — PRIMARY music source ──────────────────────────
+app.get('/api/monochrome/search', async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.json([]);
+  console.log(`[Monochrome] Searching: "${q}"`);
+
+  for (const inst of getHealthyInstances(SOURCES.monochrome)) {
+    try {
+      const start = Date.now();
+      const r = await fetch(`${inst}/api/search?query=${encodeURIComponent(q)}&type=track&limit=5`, {
+        signal: AbortSignal.timeout(6000),
+        headers: { 'User-Agent': 'AutoDJ/4.0' }
+      });
+      if (!r.ok) { markInstance(inst, false); console.error(`[Monochrome] ${inst}: HTTP ${r.status}`); continue; }
+      const data = await r.json();
+      markInstance(inst, true, Date.now() - start);
+      const tracks = (data.results || data.tracks || data.items || data.data || []).slice(0, 5);
+      if (tracks.length > 0) {
+        console.log(`[Monochrome] Found ${tracks.length} results via ${inst}`);
+        return res.json(tracks.map(t => ({
+          id: t.id || t.trackId || t.videoId,
+          title: t.title || t.name || 'Unknown',
+          artist: t.artist || t.artistName || t.uploaderName || t.author || 'Unknown',
+          album: t.album || t.albumName || '',
+          duration: t.duration || t.lengthSeconds || 0,
+          thumbnail: t.thumbnail || t.cover || t.image || '',
+          streamUrl: t.streamUrl || t.url || '',
+          source: 'monochrome',
+          instance: inst
+        })));
+      }
+    } catch(e) { markInstance(inst, false); console.error(`[Monochrome] ${inst}: ${e.message}`); }
+  }
+  res.json([]);
+});
+
+app.get('/api/monochrome/stream/:id', async (req, res) => {
+  const { id } = req.params;
+  for (const inst of getHealthyInstances(SOURCES.monochrome)) {
+    try {
+      const r = await fetch(`${inst}/api/stream/${id}`, {
+        signal: AbortSignal.timeout(10000),
+        headers: { 'User-Agent': 'AutoDJ/4.0', 'Range': req.headers.range || 'bytes=0-' }
+      });
+      if (!r.ok) continue;
+      res.status(r.status);
+      ['content-type','content-length','content-range','accept-ranges'].forEach(h => {
+        const v = r.headers.get(h); if (v) res.setHeader(h, v);
+      });
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      r.body.pipe(res);
+      return;
+    } catch(e) { console.error(`[Monochrome] stream ${inst}: ${e.message}`); }
+  }
+  res.status(502).json({ error: 'No stream available' });
+});
+
+// ─── Unified Multi-Source Search — searches ALL sources ─────────────────────
+app.get('/api/search/all', async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.json({ results: [], source: 'none' });
+  console.log(`[MultiSearch] "${q}"`);
+
+  // 1. Try Monochrome first (best quality)
+  try {
+    const r = await fetch(`http://localhost:${PORT}/api/monochrome/search?q=${encodeURIComponent(q)}`);
+    const data = await r.json();
+    if (data.length > 0) return res.json({ results: data, source: 'monochrome' });
+  } catch(e) {}
+
+  // 2. Try Piped
+  for (const inst of getHealthyInstances(SOURCES.piped)) {
+    try {
+      const start = Date.now();
+      const r = await fetch(`${inst}/search?q=${encodeURIComponent(q)}&filter=music_songs`, {
+        signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'AutoDJ/4.0' }
+      });
+      if (!r.ok) { markInstance(inst, false); continue; }
+      markInstance(inst, true, Date.now() - start);
+      const data = await r.json();
+      const items = (data.items || []).filter(i => i.type === 'stream' || i.url).slice(0, 5);
+      if (items.length > 0) {
+        return res.json({ results: items.map(i => ({
+          id: i.url?.replace('/watch?v=','') || i.videoId,
+          title: i.title || 'Unknown', artist: i.uploaderName || i.author || 'Unknown',
+          duration: i.duration || 0, thumbnail: i.thumbnail || '', source: 'piped'
+        })), source: 'piped' });
+      }
+    } catch(e) { markInstance(inst, false); }
+  }
+
+  // 3. Try Invidious
+  for (const inst of getHealthyInstances(SOURCES.invidious)) {
+    try {
+      const start = Date.now();
+      const r = await fetch(`${inst}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, {
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!r.ok) { markInstance(inst, false); continue; }
+      markInstance(inst, true, Date.now() - start);
+      const data = await r.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return res.json({ results: data.slice(0, 5).map(i => ({
+          id: i.videoId, title: i.title || 'Unknown', artist: i.author || 'Unknown',
+          duration: i.lengthSeconds || 0, thumbnail: i.videoThumbnails?.[0]?.url || '',
+          source: 'invidious'
+        })), source: 'invidious' });
+      }
+    } catch(e) { markInstance(inst, false); }
+  }
+
+  // 4. Try DAB/Zozoki
+  for (const inst of SOURCES.dab) {
+    try {
+      const r = await fetch(`${inst}/api/search?query=${encodeURIComponent(q)}&type=track&limit=5`, {
+        signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'AutoDJ/4.0' }
+      });
+      if (!r.ok) continue;
+      const data = await r.json();
+      const tracks = (data.results || data.tracks || data.data || []).slice(0, 5);
+      if (tracks.length > 0) {
+        return res.json({ results: tracks.map(t => ({
+          id: t.id, title: t.title || t.name || 'Unknown', artist: t.artist || 'Unknown',
+          duration: t.duration || 0, source: 'dab'
+        })), source: 'dab' });
+      }
+    } catch(e) {}
+  }
+
+  console.warn(`[MultiSearch] No results for "${q}" from any source`);
+  res.json({ results: [], source: 'none' });
+});
+
+// Keep the legacy endpoints for backward compat
+app.get('/api/youtube/search', async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.json([]);
+  // Redirect to unified search
+  try {
+    const r = await fetch(`http://localhost:${PORT}/api/search/all?q=${encodeURIComponent(q)}`);
+    const data = await r.json();
+    // Return in legacy format
+    res.json((data.results || []).map(t => ({
+      videoId: t.id, title: t.title, author: t.artist, lengthSeconds: t.duration
+    })));
+  } catch(e) { res.json([]); }
+});
+
 // ─── Video Search — DAB API + Piped + Invidious (multi-fallback) ─────────────
 // DAB API is a free music streaming API — primary source for audio
 app.get('/api/dab/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.json([]);
   console.log(`[DAB] Searching: "${q}"`);
-  const dabInstances = ['https://api.zozoki.com'];
-  for (const inst of dabInstances) {
+  for (const inst of SOURCES.dab) {
     try {
       const r = await fetch(`${inst}/api/search?query=${encodeURIComponent(q)}&type=track&limit=5`, {
         signal: AbortSignal.timeout(8000),
-        headers: { 'User-Agent': 'AutoDJ/3.0' }
+        headers: { 'User-Agent': 'AutoDJ/4.0' }
       });
       if (!r.ok) { console.error(`[DAB] ${inst}: HTTP ${r.status}`); continue; }
       const data = await r.json();
@@ -407,13 +628,12 @@ app.get('/api/dab/search', async (req, res) => {
 app.get('/api/dab/stream', async (req, res) => {
   const { id, url: streamUrl } = req.query;
   if (!id && !streamUrl) return res.status(400).json({ error: 'Missing id or url' });
-  const dabInstances = ['https://api.zozoki.com'];
-  for (const inst of dabInstances) {
+  for (const inst of SOURCES.dab) {
     try {
       const target = streamUrl || `${inst}/api/stream/${id}`;
       const r = await fetch(target, {
         signal: AbortSignal.timeout(10000),
-        headers: { 'User-Agent': 'AutoDJ/3.0', 'Range': req.headers.range || 'bytes=0-' }
+        headers: { 'User-Agent': 'AutoDJ/4.0', 'Range': req.headers.range || 'bytes=0-' }
       });
       if (!r.ok) continue;
       res.status(r.status);
@@ -515,22 +735,35 @@ app.get('/api/test/services', requireAuth, async (req, res) => {
     results.discogs = r.ok ? { ok: true } : { ok: false, error: `HTTP ${r.status}` };
   } catch(e) { results.discogs = { ok: false, error: e.message }; }
 
-  // Test streaming instances
-  const pipedInstances = ['https://pipedapi.kavin.rocks','https://pipedapi.tokhmi.xyz','https://pipedapi.moomoo.me','https://pipedapi.syncpundit.io'];
-  results.streaming = [];
-  for (const inst of pipedInstances) {
+  // Test streaming instances (Monochrome + Piped + Invidious + DAB)
+  results.sources = {};
+  const sourceTests = [
+    ...SOURCES.monochrome.slice(0,4).map(u => ({ url: u, type: 'monochrome', testUrl: `${u}/api/search?query=test&type=track&limit=1` })),
+    ...SOURCES.piped.map(u => ({ url: u, type: 'piped', testUrl: `${u}/search?q=test&filter=videos` })),
+    ...SOURCES.invidious.map(u => ({ url: u, type: 'invidious', testUrl: `${u}/api/v1/search?q=test&type=video` })),
+    ...SOURCES.dab.map(u => ({ url: u, type: 'dab', testUrl: `${u}/api/search?query=test&type=track&limit=1` })),
+  ];
+  for (const st of sourceTests) {
     try {
       const start = Date.now();
-      const r = await fetch(`${inst}/search?q=test&filter=videos`, { signal: AbortSignal.timeout(4000), headers: { 'User-Agent': 'AutoDJ/3.0' } });
-      results.streaming.push({ url: inst, ok: r.ok, latency: Date.now() - start });
-    } catch(e) { results.streaming.push({ url: inst, ok: false, error: e.message }); }
+      const r = await fetch(st.testUrl, { signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'AutoDJ/4.0' } });
+      const lat = Date.now() - start;
+      markInstance(st.url, r.ok, lat);
+      if (!results.sources[st.type]) results.sources[st.type] = [];
+      results.sources[st.type].push({ url: st.url, ok: r.ok, latency: lat, status: r.ok ? 'up' : `http-${r.status}` });
+    } catch(e) {
+      markInstance(st.url, false);
+      if (!results.sources[st.type]) results.sources[st.type] = [];
+      results.sources[st.type].push({ url: st.url, ok: false, error: e.message, status: 'down' });
+    }
   }
 
   // Count
   const services = ['lastfm','spotify','ai','musicbrainz','discogs'];
   const connected = services.filter(s => results[s]?.ok).length;
-  const streamingUp = results.streaming.filter(s => s.ok).length;
-  results.summary = { connected, total: services.length, streamingUp, streamingTotal: pipedInstances.length };
+  const allSources = Object.values(results.sources).flat();
+  const sourcesUp = allSources.filter(s => s.ok).length;
+  results.summary = { connected, total: services.length, sourcesUp, sourcesTotal: allSources.length };
 
   res.json(results);
 });
@@ -595,19 +828,91 @@ app.get('/api/youtube/search', async (req, res) => {
   res.json([]);
 });
 
+// ─── Playlists ───────────────────────────────────────────────────────────────
+const PLAYLIST_DIR = path.join(__dirname, 'playlists');
+if (!fs.existsSync(PLAYLIST_DIR)) fs.mkdirSync(PLAYLIST_DIR, { recursive: true });
+
+app.get('/api/playlists', requireAuth, (req, res) => {
+  try {
+    const files = fs.readdirSync(PLAYLIST_DIR).filter(f => f.endsWith('.json'));
+    const playlists = files.map(f => {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(PLAYLIST_DIR, f), 'utf8'));
+        return { name: data.name || f.replace('.json',''), trackCount: (data.tracks||[]).length, createdAt: data.createdAt, filename: f };
+      } catch(e) { return null; }
+    }).filter(Boolean);
+    res.json(playlists);
+  } catch(e) { res.json([]); }
+});
+
+app.post('/api/playlists', requireAuth, (req, res) => {
+  const { name, tracks } = req.body;
+  if (!name || !tracks) return res.status(400).json({ error: 'name and tracks required' });
+  const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  const data = { name, tracks, createdAt: Date.now(), trackCount: tracks.length };
+  fs.writeFileSync(path.join(PLAYLIST_DIR, `${safeName}.json`), JSON.stringify(data, null, 2));
+  res.json({ ok: true, filename: `${safeName}.json` });
+});
+
+app.get('/api/playlists/:name', requireAuth, (req, res) => {
+  const fp = path.join(PLAYLIST_DIR, `${req.params.name}.json`);
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
+  try { res.json(JSON.parse(fs.readFileSync(fp, 'utf8'))); }
+  catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/playlists/:name', requireAuth, (req, res) => {
+  const fp = path.join(PLAYLIST_DIR, `${req.params.name}.json`);
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
+  fs.unlinkSync(fp);
+  res.json({ ok: true });
+});
+
+// ─── Song Requests (from display page listeners) ────────────────────────────
+let songRequests = [];
+
+app.post('/api/requests', (req, res) => {
+  const { artist, title, message } = req.body;
+  if (!artist && !title) return res.status(400).json({ error: 'Provide artist or title' });
+  songRequests.push({ id: Date.now(), artist: artist||'', title: title||'', message: message||'', timestamp: Date.now() });
+  if (songRequests.length > 50) songRequests = songRequests.slice(-50);
+  // Broadcast to DJ page
+  sharedState.requestCount = songRequests.length;
+  broadcastState();
+  res.json({ ok: true });
+});
+
+app.get('/api/requests', requireAuth, (req, res) => {
+  res.json(songRequests);
+});
+
+app.delete('/api/requests/:id', requireAuth, (req, res) => {
+  songRequests = songRequests.filter(r => r.id !== parseInt(req.params.id));
+  sharedState.requestCount = songRequests.length;
+  broadcastState();
+  res.json({ ok: true });
+});
+
+// ─── Health Endpoint (public) ────────────────────────────────────────────────
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    listeners: sseClients.size,
+    memory: { rss: process.memoryUsage().rss, heapUsed: process.memoryUsage().heapUsed },
+    instanceHealth: Object.entries(instanceHealth).map(([url, h]) => ({
+      url, ...h, age: Date.now() - (h.checkedAt || 0)
+    })),
+    pendingRequests: songRequests.length
+  });
+});
+
 // ─── Piped stream URL resolver (gets direct audio stream) ─────────────────────
 app.get('/api/piped/streams', async (req, res) => {
   const { videoId } = req.query;
   if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
 
-  const pipedInstances = [
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.tokhmi.xyz',
-    'https://pipedapi.moomoo.me',
-    'https://pipedapi.syncpundit.io',
-  ];
-
-  for (const instance of pipedInstances) {
+  for (const instance of getHealthyInstances(SOURCES.piped)) {
     try {
       const r = await fetch(`${instance}/streams/${videoId}`, {
         signal: AbortSignal.timeout(8000),
@@ -869,8 +1174,91 @@ app.get('/', (req, res) => {
 app.get('/dj', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'dj.html')));
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'display.html')));
 
+// PWA manifest
+app.get('/manifest.json', (req, res) => {
+  res.json({
+    name: 'AutoDJ',
+    short_name: 'AutoDJ',
+    description: 'Web-based DJ console with live display',
+    start_url: '/display',
+    display: 'standalone',
+    background_color: '#03050a',
+    theme_color: '#00e5ff',
+    icons: [
+      { src: '/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' },
+      { src: '/icon-512.svg', sizes: '512x512', type: 'image/svg+xml' },
+      { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }
+    ]
+  });
+});
+
+// PWA icons — generate on the fly
+function makeIconSvg(size) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <rect width="${size}" height="${size}" rx="${Math.round(size*0.15)}" fill="#03050a"/>
+  <circle cx="${size/2}" cy="${size/2}" r="${Math.round(size*0.35)}" fill="none" stroke="#00e5ff" stroke-width="${Math.max(2,Math.round(size*0.02))}"/>
+  <circle cx="${size/2}" cy="${size/2}" r="${Math.round(size*0.22)}" fill="none" stroke="#00e5ff" stroke-width="${Math.max(1,Math.round(size*0.015))}" opacity="0.5"/>
+  <circle cx="${size/2}" cy="${size/2}" r="${Math.round(size*0.06)}" fill="#00e5ff"/>
+  <text x="${size/2}" y="${Math.round(size*0.88)}" text-anchor="middle" fill="#00e5ff" font-family="Arial,sans-serif" font-weight="bold" font-size="${Math.round(size*0.1)}">AutoDJ</text>
+</svg>`;
+}
+app.get('/icon-192.svg', (req, res) => { res.setHeader('Content-Type','image/svg+xml'); res.send(makeIconSvg(192)); });
+app.get('/icon-512.svg', (req, res) => { res.setHeader('Content-Type','image/svg+xml'); res.send(makeIconSvg(512)); });
+app.get('/icon.svg', (req, res) => { res.setHeader('Content-Type','image/svg+xml'); res.send(makeIconSvg(512)); });
+app.get('/icon-192.png', (req, res) => { res.setHeader('Content-Type','image/svg+xml'); res.send(makeIconSvg(192)); }); // fallback for apple-touch-icon
+
+// PWA service worker
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.send(`
+const CACHE = 'autodj-v4';
+const PRECACHE = ['/display', '/css/shared.css', '/icon.svg', '/manifest.json'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+});
+
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+  // Never cache API calls or SSE
+  if (url.pathname.startsWith('/api/')) return;
+  // Network-first for HTML pages, cache-first for assets
+  if (e.request.mode === 'navigate') {
+    e.respondWith(fetch(e.request).then(r => {
+      const clone = r.clone();
+      caches.open(CACHE).then(c => c.put(e.request, clone));
+      return r;
+    }).catch(() => caches.match(e.request)));
+  } else {
+    e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(resp => {
+      const clone = resp.clone();
+      caches.open(CACHE).then(c => c.put(e.request, clone));
+      return resp;
+    })));
+  }
+});
+  `.trim());
+});
+
 app.listen(PORT, () => {
   console.log(`\n🎧 AutoDJ running at http://localhost:${PORT}`);
   console.log(`   DJ Console  →  http://localhost:${PORT}/dj`);
   console.log(`   Now Playing →  http://localhost:${PORT}/display\n`);
+
+  // Fetch RSS on startup if configured
+  if (config.marqueeMode === 'rss' && config.rssUrl) {
+    fetchRSS(config.rssUrl).then(items => {
+      if (items.length) {
+        rssCache = { items, lastFetch: Date.now(), url: config.rssUrl };
+        sharedState.messages = items.map(i => `📰 ${i.title}`);
+        broadcastState();
+        console.log(`[RSS] Loaded ${items.length} items on startup`);
+      }
+    }).catch(()=>{});
+  }
 });

@@ -29,12 +29,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadConfig();
   startClock();
   setupDropZone();
+  setupKeyboardShortcuts();
   // Enter key for online song input
   const onlineInput = document.getElementById('online-song-input');
   if (onlineInput) onlineInput.addEventListener('keydown', e => { if (e.key === 'Enter') addOnlineSong(); });
   setStatus('Ready — add local files or set a seed artist in Discover tab');
   // Start render loop after a brief paint delay
   setTimeout(startRenderLoop, 200);
+  // Poll requests and listener count
+  setInterval(pollRequests, 10000);
+  setInterval(pollListenerCount, 15000);
+  loadPlaylistList();
+  // AudioContext resume on first touch (mobile)
+  const resumeAudio = () => { if (Engine.audioCtx?.state === 'suspended') Engine.audioCtx.resume(); document.removeEventListener('touchstart', resumeAudio); document.removeEventListener('click', resumeAudio); };
+  document.addEventListener('touchstart', resumeAudio, { once: true });
+  document.addEventListener('click', resumeAudio, { once: true });
+  // Responsive resize
+  window.addEventListener('resize', () => { Object.values(Engine.decks).forEach((d,i) => { const c = document.getElementById(`wave-${i===0?'a':'b'}`); if (c) c.width = c.offsetWidth; }); });
 });
 
 function setupAudioElements() {
@@ -159,11 +170,17 @@ async function testAllServices() {
     setTestResult('test-musicbrainz', results.musicbrainz);
     setTestResult('test-discogs', results.discogs);
 
-    // Update streaming instances
+    // Update streaming sources
     const streamEl = document.getElementById('test-streaming');
-    if (streamEl && results.streaming) {
-      const up = results.streaming.filter(s => s.ok).length;
-      streamEl.innerHTML = `<span style="color:${up > 0 ? 'var(--green)' : 'var(--accent2)'}">${up > 0 ? '●' : '✗'}</span> Streaming: ${up}/${results.streaming.length} instances up`;
+    if (streamEl && results.sources) {
+      const lines = [];
+      for (const [type, instances] of Object.entries(results.sources)) {
+        const up = instances.filter(s => s.ok).length;
+        const color = up > 0 ? 'var(--green)' : 'var(--accent2)';
+        const best = instances.filter(s=>s.ok).sort((a,b)=>(a.latency||9999)-(b.latency||9999))[0];
+        lines.push(`<div style="display:flex;justify-content:space-between;padding:2px 0"><span><span style="color:${color}">${up > 0 ? '●' : '✗'}</span> ${type}</span><span style="color:var(--muted)">${up}/${instances.length} up${best ? ` · ${best.latency}ms` : ''}</span></div>`);
+      }
+      streamEl.innerHTML = lines.join('');
     }
 
     // Update DJ state
@@ -175,12 +192,12 @@ async function testAllServices() {
     // Banner
     if (banner) {
       const s = results.summary;
-      banner.textContent = `${s.connected} of ${s.total} services connected · ${s.streamingUp} streaming instances up`;
-      banner.style.color = s.connected >= 3 ? 'var(--green)' : s.connected >= 1 ? 'var(--yellow)' : 'var(--accent2)';
-      banner.style.background = s.connected >= 3 ? 'rgba(0,255,136,0.06)' : s.connected >= 1 ? 'rgba(255,204,0,0.06)' : 'rgba(255,51,102,0.06)';
-      banner.style.borderColor = s.connected >= 3 ? 'rgba(0,255,136,0.2)' : s.connected >= 1 ? 'rgba(255,204,0,0.2)' : 'rgba(255,51,102,0.2)';
+      banner.textContent = `${s.connected} of ${s.total} services · ${s.sourcesUp} of ${s.sourcesTotal} music sources up`;
+      banner.style.color = s.sourcesUp > 0 ? 'var(--green)' : 'var(--accent2)';
+      banner.style.background = s.sourcesUp > 0 ? 'rgba(0,255,136,0.06)' : 'rgba(255,51,102,0.06)';
+      banner.style.borderColor = s.sourcesUp > 0 ? 'rgba(0,255,136,0.2)' : 'rgba(255,51,102,0.2)';
     }
-    setStatus(`Services tested: ${results.summary.connected}/${results.summary.total} connected`);
+    setStatus(`Services tested: ${results.summary.connected}/${results.summary.total} services, ${results.summary.sourcesUp} music sources up`);
   } catch(e) {
     if (banner) { banner.textContent = 'Test failed: ' + e.message; banner.style.color = 'var(--accent2)'; }
   }
@@ -377,6 +394,9 @@ async function loadTrackOnDeck(deck, track) {
   Engine.decks[deck].fadePoint = null;
   Engine.decks[deck].bpm = null;
   DJ.fadeLock = false;
+  // Reset cue button label
+  const cueBtn = document.getElementById(`cue-btn-${deck}`);
+  if (cueBtn) { cueBtn.textContent = 'SET'; cueBtn.style.color = ''; }
 
   const audio = getDeckAudio(deck);
   let streamUrl = null;
@@ -520,8 +540,24 @@ function deckPause(deck) { getDeckAudio(deck).pause(); }
 function deckStop(deck) { const a = getDeckAudio(deck); a.pause(); a.currentTime = 0; }
 function deckSkip(deck) { if (deck === DJ.currentDeck) triggerCrossfade(); }
 function setCue(deck) {
-  Engine.decks[deck].cuePoint = getDeckAudio(deck).currentTime;
-  setStatus(`Cue set @ ${fmt(Engine.decks[deck].cuePoint)}`);
+  const audio = getDeckAudio(deck);
+  if (!audio || !audio.duration) { setStatus('Load a track before setting cue'); return; }
+  Engine.decks[deck].cuePoint = audio.currentTime;
+  setStatus(`Cue set @ ${fmt(audio.currentTime)} on Deck ${deck.toUpperCase()}`);
+  const btn = document.getElementById(`cue-btn-${deck}`);
+  if (btn) { btn.style.color = 'var(--accent)'; btn.textContent = `SET ${fmt(audio.currentTime)}`; }
+}
+function gotoCue(deck) {
+  const cp = Engine.decks[deck].cuePoint;
+  if (typeof cp !== 'number') { setStatus('No cue point set — click SET first'); return; }
+  const audio = getDeckAudio(deck);
+  if (!audio || !audio.duration) { setStatus('No track loaded on Deck ' + deck.toUpperCase()); return; }
+  audio.currentTime = Math.min(cp, audio.duration);
+  if (audio.paused) {
+    Engine.ensureDeckConnected(deck);
+    audio.play().catch(()=>{});
+  }
+  setStatus(`Jump to cue @ ${fmt(cp)} on Deck ${deck.toUpperCase()}`);
 }
 function seekDeck(deck, event) {
   const audio = getDeckAudio(deck);
@@ -1517,4 +1553,177 @@ async function previewRSS() {
   } catch(e) {
     preview.innerHTML = `<div style="color:var(--accent2)">Error: ${e.message}</div>`;
   }
+}
+
+// ─── Keyboard Shortcuts ──────────────────────────────────────────────────────
+let focusDeck = 'a';
+
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', e => {
+    // Don't trigger if user is typing in an input
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+    switch(e.key) {
+      case ' ': // Space = play/pause active deck
+        e.preventDefault();
+        const audio = getDeckAudio(focusDeck);
+        if (audio) { audio.paused ? deckPlay(focusDeck) : deckPause(focusDeck); }
+        break;
+      case 'a': case 'A': focusDeck = 'a'; setStatus('Focus: Deck A'); highlightFocusDeck(); break;
+      case 'b': case 'B': focusDeck = 'b'; setStatus('Focus: Deck B'); highlightFocusDeck(); break;
+      case 'ArrowLeft': e.preventDefault(); seekBy(focusDeck, -5); break;
+      case 'ArrowRight': e.preventDefault(); seekBy(focusDeck, 5); break;
+      case 'ArrowUp': e.preventDefault(); adjustVol(focusDeck, 0.05); break;
+      case 'ArrowDown': e.preventDefault(); adjustVol(focusDeck, -0.05); break;
+      case 'q': case 'Q': loadNextOnIdleDeck(); break;
+      case 'Escape': deckStop('a'); deckStop('b'); setStatus('Stopped'); break;
+      case '?': toggleShortcutHelp(); break;
+    }
+  });
+}
+
+function seekBy(deck, sec) {
+  const audio = getDeckAudio(deck);
+  if (audio && audio.duration) audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + sec));
+}
+
+function adjustVol(deck, delta) {
+  const g = Engine.decks[deck].gain;
+  if (g) { g.gain.value = Math.max(0, Math.min(1.5, g.gain.value + delta)); }
+  const slider = document.getElementById(`vol-${deck}`);
+  if (slider) { slider.value = Engine.decks[deck].gain?.gain?.value || 1; }
+}
+
+function highlightFocusDeck() {
+  document.getElementById('deck-a')?.classList.toggle('focused', focusDeck === 'a');
+  document.getElementById('deck-b')?.classList.toggle('focused', focusDeck === 'b');
+}
+
+function toggleShortcutHelp() {
+  let modal = document.getElementById('shortcut-modal');
+  if (modal) { modal.remove(); return; }
+  modal = document.createElement('div');
+  modal.id = 'shortcut-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center';
+  modal.onclick = () => modal.remove();
+  modal.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:24px 32px;max-width:400px;font-size:12px;color:var(--text)" onclick="event.stopPropagation()">
+    <div style="font-size:14px;font-weight:bold;margin-bottom:12px;color:var(--accent)">⌨ Keyboard Shortcuts</div>
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 16px">
+      <kbd>Space</kbd><span>Play/Pause focused deck</span>
+      <kbd>A / B</kbd><span>Focus Deck A or B</span>
+      <kbd>← →</kbd><span>Seek ±5 seconds</span>
+      <kbd>↑ ↓</kbd><span>Volume up/down</span>
+      <kbd>Q</kbd><span>Load next on idle deck</span>
+      <kbd>Esc</kbd><span>Stop both decks</span>
+      <kbd>?</kbd><span>Toggle this help</span>
+    </div>
+    <div style="margin-top:12px;text-align:right"><button class="btn" onclick="this.closest('#shortcut-modal').remove()">Close</button></div>
+  </div>`;
+  document.body.appendChild(modal);
+}
+
+// ─── Playlists ───────────────────────────────────────────────────────────────
+async function loadPlaylistList() {
+  const sel = document.getElementById('playlist-select');
+  if (!sel) return;
+  try {
+    const r = await fetch('/api/playlists');
+    const playlists = await r.json();
+    sel.innerHTML = '<option value="">— Select Playlist —</option>' +
+      playlists.map(p => `<option value="${escHtml(p.filename.replace('.json',''))}">${escHtml(p.name)} (${p.trackCount} tracks)</option>`).join('');
+  } catch(e) {}
+}
+
+async function savePlaylist() {
+  const name = prompt('Playlist name:');
+  if (!name) return;
+  const tracks = DJ.queue.map(t => ({ title: t.title, artist: t.artist, album: t.album||'', duration: t.duration||0, tags: t.tags||[], type: t.type, url: t.type==='local'?'':t.url||'', youtubeId: t.youtubeId||'' }));
+  try {
+    await fetch('/api/playlists', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name, tracks }) });
+    setStatus(`Playlist "${name}" saved (${tracks.length} tracks)`);
+    loadPlaylistList();
+  } catch(e) { setStatus('Save failed: ' + e.message); }
+}
+
+async function loadPlaylist(mode) {
+  const sel = document.getElementById('playlist-select');
+  if (!sel?.value) return;
+  try {
+    const r = await fetch(`/api/playlists/${sel.value}`);
+    const data = await r.json();
+    if (mode === 'replace') { DJ.queue = []; DJ.trackIndex = -1; }
+    for (const t of (data.tracks||[])) {
+      DJ.queue.push({ ...t, type: t.type || 'online' });
+    }
+    renderQueue();
+    setStatus(`Loaded playlist "${data.name}" (${data.tracks?.length||0} tracks)${mode==='replace'?' — replaced queue':' — appended'}`);
+  } catch(e) { setStatus('Load failed: ' + e.message); }
+}
+
+async function deletePlaylist() {
+  const sel = document.getElementById('playlist-select');
+  if (!sel?.value || !confirm(`Delete playlist "${sel.value}"?`)) return;
+  try {
+    await fetch(`/api/playlists/${sel.value}`, { method: 'DELETE' });
+    setStatus('Playlist deleted');
+    loadPlaylistList();
+  } catch(e) { setStatus('Delete failed: ' + e.message); }
+}
+
+// ─── Song Requests ───────────────────────────────────────────────────────────
+async function pollRequests() {
+  try {
+    const r = await fetch('/api/requests');
+    const requests = await r.json();
+    const badge = document.getElementById('request-badge');
+    const list = document.getElementById('request-list');
+    if (badge) {
+      badge.textContent = requests.length;
+      badge.style.display = requests.length > 0 ? 'inline-block' : 'none';
+    }
+    if (list) {
+      list.innerHTML = requests.length === 0 ? '<div style="color:var(--muted);font-size:10px;padding:8px">No pending requests</div>' :
+        requests.map(r => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1;overflow:hidden"><div style="font-size:11px;color:var(--text)">${escHtml(r.artist)} — ${escHtml(r.title)}</div>
+          ${r.message ? `<div style="font-size:9px;color:var(--muted)">"${escHtml(r.message)}"</div>`:''}</div>
+          <button class="btn" style="padding:2px 8px;font-size:9px" onclick="queueRequest(${r.id},'${escAttr(r.artist)}','${escAttr(r.title)}')">+ Queue</button>
+          <button class="ctrl-btn" style="padding:2px 6px;font-size:9px" onclick="dismissRequest(${r.id})">×</button>
+        </div>`).join('');
+    }
+  } catch(e) {}
+}
+
+async function queueRequest(id, artist, title) {
+  try {
+    await addOnlineSongDirect(artist, title);
+    await fetch(`/api/requests/${id}`, { method: 'DELETE' });
+    pollRequests();
+  } catch(e) { setStatus('Could not queue request: ' + e.message); }
+}
+
+async function addOnlineSongDirect(artist, title) {
+  const q = `${artist} ${title}`;
+  setStatus(`Searching: ${artist} — ${title}...`);
+  const sr = await (await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`)).json();
+  if (!sr.length) throw new Error('No results');
+  const best = sr[0];
+  const track = { type:'online', title: title||best.title, artist: artist||best.author, album:'', duration: best.lengthSeconds||0, tags:[], youtubeId: best.videoId };
+  DJ.queue.push(track);
+  renderQueue();
+  setStatus(`Queued: ${track.artist} — ${track.title}`);
+}
+
+async function dismissRequest(id) {
+  await fetch(`/api/requests/${id}`, { method: 'DELETE' });
+  pollRequests();
+}
+
+// ─── Listener Count ──────────────────────────────────────────────────────────
+async function pollListenerCount() {
+  try {
+    const r = await fetch('/api/listeners');
+    const data = await r.json();
+    const el = document.getElementById('listener-count');
+    if (el) el.textContent = `${data.count || 0} listener${data.count !== 1 ? 's' : ''}`;
+  } catch(e) {}
 }

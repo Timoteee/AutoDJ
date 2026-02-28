@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#00e5ff">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <title>AutoDJ — Control Room</title>
 <link rel="stylesheet" href="/css/shared.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -430,6 +433,9 @@ input[type="number"] { width: 70px; }
     <button class="tab" data-tab="library" onclick="showTab('library')">Library</button>
     <button class="tab" data-tab="discover" onclick="showTab('discover')">Discover</button>
     <button class="tab" data-tab="settings" onclick="showTab('settings')">Settings</button>
+    <div style="flex:1"></div>
+    <button class="ctrl-btn" style="font-size:12px;padding:4px 10px" onclick="toggleShortcutHelp()" title="Keyboard shortcuts">⌨ ?</button>
+    <div style="font-size:9px;color:var(--muted);padding:6px 0" id="listener-count-header"></div>
   </div>
 
   <!-- MIX TAB -->
@@ -467,7 +473,8 @@ input[type="number"] { width: 70px; }
           <button class="ctrl-btn" onclick="deckPlay('a')">▶</button>
           <button class="ctrl-btn" onclick="deckPause('a')">⏸</button>
           <button class="ctrl-btn" onclick="deckStop('a')">⏹</button>
-          <button class="ctrl-btn" id="cue-btn-a" onclick="setCue('a')">CUE</button>
+          <button class="ctrl-btn" id="cue-btn-a" onclick="setCue('a')" title="Set cue point at current position" style="font-size:8px">SET</button>
+          <button class="ctrl-btn" onclick="gotoCue('a')" title="Jump to cue point" style="font-size:8px;color:var(--accent)">CUE▶</button>
           <button class="ctrl-btn" onclick="deckSkip('a')">⏭</button>
           <button class="ctrl-btn" onclick="loadNextOnIdleDeck()" title="Load next queued track" style="font-size:9px;letter-spacing:1px">LOAD↓</button>
         </div>
@@ -528,7 +535,8 @@ input[type="number"] { width: 70px; }
           <button class="ctrl-btn" onclick="deckPlay('b')">▶</button>
           <button class="ctrl-btn" onclick="deckPause('b')">⏸</button>
           <button class="ctrl-btn" onclick="deckStop('b')">⏹</button>
-          <button class="ctrl-btn" id="cue-btn-b" onclick="setCue('b')">CUE</button>
+          <button class="ctrl-btn" id="cue-btn-b" onclick="setCue('b')" title="Set cue point at current position" style="font-size:8px">SET</button>
+          <button class="ctrl-btn" onclick="gotoCue('b')" title="Jump to cue point" style="font-size:8px;color:var(--accent)">CUE▶</button>
           <button class="ctrl-btn" onclick="deckSkip('b')">⏭</button>
           <button class="ctrl-btn" onclick="loadNextOnIdleDeck()" title="Load next queued track" style="font-size:9px;letter-spacing:1px">LOAD↓</button>
         </div>
@@ -634,6 +642,27 @@ input[type="number"] { width: 70px; }
             <div style="font-size:12px;color:var(--bright);margin-bottom:4px" id="np-sidebar-title">—</div>
             <div style="font-size:10px;color:var(--muted)" id="np-sidebar-artist">—</div>
             <div style="font-size:10px;color:var(--accent3);margin-top:4px" id="np-sidebar-genre">—</div>
+            <div style="font-size:9px;color:var(--muted);margin-top:4px" id="listener-count"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">💾 Playlists</span></div>
+          <div class="panel-body" style="display:flex;flex-direction:column;gap:6px">
+            <select id="playlist-select" style="font-size:10px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px;border-radius:2px">
+              <option value="">— Select —</option>
+            </select>
+            <div style="display:flex;gap:4px">
+              <button class="btn" style="flex:1;padding:3px 6px;font-size:9px" onclick="loadPlaylist('replace')">Load</button>
+              <button class="btn" style="flex:1;padding:3px 6px;font-size:9px" onclick="loadPlaylist('append')">Append</button>
+              <button class="btn danger" style="padding:3px 6px;font-size:9px" onclick="deletePlaylist()">Del</button>
+            </div>
+            <button class="btn accent" style="padding:3px 8px;font-size:9px" onclick="savePlaylist()">Save Current Queue</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">🎤 Requests <span id="request-badge" style="display:none;background:var(--accent2);color:white;padding:1px 6px;border-radius:10px;font-size:9px;margin-left:4px">0</span></span></div>
+          <div class="panel-body" style="max-height:160px;overflow-y:auto">
+            <div id="request-list"><div style="color:var(--muted);font-size:10px;padding:8px">No pending requests</div></div>
           </div>
         </div>
       </div>
@@ -765,7 +794,7 @@ input[type="number"] { width: 70px; }
             <div>MusicBrainz: <span id="test-musicbrainz">—</span></div>
             <div>Discogs: <span id="test-discogs">—</span></div>
           </div>
-          <div id="test-streaming" style="font-size:10px;color:var(--muted)"></div>
+          <div id="test-streaming" style="font-size:10px;color:var(--muted);max-height:120px;overflow-y:auto"></div>
           <div style="display:flex;gap:8px">
             <button class="btn accent" onclick="saveConfig()">Save Keys</button>
             <button class="btn" onclick="testAllServices()">🔍 Test All</button>

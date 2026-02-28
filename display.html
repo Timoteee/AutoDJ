@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#00e5ff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AutoDJ">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <title>AutoDJ — Now Playing</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Syncopate:wght@400;700&family=DM+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
@@ -240,6 +246,19 @@ body { font-family: 'DM Mono', monospace; display: flex; flex-direction: column;
 <div class="side-viz left" id="viz-left"></div>
 <div class="side-viz right" id="viz-right"></div>
 
+<!-- Song Request Form -->
+<div id="request-form" style="position:fixed;bottom:40px;right:16px;z-index:8">
+  <button id="req-toggle" onclick="toggleRequestForm()" style="background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);color:var(--accent3);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;padding:6px 12px;cursor:pointer;border-radius:2px">🎤 Request</button>
+  <div id="req-panel" style="display:none;background:rgba(3,5,10,0.95);border:1px solid var(--border);border-radius:4px;padding:12px;margin-bottom:6px;width:240px">
+    <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--accent3);margin-bottom:8px">Song Request</div>
+    <input id="req-artist" placeholder="Artist" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:5px 8px;font-size:11px;border-radius:2px;margin-bottom:4px;outline:none">
+    <input id="req-title" placeholder="Song title" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:5px 8px;font-size:11px;border-radius:2px;margin-bottom:4px;outline:none">
+    <input id="req-msg" placeholder="Message (optional)" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:5px 8px;font-size:11px;border-radius:2px;margin-bottom:6px;outline:none">
+    <button onclick="submitRequest()" style="width:100%;background:rgba(168,85,247,0.2);border:1px solid rgba(168,85,247,0.4);color:var(--accent3);font-family:inherit;font-size:10px;padding:6px;cursor:pointer;border-radius:2px;letter-spacing:1px">Submit Request</button>
+    <div id="req-status" style="font-size:9px;margin-top:4px;min-height:14px"></div>
+  </div>
+</div>
+
 <!-- Marquee -->
 <div class="marquee-bar">
   <div class="marquee-track" id="marquee-track"></div>
@@ -301,6 +320,8 @@ function initAudioCtx() {
     sourceB = audioCtx.createMediaElementSource(relayB);
     sourceB.connect(gainB);
     gainB.connect(audioCtx.destination);
+    // Add master limiter
+    setupLimiter();
   } catch(e) { console.warn('AudioCtx init:', e.message); }
 }
 
@@ -611,6 +632,68 @@ function fmt(s) {
 function setText(id, val) { const e = document.getElementById(id); if (e) e.textContent = val; }
 function setStyle(id, prop, val) { const e = document.getElementById(id); if (e) e.style[prop] = val; }
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ─── Song Request Form ──────────────────────────────────────────────────────
+function toggleRequestForm() {
+  const p = document.getElementById('req-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+async function submitRequest() {
+  const artist = document.getElementById('req-artist').value.trim();
+  const title = document.getElementById('req-title').value.trim();
+  const message = document.getElementById('req-msg').value.trim();
+  const status = document.getElementById('req-status');
+  if (!artist && !title) { status.textContent = 'Enter artist or title'; status.style.color = 'var(--accent2)'; return; }
+  try {
+    status.textContent = 'Sending...'; status.style.color = 'var(--accent)';
+    const r = await fetch('/api/requests', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ artist, title, message }) });
+    if (r.ok) {
+      status.textContent = '✓ Request sent!'; status.style.color = 'var(--green)';
+      document.getElementById('req-artist').value = '';
+      document.getElementById('req-title').value = '';
+      document.getElementById('req-msg').value = '';
+      setTimeout(() => { status.textContent = ''; }, 3000);
+    } else { status.textContent = 'Failed to send'; status.style.color = 'var(--accent2)'; }
+  } catch(e) { status.textContent = 'Error: ' + e.message; status.style.color = 'var(--accent2)'; }
+}
+
+// ─── Master Limiter (prevents clipping during crossfades) ────────────────────
+function setupLimiter() {
+  if (!audioCtx) return;
+  try {
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -6;
+    comp.knee.value = 10;
+    comp.ratio.value = 4;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.25;
+    // Re-route gains through limiter
+    if (gainA) { gainA.disconnect(); gainA.connect(comp); }
+    if (gainB) { gainB.disconnect(); gainB.connect(comp); }
+    comp.connect(audioCtx.destination);
+  } catch(e) { console.warn('Limiter setup failed:', e); }
+}
+
+// ─── Listener Count ──────────────────────────────────────────────────────────
+async function pollListenerCount() {
+  try {
+    const r = await fetch('/api/listeners');
+    const data = await r.json();
+    const el = document.getElementById('listener-count');
+    if (el) {
+      const n = data.count || 0;
+      el.textContent = n > 0 ? `👁 ${n} listener${n !== 1 ? 's' : ''} connected` : '';
+    }
+  } catch(e) {}
+}
+setInterval(pollListenerCount, 12000);
+pollListenerCount();
+
+// ─── PWA Service Worker ──────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
 </script>
 </body>
 </html>
