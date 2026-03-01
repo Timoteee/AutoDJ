@@ -100,6 +100,12 @@ async function loadConfig() {
     toggleRssPreview();
 
     updateServiceIndicators();
+
+    // Auto-test music sources in background after 2 seconds
+    setTimeout(() => {
+      setStatus('Testing music sources...');
+      testAllServices();
+    }, 2000);
   } catch(e) {}
 }
 
@@ -261,10 +267,29 @@ async function addLocalFiles(fileList) {
     if (!file.type.startsWith('audio/') && !file.name.match(/\.(mp3|flac|wav|ogg|m4a|aac|opus|wma)$/i)) continue;
     const url = URL.createObjectURL(file);
 
-    // Parse filename as fallback
-    const nameParts = file.name.replace(/\.[^.]+$/, '').split(' - ');
-    const fallbackTitle = nameParts.length >= 2 ? nameParts.slice(1).join(' - ') : nameParts[0];
-    const fallbackArtist = nameParts.length >= 2 ? nameParts[0] : 'Unknown';
+    // Parse filename as fallback — handle multiple patterns:
+    // "Artist - Title.mp3", "01 Artist - Title.mp3", "01. Title.mp3", "Title.mp3"
+    const rawName = file.name.replace(/\.[^.]+$/, '');
+    // Strip leading track numbers like "01", "01.", "01 -"
+    const cleanName = rawName.replace(/^\d{1,3}[\.\-\s]+/, '').trim();
+    let fallbackTitle = cleanName, fallbackArtist = 'Unknown';
+
+    if (cleanName.includes(' - ')) {
+      const parts = cleanName.split(' - ');
+      fallbackArtist = parts[0].trim();
+      fallbackTitle = parts.slice(1).join(' - ').trim();
+    } else if (cleanName.includes(' — ')) {
+      const parts = cleanName.split(' — ');
+      fallbackArtist = parts[0].trim();
+      fallbackTitle = parts.slice(1).join(' — ').trim();
+    } else if (cleanName.includes('_')) {
+      // "Artist_Title" format
+      const parts = cleanName.split('_');
+      if (parts.length >= 2) {
+        fallbackArtist = parts[0].replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+        fallbackTitle = parts.slice(1).join(' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+      }
+    }
 
     const track = {
       type: 'local', file, url,
@@ -272,16 +297,23 @@ async function addLocalFiles(fileList) {
       duration: 0, tags: [], artwork: null, youtubeId: null
     };
 
-    // Read ID3 tags asynchronously
+    // Read ID3/metadata tags asynchronously
     Engine.readFileMetadata(file).then(meta => {
       if (meta.title) track.title = meta.title;
       if (meta.artist) track.artist = meta.artist;
       if (meta.album) track.album = meta.album;
       if (meta.artwork) track.artwork = meta.artwork;
+      if (meta.duration && !track.duration) track.duration = meta.duration;
       renderLocalFiles();
+      renderQueue(); // Also update queue in case track was already added
       // Update deck display if this track is currently playing
       const d = Engine.decks[DJ.currentDeck];
-      if (d.track === track) updateDeckArtwork(DJ.currentDeck, track);
+      if (d.track === track) {
+        updateDeckArtwork(DJ.currentDeck, track);
+        document.getElementById(`title-${DJ.currentDeck}`).textContent = track.title || '—';
+        document.getElementById(`artist-${DJ.currentDeck}`).textContent = track.artist || '—';
+        document.getElementById(`album-${DJ.currentDeck}`).textContent = track.album || '';
+      }
     });
 
     DJ.localFiles.push(track);
@@ -309,8 +341,8 @@ function renderLocalFiles() {
       ${f.artwork ? `<img src="${f.artwork}" style="width:32px;height:32px;border-radius:2px;object-fit:cover;flex-shrink:0">` :
         '<div style="width:32px;height:32px;background:var(--border);border-radius:2px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px">♪</div>'}
       <div style="flex:1;overflow:hidden;margin:0 8px">
-        <div class="local-file-name">${f.title}</div>
-        <div style="font-size:9px;color:var(--muted)">${f.artist}${f.album?' · '+f.album:''}</div>
+        <div class="local-file-name">${escHtml(f.title || f.file?.name || 'Unknown')}</div>
+        <div style="font-size:9px;color:var(--muted)">${escHtml(f.artist || 'Unknown')}${f.album ? ' · ' + escHtml(f.album) : ''}</div>
       </div>
       <div class="local-file-meta">${f.duration ? fmt(f.duration) : '—'}</div>
       <button class="btn" style="padding:3px 8px;font-size:9px;margin-left:4px" onclick="addSingleToQueue(${i})">Queue</button>
@@ -407,21 +439,21 @@ async function loadTrackOnDeck(deck, track) {
     audio.load();
 
   } else if (track.youtubeId) {
-    // Get direct audio stream from Piped
-    setStatus(`Fetching stream for: ${track.title}...`);
+    // Get direct audio stream (tries Piped→Cobalt→Invidious on server)
+    setStatus(`Resolving audio: ${track.artist} — ${track.title}...`);
     const stream = await Engine.getPipedAudioUrl(track.youtubeId);
     if (stream) {
       streamUrl = stream.url;
       track._streamUrl = stream.url; // stored for display relay
-      // Fill in metadata from Piped if not set
+      // Fill in metadata from stream response if not already set
       if (!track.artwork && stream.thumbnail) track.artwork = stream.thumbnail;
-      if (!track.title || track.title === '?') track.title = stream.title || track.title;
+      if ((!track.title || track.title === '?') && stream.title) track.title = stream.title;
       if (!track.duration && stream.duration) track.duration = stream.duration;
       audio.src = streamUrl;
       audio.load();
     } else {
-      setStatus(`No stream found for ${track.title} — skipping`);
-      setTimeout(() => advanceQueue(), 1500);
+      setStatus(`⚠ Stream failed for "${track.title}" — all sources down. Skipping...`);
+      setTimeout(() => advanceQueue(), 2000);
       return;
     }
   } else {
@@ -935,17 +967,20 @@ async function enqueueOnlineTrack(t) {
   const key = `${t.artist?.toLowerCase()}::${t.title?.toLowerCase()}`;
   if (DJ.usedTracks.has(key) || !t.artist || !t.title) return false;
 
-  setStatus(`Searching: ${t.artist} — ${t.title}`);
+  setStatus(`Searching: ${t.artist} — ${t.title}...`);
   try {
     const videoId = await Engine.searchVideo(t.artist, t.title);
     if (!videoId) {
-      console.warn(`[Enqueue] No video found for: ${t.artist} — ${t.title}`);
-      setStatus(`No video found for: ${t.artist} — ${t.title}`);
+      console.warn(`[Enqueue] No source found for: ${t.artist} — ${t.title}`);
+      setStatus(`⚠ No source for: ${t.artist} — ${t.title} (all search instances may be down)`);
       updateDiscoverItemStatus(t, 'not-found');
       return false;
     }
 
-    const info = await Engine.getTrackInfo(t.artist, t.title);
+    let info = { tags: [], album: '', image: '', duration: 0 };
+    if (DJ.hasLastfm) {
+      try { info = await Engine.getTrackInfo(t.artist, t.title); } catch(e) {}
+    }
     DJ.usedTracks.add(key);
 
     const track = {
@@ -960,7 +995,7 @@ async function enqueueOnlineTrack(t) {
     (info.tags||[]).forEach(tag => { if (!DJ.seedTags.includes(tag)) DJ.seedTags.push(tag); });
     renderQueue();
     updateDiscoverItemStatus(t, 'queued');
-    setStatus(`Queued: ${t.artist} — ${t.title}`);
+    setStatus(`✓ Queued: ${t.artist} — ${t.title}`);
     return true;
   } catch(e) {
     console.error(`[Enqueue] Error for ${t.artist} — ${t.title}:`, e);
@@ -1039,7 +1074,7 @@ async function addOnlineSong() {
   const query = input.value.trim();
   if (!query) { if (statusEl) statusEl.textContent = 'Enter an artist and title'; return; }
 
-  if (statusEl) { statusEl.textContent = 'Searching...'; statusEl.style.color = 'var(--accent)'; }
+  if (statusEl) { statusEl.textContent = 'Searching all sources...'; statusEl.style.color = 'var(--accent)'; }
 
   // Try to parse "artist - title" or just search as-is
   let artist = '', title = '';
@@ -1052,25 +1087,47 @@ async function addOnlineSong() {
     artist = parts[0].trim();
     title = parts.slice(1).join(' — ').trim();
   } else {
-    // Search as-is, use the result title/author
     title = query;
-    artist = '';
   }
 
   try {
     const searchQ = artist ? `${artist} ${title}` : query;
-    const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(searchQ + ' audio')}`);
-    const results = await r.json();
+
+    // Use unified search for better results display
+    let results = [];
+    let source = 'none';
+
+    // Try unified search first (shows source)
+    try {
+      const r = await fetch(`/api/search/all?q=${encodeURIComponent(searchQ + ' audio')}`);
+      const data = await r.json();
+      if (data.results?.length > 0) {
+        results = data.results;
+        source = data.source;
+      }
+    } catch(e) {}
+
+    // Fallback to legacy search
+    if (!results.length) {
+      const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(searchQ + ' audio')}`);
+      const legacy = await r.json();
+      if (legacy.length > 0) {
+        results = legacy.map(l => ({ id: l.videoId, title: l.title, artist: l.author, duration: l.lengthSeconds }));
+        source = 'piped';
+      }
+    }
 
     if (!results.length) {
-      if (statusEl) { statusEl.textContent = `No results for "${query}"`; statusEl.style.color = 'var(--accent2)'; }
+      if (statusEl) { statusEl.textContent = `No results for "${query}" — all music sources may be down. Check Settings > Test Services.`; statusEl.style.color = 'var(--accent2)'; }
       return;
     }
 
     const best = results[0];
-    const videoId = best.videoId;
+    const videoId = best.id || best.videoId;
     const trackTitle = title || best.title || query;
-    const trackArtist = artist || best.author || 'Unknown';
+    const trackArtist = artist || best.artist || best.author || 'Unknown';
+
+    if (statusEl) { statusEl.textContent = `Found via ${source}: "${trackTitle}" — resolving stream...`; statusEl.style.color = 'var(--accent)'; }
 
     // Try to get metadata from Last.fm
     let info = { tags: [], album: '', image: '', duration: 0 };
@@ -1082,13 +1139,13 @@ async function addOnlineSong() {
       type: 'online', youtubeId: videoId,
       title: trackTitle, artist: trackArtist,
       album: info.album || '', tags: info.tags || [],
-      duration: info.duration || best.lengthSeconds || 0,
-      image: info.image || '', artwork: info.image || ''
+      duration: info.duration || best.duration || best.lengthSeconds || 0,
+      image: info.image || best.thumbnail || '', artwork: info.image || best.thumbnail || ''
     };
     DJ.queue.push(track);
     renderQueue();
     input.value = '';
-    if (statusEl) { statusEl.textContent = `Queued: ${trackArtist} — ${trackTitle}`; statusEl.style.color = 'var(--green)'; }
+    if (statusEl) { statusEl.textContent = `✓ Queued: ${trackArtist} — ${trackTitle} (via ${source})`; statusEl.style.color = 'var(--green)'; }
     setStatus(`Queued: ${trackArtist} — ${trackTitle}`);
   } catch(e) {
     console.error('[AddOnline]', e);

@@ -126,13 +126,62 @@ const Engine = (() => {
   }
 
   async function readFileMetadata(file) {
-    return new Promise((resolve) => {
+    // First try ID3v2 (header-based, first 512KB)
+    const id3v2 = await new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve(extractID3(e.target.result));
       reader.onerror = () => resolve({ title:'', artist:'', album:'', artwork: null });
-      // Read first 512KB — enough for ID3 tags and embedded artwork
       reader.readAsArrayBuffer(file.slice(0, 512 * 1024));
     });
+
+    if (id3v2.title || id3v2.artist) return id3v2;
+
+    // Fallback: try ID3v1 (last 128 bytes of file)
+    const id3v1 = await new Promise((resolve) => {
+      if (file.size < 128) return resolve({ title:'', artist:'', album:'', artwork: null });
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const meta = { title: '', artist: '', album: '', artwork: null };
+        try {
+          const bytes = new Uint8Array(e.target.result);
+          // ID3v1 starts with 'TAG' at the last 128 bytes
+          if (bytes[0] === 0x54 && bytes[1] === 0x41 && bytes[2] === 0x47) {
+            const dec = new TextDecoder('iso-8859-1');
+            meta.title = dec.decode(bytes.slice(3, 33)).replace(/\0/g,'').trim();
+            meta.artist = dec.decode(bytes.slice(33, 63)).replace(/\0/g,'').trim();
+            meta.album = dec.decode(bytes.slice(63, 93)).replace(/\0/g,'').trim();
+          }
+        } catch(e) {}
+        resolve(meta);
+      };
+      reader.onerror = () => resolve({ title:'', artist:'', album:'', artwork: null });
+      reader.readAsArrayBuffer(file.slice(file.size - 128));
+    });
+
+    if (id3v1.title || id3v1.artist) return id3v1;
+
+    // Fallback: use Audio element + browser metadata API
+    const browserMeta = await new Promise((resolve) => {
+      try {
+        const url = URL.createObjectURL(file);
+        const audio = new Audio();
+        const timeout = setTimeout(() => { resolve({ title:'', artist:'', album:'', artwork: null }); }, 3000);
+        audio.addEventListener('loadedmetadata', () => {
+          clearTimeout(timeout);
+          // Some browsers expose metadata through the media session
+          resolve({ title:'', artist:'', album:'', artwork: null, duration: audio.duration });
+          URL.revokeObjectURL(url);
+        });
+        audio.addEventListener('error', () => {
+          clearTimeout(timeout);
+          resolve({ title:'', artist:'', album:'', artwork: null });
+          URL.revokeObjectURL(url);
+        });
+        audio.src = url;
+      } catch(e) { resolve({ title:'', artist:'', album:'', artwork: null }); }
+    });
+
+    return browserMeta;
   }
 
   // ─── BPM Detection ───────────────────────────────────────────────────────────
@@ -306,26 +355,25 @@ const Engine = (() => {
     }
   }
 
-  // ─── Piped direct audio stream ────────────────────────────────────────────────
+  // ─── Stream resolver — calls server which tries Piped→Cobalt→Invidious ──────
   async function getPipedAudioUrl(videoId) {
     try {
-      console.log(`[Engine] Getting Piped stream for videoId: ${videoId}`);
+      console.log(`[Engine] Getting audio stream for: ${videoId}`);
       const r = await fetch(`/api/piped/streams?videoId=${videoId}`);
       if (!r.ok) {
-        console.error(`[Engine] Piped streams HTTP ${r.status} for ${videoId}`);
+        const err = await r.json().catch(() => ({}));
+        console.error(`[Engine] Stream resolve failed HTTP ${r.status}: ${err.error || 'unknown'}`);
         return null;
       }
       const data = await r.json();
       if (data.audioStreams?.length > 0) {
-        console.log(`[Engine] Got ${data.audioStreams.length} audio streams for ${videoId}`);
+        console.log(`[Engine] Got ${data.audioStreams.length} audio streams (quality: ${data.audioStreams[0].quality})`);
         return { url: data.audioStreams[0].url, thumbnail: data.thumbnail,
                  title: data.title, uploader: data.uploader, duration: data.duration };
       }
-      if (data.error) {
-        console.error(`[Engine] Piped error for ${videoId}: ${data.error}`);
-      }
+      console.error(`[Engine] No audio streams in response for ${videoId}`);
     } catch(e) {
-      console.error(`[Engine] getPipedAudioUrl error:`, e);
+      console.error(`[Engine] getPipedAudioUrl error:`, e.message);
     }
     return null;
   }
@@ -494,22 +542,33 @@ const Engine = (() => {
   }
   async function searchVideo(artist, title) {
     try {
-      const q = `${artist} ${title} audio`;
-      console.log(`[Engine] Searching video: "${q}"`);
-      const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`);
-      if (!r.ok) {
-        console.error(`[Engine] Video search HTTP ${r.status}`);
-        return null;
+      const q = `${artist} ${title}`;
+      console.log(`[Engine] Searching: "${q}"`);
+
+      // Try legacy endpoint first (returns videoId format)
+      const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q + ' audio')}`);
+      if (r.ok) {
+        const results = await r.json();
+        if (results.length > 0 && results[0].videoId) {
+          console.log(`[Engine] Found via legacy: ${results[0].videoId} — "${results[0].title}"`);
+          return results[0].videoId;
+        }
       }
-      const results = await r.json();
-      if (!results.length) {
-        console.warn(`[Engine] No video results for: ${artist} — ${title}`);
-        return null;
+
+      // Fallback: try unified search
+      const r2 = await fetch(`/api/search/all?q=${encodeURIComponent(q)}`);
+      if (r2.ok) {
+        const data = await r2.json();
+        if (data.results?.length > 0 && data.results[0].id) {
+          console.log(`[Engine] Found via ${data.source}: ${data.results[0].id} — "${data.results[0].title}"`);
+          return data.results[0].id;
+        }
       }
-      console.log(`[Engine] Found video: ${results[0].videoId} — ${results[0].title}`);
-      return results[0].videoId;
+
+      console.warn(`[Engine] No results for: ${artist} — ${title}`);
+      return null;
     } catch(e) {
-      console.error(`[Engine] Video search error:`, e);
+      console.error(`[Engine] Video search error:`, e.message);
       return null;
     }
   }

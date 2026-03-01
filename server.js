@@ -411,7 +411,37 @@ Respond ONLY with a JSON array of 5 objects: [{"title":string,"artist":string,"r
 });
 
 // ─── Music Source Instances (centralized) ────────────────────────────────────
+// Updated Mar 2026 — comprehensive list from community instance trackers
+// Piped: https://github.com/TeamPiped/Piped/wiki/Instances
+// Invidious: https://docs.invidious.io/instances/
 const SOURCES = {
+  piped: [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.adminforge.de',
+    'https://pipedapi.r4fo.com',
+    'https://api.piped.yt',
+    'https://pipedapi.darkness.services',
+    'https://pipedapi.leptons.xyz',
+    'https://pipedapi.drgns.space',
+    'https://piped-api.lunar.icu',
+    'https://pa.il.ax',
+    'https://pipedapi.in.projectsegfau.lt',
+  ],
+  invidious: [
+    'https://inv.nadeko.net',
+    'https://iv.datura.network',
+    'https://yewtu.be',
+    'https://invidious.protokolla.fi',
+    'https://inv.tux.pizza',
+    'https://invidious.materialio.us',
+    'https://yt.drgnz.club',
+    'https://invidious.privacyredirect.com',
+    'https://invidious.lunar.icu',
+    'https://inv.in.projectsegfau.lt',
+  ],
+  cobalt: [
+    'https://api.cobalt.tools',
+  ],
   monochrome: [
     'https://api.monochrome.tf',
     'https://arran.monochrome.tf',
@@ -422,17 +452,6 @@ const SOURCES = {
     'https://hifi-one.spotisaver.net',
     'https://tidal-api.binimum.org',
     'https://tidal.kinoplus.online',
-  ],
-  piped: [
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.tokhmi.xyz',
-    'https://pipedapi.moomoo.me',
-    'https://pipedapi.syncpundit.io',
-  ],
-  invidious: [
-    'https://inv.nadeko.net',
-    'https://yewtu.be',
-    'https://invidious.nerdvpn.de',
   ],
   dab: ['https://api.zozoki.com']
 };
@@ -510,56 +529,84 @@ app.get('/api/monochrome/stream/:id', async (req, res) => {
   res.status(502).json({ error: 'No stream available' });
 });
 
-// ─── Unified Multi-Source Search — searches ALL sources ─────────────────────
+// ─── Unified Multi-Source Search — direct calls, no self-referencing ────────
 app.get('/api/search/all', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.json({ results: [], source: 'none' });
-  console.log(`[MultiSearch] "${q}"`);
+  console.log(`[Search] "${q}"`);
 
-  // 1. Try Monochrome first (best quality)
-  try {
-    const r = await fetch(`http://localhost:${PORT}/api/monochrome/search?q=${encodeURIComponent(q)}`);
-    const data = await r.json();
-    if (data.length > 0) return res.json({ results: data, source: 'monochrome' });
-  } catch(e) {}
-
-  // 2. Try Piped
+  // 1. Try Piped (most reliable for YouTube music)
   for (const inst of getHealthyInstances(SOURCES.piped)) {
     try {
       const start = Date.now();
-      const r = await fetch(`${inst}/search?q=${encodeURIComponent(q)}&filter=music_songs`, {
-        signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'AutoDJ/4.0' }
-      });
+      const url = `${inst}/search?q=${encodeURIComponent(q)}&filter=videos`;
+      const r = await fetch(url, { signal: AbortSignal.timeout(6000), headers: { 'User-Agent': 'AutoDJ/4.0' } });
       if (!r.ok) { markInstance(inst, false); continue; }
-      markInstance(inst, true, Date.now() - start);
       const data = await r.json();
+      markInstance(inst, true, Date.now() - start);
       const items = (data.items || []).filter(i => i.type === 'stream' || i.url).slice(0, 5);
       if (items.length > 0) {
+        console.log(`[Search] Piped ${inst}: ${items.length} results`);
         return res.json({ results: items.map(i => ({
-          id: i.url?.replace('/watch?v=','') || i.videoId,
-          title: i.title || 'Unknown', artist: i.uploaderName || i.author || 'Unknown',
-          duration: i.duration || 0, thumbnail: i.thumbnail || '', source: 'piped'
+          id: (i.url || '').replace('/watch?v=','') || i.videoId || '',
+          title: i.title || 'Unknown',
+          artist: i.uploaderName || i.author || 'Unknown',
+          duration: i.duration || 0,
+          thumbnail: i.thumbnail || '',
+          source: 'piped',
+          instance: inst
         })), source: 'piped' });
       }
     } catch(e) { markInstance(inst, false); }
   }
 
-  // 3. Try Invidious
+  // 2. Try Invidious
   for (const inst of getHealthyInstances(SOURCES.invidious)) {
     try {
       const start = Date.now();
       const r = await fetch(`${inst}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, {
-        signal: AbortSignal.timeout(5000)
+        signal: AbortSignal.timeout(6000)
       });
       if (!r.ok) { markInstance(inst, false); continue; }
-      markInstance(inst, true, Date.now() - start);
       const data = await r.json();
+      markInstance(inst, true, Date.now() - start);
       if (Array.isArray(data) && data.length > 0) {
+        console.log(`[Search] Invidious ${inst}: ${data.length} results`);
         return res.json({ results: data.slice(0, 5).map(i => ({
-          id: i.videoId, title: i.title || 'Unknown', artist: i.author || 'Unknown',
-          duration: i.lengthSeconds || 0, thumbnail: i.videoThumbnails?.[0]?.url || '',
+          id: i.videoId || '',
+          title: i.title || 'Unknown',
+          artist: i.author || 'Unknown',
+          duration: i.lengthSeconds || 0,
+          thumbnail: (i.videoThumbnails || [{}])[0]?.url || '',
           source: 'invidious'
         })), source: 'invidious' });
+      }
+    } catch(e) { markInstance(inst, false); }
+  }
+
+  // 3. Try Monochrome/HiFi
+  for (const inst of getHealthyInstances(SOURCES.monochrome).slice(0, 4)) {
+    try {
+      const start = Date.now();
+      const r = await fetch(`${inst}/api/search?query=${encodeURIComponent(q)}&type=track&limit=5`, {
+        signal: AbortSignal.timeout(6000), headers: { 'User-Agent': 'AutoDJ/4.0' }
+      });
+      if (!r.ok) { markInstance(inst, false); continue; }
+      const data = await r.json();
+      markInstance(inst, true, Date.now() - start);
+      const tracks = (data.results || data.tracks || data.items || data.data || []).slice(0, 5);
+      if (tracks.length > 0) {
+        console.log(`[Search] Monochrome ${inst}: ${tracks.length} results`);
+        return res.json({ results: tracks.map(t => ({
+          id: t.id || t.trackId || '',
+          title: t.title || t.name || 'Unknown',
+          artist: t.artist || t.artistName || 'Unknown',
+          album: t.album || t.albumName || '',
+          duration: t.duration || 0,
+          thumbnail: t.thumbnail || t.cover || '',
+          source: 'monochrome',
+          instance: inst
+        })), source: 'monochrome' });
       }
     } catch(e) { markInstance(inst, false); }
   }
@@ -574,31 +621,65 @@ app.get('/api/search/all', async (req, res) => {
       const data = await r.json();
       const tracks = (data.results || data.tracks || data.data || []).slice(0, 5);
       if (tracks.length > 0) {
+        console.log(`[Search] DAB: ${tracks.length} results`);
         return res.json({ results: tracks.map(t => ({
-          id: t.id, title: t.title || t.name || 'Unknown', artist: t.artist || 'Unknown',
+          id: t.id || '', title: t.title || t.name || 'Unknown', artist: t.artist || 'Unknown',
           duration: t.duration || 0, source: 'dab'
         })), source: 'dab' });
       }
     } catch(e) {}
   }
 
-  console.warn(`[MultiSearch] No results for "${q}" from any source`);
+  console.warn(`[Search] No results for "${q}" from any source`);
   res.json({ results: [], source: 'none' });
 });
 
-// Keep the legacy endpoints for backward compat
+// Legacy wrapper — converts unified results to the old {videoId, title, author} format
 app.get('/api/youtube/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.json([]);
-  // Redirect to unified search
-  try {
-    const r = await fetch(`http://localhost:${PORT}/api/search/all?q=${encodeURIComponent(q)}`);
-    const data = await r.json();
-    // Return in legacy format
-    res.json((data.results || []).map(t => ({
-      videoId: t.id, title: t.title, author: t.artist, lengthSeconds: t.duration
-    })));
-  } catch(e) { res.json([]); }
+
+  // Call the same logic inline (no self-referencing fetch)
+  // Try Piped first for video IDs
+  for (const inst of getHealthyInstances(SOURCES.piped)) {
+    try {
+      const r = await fetch(`${inst}/search?q=${encodeURIComponent(q)}&filter=videos`, {
+        signal: AbortSignal.timeout(6000), headers: { 'User-Agent': 'AutoDJ/4.0' }
+      });
+      if (!r.ok) { markInstance(inst, false); continue; }
+      const data = await r.json();
+      markInstance(inst, true);
+      const items = (data.items || []).filter(i => i.type === 'stream' || i.url).slice(0, 5);
+      if (items.length > 0) {
+        return res.json(items.map(i => ({
+          videoId: (i.url || '').replace('/watch?v=','') || i.videoId,
+          title: i.title || 'Unknown',
+          author: i.uploaderName || i.author || 'Unknown',
+          lengthSeconds: i.duration || 0
+        })));
+      }
+    } catch(e) { markInstance(inst, false); }
+  }
+
+  // Invidious fallback
+  for (const inst of getHealthyInstances(SOURCES.invidious)) {
+    try {
+      const r = await fetch(`${inst}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, {
+        signal: AbortSignal.timeout(6000)
+      });
+      if (!r.ok) { markInstance(inst, false); continue; }
+      const data = await r.json();
+      markInstance(inst, true);
+      if (Array.isArray(data) && data.length > 0) {
+        return res.json(data.slice(0, 5).map(i => ({
+          videoId: i.videoId, title: i.title || 'Unknown',
+          author: i.author || 'Unknown', lengthSeconds: i.lengthSeconds || 0
+        })));
+      }
+    } catch(e) { markInstance(inst, false); }
+  }
+
+  res.json([]);
 });
 
 // ─── Video Search — DAB API + Piped + Invidious (multi-fallback) ─────────────
@@ -741,6 +822,7 @@ app.get('/api/test/services', requireAuth, async (req, res) => {
     ...SOURCES.monochrome.slice(0,4).map(u => ({ url: u, type: 'monochrome', testUrl: `${u}/api/search?query=test&type=track&limit=1` })),
     ...SOURCES.piped.map(u => ({ url: u, type: 'piped', testUrl: `${u}/search?q=test&filter=videos` })),
     ...SOURCES.invidious.map(u => ({ url: u, type: 'invidious', testUrl: `${u}/api/v1/search?q=test&type=video` })),
+    ...SOURCES.cobalt.map(u => ({ url: u, type: 'cobalt', testUrl: u })),
     ...SOURCES.dab.map(u => ({ url: u, type: 'dab', testUrl: `${u}/api/search?query=test&type=track&limit=1` })),
   ];
   for (const st of sourceTests) {
@@ -766,66 +848,6 @@ app.get('/api/test/services', requireAuth, async (req, res) => {
   results.summary = { connected, total: services.length, sourcesUp, sourcesTotal: allSources.length };
 
   res.json(results);
-});
-
-// ─── Video Search — Piped API (NewPipe backend) + Invidious fallback ──────────
-app.get('/api/youtube/search', async (req, res) => {
-  const { q } = req.query;
-  if (!q) return res.json([]);
-  console.log(`[Search] Looking for: "${q}"`);
-
-  // Piped instances (NewPipe alternative, updated Feb 2026)
-  const pipedInstances = [
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.tokhmi.xyz',
-    'https://pipedapi.moomoo.me',
-    'https://pipedapi.syncpundit.io',
-  ];
-
-  // Try Piped first
-  for (const instance of pipedInstances) {
-    try {
-      const url = `${instance}/search?q=${encodeURIComponent(q)}&filter=videos`;
-      console.log(`[Search] Trying Piped: ${instance}`);
-      const r = await fetch(url, { signal: AbortSignal.timeout(5000),
-        headers: { 'User-Agent': 'AutoDJ/2.0' } });
-      if (!r.ok) { console.error(`[Search] Piped ${instance}: HTTP ${r.status}`); continue; }
-      const data = await r.json();
-      const items = (data.items || []).filter(i => i.type === 'stream' || i.url).slice(0, 3);
-      if (items.length > 0) {
-        console.log(`[Search] Found ${items.length} results via Piped (${instance})`);
-        return res.json(items.map(i => ({
-          videoId: i.url?.replace('/watch?v=','') || i.videoId,
-          title: i.title,
-          author: i.uploaderName || i.author,
-          lengthSeconds: i.duration || 0
-        })));
-      }
-    } catch(e) { console.error(`[Search] Piped ${instance} error: ${e.message}`); continue; }
-  }
-
-  // Invidious fallback (updated Feb 2026)
-  const invidiousInstances = [
-    'https://inv.nadeko.net',
-    'https://yewtu.be',
-    'https://invidious.nerdvpn.de',
-  ];
-  for (const instance of invidiousInstances) {
-    try {
-      console.log(`[Search] Trying Invidious: ${instance}`);
-      const url = `${instance}/api/v1/search?q=${encodeURIComponent(q)}&type=video&fields=videoId,title,author,lengthSeconds`;
-      const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (!r.ok) { console.error(`[Search] Invidious ${instance}: HTTP ${r.status}`); continue; }
-      const data = await r.json();
-      if (Array.isArray(data) && data.length > 0) {
-        console.log(`[Search] Found ${data.length} results via Invidious (${instance})`);
-        return res.json(data.slice(0, 3));
-      }
-    } catch(e) { console.error(`[Search] Invidious ${instance} error: ${e.message}`); continue; }
-  }
-
-  console.warn(`[Search] No results for: "${q}"`);
-  res.json([]);
 });
 
 // ─── Playlists ───────────────────────────────────────────────────────────────
@@ -911,34 +933,90 @@ app.get('/api/health', (req, res) => {
 app.get('/api/piped/streams', async (req, res) => {
   const { videoId } = req.query;
   if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
+  const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  console.log(`[Stream] Resolving audio for ${videoId}`);
 
+  // 1. Try Piped instances
   for (const instance of getHealthyInstances(SOURCES.piped)) {
     try {
       const r = await fetch(`${instance}/streams/${videoId}`, {
         signal: AbortSignal.timeout(8000),
-        headers: { 'User-Agent': 'AutoDJ/2.0' }
+        headers: { 'User-Agent': 'AutoDJ/4.0' }
       });
-      if (!r.ok) { console.error(`Piped stream ${instance}: HTTP ${r.status}`); continue; }
+      if (!r.ok) { markInstance(instance, false); continue; }
       const data = await r.json();
+      markInstance(instance, true);
       if (data.audioStreams && data.audioStreams.length > 0) {
-        // Sort by quality, prefer high bitrate
         const sorted = data.audioStreams.sort((a,b) => (b.bitrate||0)-(a.bitrate||0));
+        console.log(`[Stream] Piped ${instance}: ${sorted.length} audio streams`);
         return res.json({
-          title: data.title,
-          uploader: data.uploader,
-          duration: data.duration,
-          thumbnail: data.thumbnailUrl,
+          title: data.title, uploader: data.uploader,
+          duration: data.duration, thumbnail: data.thumbnailUrl,
           audioStreams: sorted.slice(0, 3).map(s => ({
-            url: s.url,
-            mimeType: s.mimeType,
-            bitrate: s.bitrate,
-            quality: s.quality
+            url: s.url, mimeType: s.mimeType, bitrate: s.bitrate, quality: s.quality
           }))
         });
       }
-    } catch(e) { continue; }
+    } catch(e) { markInstance(instance, false); }
   }
-  res.status(404).json({ error: 'No streams found' });
+
+  // 2. Try Cobalt API (https://cobalt.tools) — reliable audio extraction
+  for (const inst of SOURCES.cobalt) {
+    try {
+      console.log(`[Stream] Trying Cobalt: ${inst}`);
+      const r = await fetch(`${inst}/`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(12000),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: ytUrl, downloadMode: 'audio', audioFormat: 'mp3' })
+      });
+      if (!r.ok) { console.error(`[Stream] Cobalt HTTP ${r.status}`); continue; }
+      const data = await r.json();
+      if (data.url || data.audio) {
+        const streamUrl = data.url || data.audio;
+        console.log(`[Stream] Cobalt success`);
+        return res.json({
+          title: data.filename || videoId, uploader: '',
+          duration: 0, thumbnail: '',
+          audioStreams: [{ url: streamUrl, mimeType: 'audio/mpeg', bitrate: 128000, quality: 'cobalt' }]
+        });
+      }
+    } catch(e) { console.error(`[Stream] Cobalt error: ${e.message}`); }
+  }
+
+  // 3. Try Invidious for direct audio link
+  for (const inst of getHealthyInstances(SOURCES.invidious)) {
+    try {
+      console.log(`[Stream] Trying Invidious: ${inst}`);
+      const r = await fetch(`${inst}/api/v1/videos/${videoId}`, {
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!r.ok) { markInstance(inst, false); continue; }
+      const data = await r.json();
+      markInstance(inst, true);
+      const audioFormats = (data.adaptiveFormats || [])
+        .filter(f => f.type?.startsWith('audio/'))
+        .sort((a,b) => (b.bitrate||0) - (a.bitrate||0));
+      if (audioFormats.length > 0) {
+        console.log(`[Stream] Invidious ${inst}: ${audioFormats.length} audio formats`);
+        return res.json({
+          title: data.title || videoId, uploader: data.author || '',
+          duration: data.lengthSeconds || 0,
+          thumbnail: (data.videoThumbnails||[])[0]?.url || '',
+          audioStreams: audioFormats.slice(0, 3).map(f => ({
+            url: f.url, mimeType: f.type?.split(';')[0] || 'audio/webm',
+            bitrate: f.bitrate || 0, quality: f.audioQuality || 'invidious'
+          }))
+        });
+      }
+    } catch(e) { markInstance(inst, false); }
+  }
+
+  console.error(`[Stream] ALL sources failed for ${videoId}`);
+  res.status(404).json({ error: 'No streams found from any source' });
 });
 
 // ─── Temp Upload ──────────────────────────────────────────────────────────────
