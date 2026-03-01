@@ -1019,6 +1019,53 @@ app.get('/api/piped/streams', async (req, res) => {
   res.status(404).json({ error: 'No streams found from any source' });
 });
 
+// ─── Audio Stream Proxy (solves CORS for WebAudio) ────────────────────────
+// Client requests /api/stream/proxy?url=<encoded_url> and the server pipes it through
+app.get('/api/stream/proxy', async (req, res) => {
+  const { url: streamUrl } = req.query;
+  if (!streamUrl) return res.status(400).json({ error: 'Missing url parameter' });
+
+  try {
+    const headers = { 'User-Agent': 'AutoDJ/4.0' };
+    if (req.headers.range) headers['Range'] = req.headers.range;
+
+    const upstream = await fetch(streamUrl, {
+      signal: AbortSignal.timeout(30000),
+      headers
+    });
+
+    if (!upstream.ok && upstream.status !== 206) {
+      return res.status(upstream.status).json({ error: `Upstream HTTP ${upstream.status}` });
+    }
+
+    // Forward content headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (upstream.headers.get('content-type')) res.setHeader('Content-Type', upstream.headers.get('content-type'));
+    if (upstream.headers.get('content-length')) res.setHeader('Content-Length', upstream.headers.get('content-length'));
+    if (upstream.headers.get('content-range')) res.setHeader('Content-Range', upstream.headers.get('content-range'));
+    if (upstream.headers.get('accept-ranges')) res.setHeader('Accept-Ranges', upstream.headers.get('accept-ranges'));
+    res.status(upstream.status);
+
+    // Pipe the stream
+    const reader = upstream.body.getReader();
+    const pump = async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) { res.end(); break; }
+        if (!res.write(value)) {
+          await new Promise(resolve => res.once('drain', resolve));
+        }
+      }
+    };
+    pump().catch(() => res.end());
+
+    req.on('close', () => { try { reader.cancel(); } catch(e) {} });
+  } catch(e) {
+    console.error(`[StreamProxy] Error: ${e.message}`);
+    if (!res.headersSent) res.status(502).json({ error: e.message });
+  }
+});
+
 // ─── Temp Upload ──────────────────────────────────────────────────────────────
 app.post('/api/temp/upload', upload.array('files', 100), (req, res) => {
   if (!req.files?.length) return res.status(400).json({ error: 'No files' });

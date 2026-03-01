@@ -367,9 +367,17 @@ const Engine = (() => {
       }
       const data = await r.json();
       if (data.audioStreams?.length > 0) {
-        console.log(`[Engine] Got ${data.audioStreams.length} audio streams (quality: ${data.audioStreams[0].quality})`);
-        return { url: data.audioStreams[0].url, thumbnail: data.thumbnail,
-                 title: data.title, uploader: data.uploader, duration: data.duration };
+        // Proxy the stream URL through our server to avoid CORS issues with WebAudio
+        const rawUrl = data.audioStreams[0].url;
+        const proxiedUrl = `/api/stream/proxy?url=${encodeURIComponent(rawUrl)}`;
+        console.log(`[Engine] Got ${data.audioStreams.length} audio streams (quality: ${data.audioStreams[0].quality}), proxying through server`);
+        return {
+          url: proxiedUrl,
+          thumbnail: data.thumbnail,
+          title: data.title,
+          uploader: data.uploader,
+          duration: data.duration
+        };
       }
       console.error(`[Engine] No audio streams in response for ${videoId}`);
     } catch(e) {
@@ -395,12 +403,12 @@ const Engine = (() => {
   }
   async function getTopTracks(artist, limit=5) {
     try { const d = await lfm({method:'artist.gettoptracks',artist,limit});
-      return (d.toptracks?.track||[]).map(t=>({title:t.name,artist,duration:parseInt(t.duration)||0})); }
+      return (d.toptracks?.track||[]).map(t=>({title:t.name,artist,duration:Math.round((parseInt(t.duration)||0)/1000)})); }
     catch(e) { return []; }
   }
   async function getSimilarTracks(artist, track, limit=5) {
     try { const d = await lfm({method:'track.getsimilar',artist,track,limit});
-      return (d.similartracks?.track||[]).map(t=>({title:t.name,artist:t.artist?.name||artist,duration:parseInt(t.duration)||0})); }
+      return (d.similartracks?.track||[]).map(t=>({title:t.name,artist:t.artist?.name||artist,duration:Math.round((parseInt(t.duration)||0)/1000)})); }
     catch(e) { return []; }
   }
   async function getTagTracks(tag, limit=8) {
@@ -411,8 +419,10 @@ const Engine = (() => {
   async function getTrackInfo(artist, track) {
     try { const d = await lfm({method:'track.getinfo',artist,track});
       const info = d.track;
+      const durMs = parseInt(info?.duration) || 0;
       return { tags:(info?.toptags?.tag||[]).slice(0,6).map(t=>t.name.toLowerCase()),
-        duration:parseInt(info?.duration)||0, album:info?.album?.title||'',
+        duration: durMs > 0 ? Math.round(durMs / 1000) : 0, // Last.fm returns ms, convert to seconds
+        album:info?.album?.title||'',
         image:(info?.album?.image||[]).find(i=>i.size==='extralarge')?.['#text']||'' }; }
     catch(e) { return {tags:[],duration:0,album:'',image:''}; }
   }

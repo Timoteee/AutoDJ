@@ -492,12 +492,19 @@ async function loadTrackOnDeck(deck, track) {
 
 async function onMetaLoaded(deck) {
   const audio = getDeckAudio(deck);
-  const dur = audio.duration;
+  let dur = audio.duration;
   const track = Engine.decks[deck].track;
-  if (track && dur) track.duration = dur;
+
+  // Guard: if audio reports absurd duration, use track metadata instead
+  if (!isFinite(dur) || dur > 36000) {
+    dur = track?.duration || 0;
+  } else if (track && dur > 0) {
+    track.duration = dur; // Update track metadata with actual audio duration
+  }
 
   // Update duration display
   document.getElementById(`dur-${deck}`).textContent = fmt(dur);
+  renderQueue(); // Update queue to show correct durations
 
   // Smart fade analysis
   if (document.getElementById('smart-fade')?.checked && audio.src) {
@@ -611,8 +618,15 @@ function onXfader(val) {
 function updateDeckUI(deck) {
   const audio = getDeckAudio(deck);
   const cur = audio.currentTime || 0;
-  const dur = audio.duration || 0;
-  const remain = dur - cur;
+  let dur = audio.duration || 0;
+
+  // Guard: if audio reports absurd duration (> 10 hours or Infinity), use track metadata
+  if (!isFinite(dur) || dur > 36000) {
+    const track = Engine.decks[deck].track;
+    dur = track?.duration || 0;
+  }
+
+  const remain = dur > 0 ? dur - cur : 0;
   const pct = dur > 0 ? (cur / dur * 100) : 0;
 
   document.getElementById(`prog-${deck}`).style.width = pct + '%';
@@ -1018,13 +1032,13 @@ function showDiscoverResults(tracks, label) {
   const existingHtml = el.innerHTML.includes('disc-item') ? el.innerHTML : '';
   const newHtml = tracks.map(t => {
     const id = `disc-${(t.artist||'').replace(/\W/g,'')}-${(t.title||'').replace(/\W/g,'')}`.slice(0,60);
-    return `<div class="disc-item" id="${id}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px">
+    return `<div class="disc-item" id="${id}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px">
       <div style="flex:1;overflow:hidden">
-        <div style="color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.title || '?')}</div>
-        <div style="color:var(--muted);font-size:10px">${escHtml(t.artist || '?')}</div>
+        <div style="color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:bold">${escHtml(t.title || 'Unknown Title')}</div>
+        <div style="color:var(--text);font-size:11px">${escHtml(t.artist || 'Unknown Artist')}${t.duration ? ' · ' + fmt(t.duration) : ''}</div>
       </div>
-      <span class="disc-status" style="font-size:9px;color:var(--muted);min-width:50px;text-align:center">—</span>
-      <button class="btn" style="padding:3px 10px;font-size:9px;white-space:nowrap"
+      <span class="disc-status" style="font-size:9px;color:var(--muted);min-width:50px;text-align:center">ready</span>
+      <button class="btn" style="padding:4px 12px;font-size:10px;white-space:nowrap"
         onclick="manualEnqueueDiscover('${escAttr(t.artist)}','${escAttr(t.title)}',this)">+ Queue</button>
     </div>`;
   }).join('');
@@ -1509,8 +1523,17 @@ function setupDropZone() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(s) {
-  if (!s || isNaN(s) || s < 0) return '0:00';
-  return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;
+  if (!s || isNaN(s) || !isFinite(s) || s < 0) return '0:00';
+  // Guard against ms values accidentally passed as seconds (> 1 hour likely means ms)
+  if (s > 36000) s = Math.round(s / 1000);
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  if (m >= 60) {
+    const h = Math.floor(m / 60);
+    const rm = m % 60;
+    return `${h}:${rm.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+  }
+  return `${m}:${sec.toString().padStart(2,'0')}`;
 }
 function setStatus(msg) {
   const el = document.getElementById('status');

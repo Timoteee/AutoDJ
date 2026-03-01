@@ -626,8 +626,12 @@ setInterval(() => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmt(s) {
-  if (!s || isNaN(s) || s < 0) return '0:00';
-  return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;
+  if (!s || isNaN(s) || !isFinite(s) || s < 0) return '0:00';
+  if (s > 36000) s = Math.round(s / 1000);
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  if (m >= 60) return `${Math.floor(m/60)}:${(m%60).toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+  return `${m}:${sec.toString().padStart(2,'0')}`;
 }
 function setText(id, val) { const e = document.getElementById(id); if (e) e.textContent = val; }
 function setStyle(id, prop, val) { const e = document.getElementById(id); if (e) e.style[prop] = val; }
