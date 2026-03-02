@@ -439,20 +439,31 @@ async function loadTrackOnDeck(deck, track) {
     audio.load();
 
   } else if (track.youtubeId) {
-    // Get direct audio stream (tries Piped→Cobalt→Invidious on server)
-    setStatus(`Resolving audio: ${track.artist} — ${track.title}...`);
-    const stream = await Engine.getPipedAudioUrl(track.youtubeId);
-    if (stream) {
-      streamUrl = stream.url;
-      track._streamUrl = stream.url; // stored for display relay
-      // Fill in metadata from stream response if not already set
-      if (!track.artwork && stream.thumbnail) track.artwork = stream.thumbnail;
-      if ((!track.title || track.title === '?') && stream.title) track.title = stream.title;
-      if (!track.duration && stream.duration) track.duration = stream.duration;
-      audio.src = streamUrl;
-      audio.load();
-    } else {
-      setStatus(`⚠ Stream failed for "${track.title}" — all sources down. Skipping...`);
+    // Download track to server cache, then play from local cached file
+    setStatus(`⬇ Downloading: ${track.artist} — ${track.title}...`);
+    try {
+      const r = await fetch('/api/cache/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: track.youtubeId, title: track.title, artist: track.artist })
+      });
+      const data = await r.json();
+      if (r.ok && data.url) {
+        streamUrl = data.url;
+        track._streamUrl = data.url;
+        track._cacheSource = data.source || 'cache';
+        if (data.title && (!track.title || track.title === '?')) track.title = data.title;
+        setStatus(`▶ Playing: ${track.title} (${data.cached ? 'cached' : 'via ' + (data.source||'download')})`);
+        audio.src = streamUrl;
+        audio.load();
+      } else {
+        const errMsg = data.error || 'Download failed';
+        setStatus(`⚠ ${errMsg}. Skipping "${track.title}"...`);
+        setTimeout(() => advanceQueue(), 2000);
+        return;
+      }
+    } catch(e) {
+      setStatus(`⚠ Download error: ${e.message}. Skipping...`);
       setTimeout(() => advanceQueue(), 2000);
       return;
     }
@@ -538,8 +549,17 @@ function onTrackEnded(deck) {
 
 function advanceQueue() {
   DJ.fadeLock = false;
-  DJ.history.push(DJ.queue[DJ.trackIndex]);
+  const justPlayed = DJ.queue[DJ.trackIndex];
+  DJ.history.push(justPlayed);
   DJ.trackIndex++;
+
+  // Mark the just-played track as played in the download cache (triggers auto-cleanup)
+  if (justPlayed?.youtubeId) {
+    fetch('/api/cache/played', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId: justPlayed.youtubeId })
+    }).catch(() => {});
+  }
 
   if (DJ.trackIndex >= DJ.queue.length) {
     setStatus('Queue ended — fetching more tracks...');
@@ -566,6 +586,17 @@ function advanceQueue() {
   // Keep queue topped up
   if (DJ.queue.length - DJ.trackIndex < 3) fetchMoreOnline();
   checkAutoCleanTemp();
+
+  // Pre-download the NEXT track in background
+  const preloadTrack = DJ.queue[DJ.trackIndex + 1];
+  if (preloadTrack?.youtubeId) {
+    fetch('/api/cache/download', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId: preloadTrack.youtubeId, title: preloadTrack.title, artist: preloadTrack.artist })
+    }).then(r => r.json()).then(d => {
+      if (d.ok) console.log(`[Preload] Ready: ${preloadTrack.title} (${d.cached ? 'cached' : d.source})`);
+    }).catch(() => {});
+  }
 }
 
 // ─── Deck Controls ────────────────────────────────────────────────────────────
@@ -1031,23 +1062,24 @@ function showDiscoverResults(tracks, label) {
 
   const existingHtml = el.innerHTML.includes('disc-item') ? el.innerHTML : '';
   const newHtml = tracks.map(t => {
+    const safeTitle = escHtml(t.title || 'Unknown Title');
+    const safeArtist = escHtml(t.artist || 'Unknown Artist');
     const id = `disc-${(t.artist||'').replace(/\W/g,'')}-${(t.title||'').replace(/\W/g,'')}`.slice(0,60);
-    return `<div class="disc-item" id="${id}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px">
-      <div style="flex:1;overflow:hidden">
-        <div style="color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:bold">${escHtml(t.title || 'Unknown Title')}</div>
-        <div style="color:var(--text);font-size:11px">${escHtml(t.artist || 'Unknown Artist')}${t.duration ? ' · ' + fmt(t.duration) : ''}</div>
+    return `<div class="disc-item" id="${id}" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
+      <div style="flex:1;overflow:hidden;min-width:0">
+        <div style="color:#e8f0ff;font-size:13px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${safeTitle}</div>
+        <div style="color:#8899bb;font-size:11px;margin-top:2px">${safeArtist}${t.duration ? ' · ' + fmt(t.duration) : ''}</div>
       </div>
-      <span class="disc-status" style="font-size:9px;color:var(--muted);min-width:50px;text-align:center">ready</span>
-      <button class="btn" style="padding:4px 12px;font-size:10px;white-space:nowrap"
+      <span class="disc-status" style="font-size:9px;color:#556;min-width:50px;text-align:center">ready</span>
+      <button class="btn" style="padding:5px 14px;font-size:11px;white-space:nowrap;flex-shrink:0"
         onclick="manualEnqueueDiscover('${escAttr(t.artist)}','${escAttr(t.title)}',this)">+ Queue</button>
     </div>`;
   }).join('');
 
   if (existingHtml.includes('disc-item')) {
-    // Append
     el.insertAdjacentHTML('beforeend', newHtml);
   } else {
-    el.innerHTML = `<div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding:6px 12px;border-bottom:1px solid var(--border)">${label}</div>` + newHtml;
+    el.innerHTML = `<div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--accent);padding:8px 14px;border-bottom:1px solid var(--border);font-weight:bold">${label}</div>` + newHtml;
   }
 }
 

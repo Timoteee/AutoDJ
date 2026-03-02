@@ -1066,6 +1066,216 @@ app.get('/api/stream/proxy', async (req, res) => {
   }
 });
 
+// ─── Download Cache — download tracks to local files for reliable playback ──
+const CACHE_DIR = path.join(__dirname, 'cache');
+if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+
+// Track cache entries: { videoId, filepath, title, artist, downloadedAt, playedAt, size }
+let audioCache = [];
+const MAX_PLAYED_CACHE = 4; // Keep 4 previously-played songs before deleting
+
+function cleanCache() {
+  // Find entries that have been played (have playedAt set)
+  const played = audioCache.filter(e => e.playedAt).sort((a,b) => a.playedAt - b.playedAt);
+  while (played.length > MAX_PLAYED_CACHE) {
+    const oldest = played.shift();
+    try {
+      if (oldest.filepath && fs.existsSync(oldest.filepath)) {
+        fs.unlinkSync(oldest.filepath);
+        console.log(`[Cache] Deleted: ${oldest.title} (${oldest.videoId})`);
+      }
+    } catch(e) { console.error(`[Cache] Delete error:`, e.message); }
+    audioCache = audioCache.filter(e => e.videoId !== oldest.videoId);
+  }
+}
+
+// Resolve stream URL from any source (reuses the piped/streams logic)
+async function resolveStreamUrl(videoId) {
+  const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // 1. Piped
+  for (const inst of getHealthyInstances(SOURCES.piped)) {
+    try {
+      const r = await fetch(`${inst}/streams/${videoId}`, {
+        signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'AutoDJ/4.0' }
+      });
+      if (!r.ok) { markInstance(inst, false); continue; }
+      const data = await r.json();
+      markInstance(inst, true);
+      if (data.audioStreams?.length > 0) {
+        const best = data.audioStreams.sort((a,b) => (b.bitrate||0)-(a.bitrate||0))[0];
+        return { url: best.url, title: data.title, thumbnail: data.thumbnailUrl, duration: data.duration, source: 'piped' };
+      }
+    } catch(e) { markInstance(inst, false); }
+  }
+
+  // 2. Cobalt
+  for (const inst of SOURCES.cobalt) {
+    try {
+      const r = await fetch(`${inst}/`, {
+        method: 'POST', signal: AbortSignal.timeout(15000),
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: ytUrl, downloadMode: 'audio', audioFormat: 'mp3' })
+      });
+      if (!r.ok) continue;
+      const data = await r.json();
+      if (data.url || data.audio) {
+        return { url: data.url || data.audio, title: data.filename || videoId, source: 'cobalt' };
+      }
+    } catch(e) {}
+  }
+
+  // 3. Invidious
+  for (const inst of getHealthyInstances(SOURCES.invidious)) {
+    try {
+      const r = await fetch(`${inst}/api/v1/videos/${videoId}`, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) { markInstance(inst, false); continue; }
+      const data = await r.json();
+      markInstance(inst, true);
+      const audio = (data.adaptiveFormats || []).filter(f => f.type?.startsWith('audio/')).sort((a,b) => (b.bitrate||0)-(a.bitrate||0));
+      if (audio.length > 0) {
+        return { url: audio[0].url, title: data.title, duration: data.lengthSeconds, thumbnail: (data.videoThumbnails||[])[0]?.url, source: 'invidious' };
+      }
+    } catch(e) { markInstance(inst, false); }
+  }
+
+  return null;
+}
+
+// Download a track's audio to local cache
+app.post('/api/cache/download', async (req, res) => {
+  const { videoId, title, artist } = req.body;
+  if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
+
+  // Check if already cached and file exists
+  const existing = audioCache.find(e => e.videoId === videoId);
+  if (existing && fs.existsSync(existing.filepath)) {
+    console.log(`[Cache] Hit: ${existing.title} (${videoId})`);
+    return res.json({ ok: true, cached: true, url: `/api/cache/stream/${videoId}`, title: existing.title, source: 'cache' });
+  }
+
+  // Remove stale entry if file is missing
+  if (existing) audioCache = audioCache.filter(e => e.videoId !== videoId);
+
+  console.log(`[Cache] Downloading: ${title || videoId}`);
+  try {
+    const stream = await resolveStreamUrl(videoId);
+    if (!stream || !stream.url) {
+      return res.status(404).json({ error: 'No audio stream found from any source', tried: 'piped→cobalt→invidious' });
+    }
+
+    console.log(`[Cache] Got stream from ${stream.source}: ${stream.url.slice(0,80)}...`);
+
+    // Download the audio file
+    const audioResp = await fetch(stream.url, {
+      signal: AbortSignal.timeout(60000),
+      headers: { 'User-Agent': 'AutoDJ/4.0' }
+    });
+    if (!audioResp.ok) {
+      return res.status(502).json({ error: `Download failed: HTTP ${audioResp.status}` });
+    }
+
+    const ext = (audioResp.headers.get('content-type') || '').includes('mpeg') ? '.mp3' : '.webm';
+    const filepath = path.join(CACHE_DIR, `${videoId}${ext}`);
+    const writer = fs.createWriteStream(filepath);
+
+    const reader = audioResp.body.getReader();
+    let totalBytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      writer.write(value);
+      totalBytes += value.length;
+    }
+    writer.end();
+
+    await new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+    });
+
+    const entry = {
+      videoId, filepath, ext,
+      title: title || stream.title || videoId,
+      artist: artist || '',
+      thumbnail: stream.thumbnail || '',
+      duration: stream.duration || 0,
+      downloadedAt: Date.now(),
+      playedAt: null,
+      size: totalBytes,
+      source: stream.source
+    };
+    audioCache.push(entry);
+
+    console.log(`[Cache] Downloaded: ${entry.title} (${(totalBytes/1024/1024).toFixed(1)}MB) via ${stream.source}`);
+    res.json({ ok: true, cached: false, url: `/api/cache/stream/${videoId}`, title: entry.title, source: stream.source, size: totalBytes });
+  } catch(e) {
+    console.error(`[Cache] Download error for ${videoId}:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Stream a cached file
+app.get('/api/cache/stream/:videoId', (req, res) => {
+  const entry = audioCache.find(e => e.videoId === req.params.videoId);
+  if (!entry || !fs.existsSync(entry.filepath)) {
+    return res.status(404).json({ error: 'Not cached — call /api/cache/download first' });
+  }
+
+  const stat = fs.statSync(entry.filepath);
+  const mime = entry.ext === '.mp3' ? 'audio/mpeg' : 'audio/webm';
+
+  // Support range requests for seeking
+  const range = req.headers.range;
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': end - start + 1,
+      'Content-Type': mime,
+      'Access-Control-Allow-Origin': '*'
+    });
+    fs.createReadStream(entry.filepath, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, {
+      'Content-Length': stat.size,
+      'Content-Type': mime,
+      'Accept-Ranges': 'bytes',
+      'Access-Control-Allow-Origin': '*'
+    });
+    fs.createReadStream(entry.filepath).pipe(res);
+  }
+});
+
+// Mark a track as played (triggers cache cleanup)
+app.post('/api/cache/played', (req, res) => {
+  const { videoId } = req.body;
+  const entry = audioCache.find(e => e.videoId === videoId);
+  if (entry) {
+    entry.playedAt = Date.now();
+    console.log(`[Cache] Played: ${entry.title}`);
+    cleanCache();
+  }
+  res.json({ ok: true, cacheSize: audioCache.length });
+});
+
+// Cache status
+app.get('/api/cache/status', (req, res) => {
+  res.json({
+    entries: audioCache.map(e => ({
+      videoId: e.videoId, title: e.title, artist: e.artist,
+      size: e.size, source: e.source,
+      downloaded: e.downloadedAt, played: e.playedAt,
+      exists: fs.existsSync(e.filepath)
+    })),
+    totalSize: audioCache.reduce((s,e) => s + (e.size||0), 0),
+    dir: CACHE_DIR
+  });
+});
+
 // ─── Temp Upload ──────────────────────────────────────────────────────────────
 app.post('/api/temp/upload', upload.array('files', 100), (req, res) => {
   if (!req.files?.length) return res.status(400).json({ error: 'No files' });
