@@ -126,62 +126,13 @@ const Engine = (() => {
   }
 
   async function readFileMetadata(file) {
-    // First try ID3v2 (header-based, first 512KB)
-    const id3v2 = await new Promise((resolve) => {
+    return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => resolve(extractID3(e.target.result));
       reader.onerror = () => resolve({ title:'', artist:'', album:'', artwork: null });
+      // Read first 512KB — enough for ID3 tags and embedded artwork
       reader.readAsArrayBuffer(file.slice(0, 512 * 1024));
     });
-
-    if (id3v2.title || id3v2.artist) return id3v2;
-
-    // Fallback: try ID3v1 (last 128 bytes of file)
-    const id3v1 = await new Promise((resolve) => {
-      if (file.size < 128) return resolve({ title:'', artist:'', album:'', artwork: null });
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const meta = { title: '', artist: '', album: '', artwork: null };
-        try {
-          const bytes = new Uint8Array(e.target.result);
-          // ID3v1 starts with 'TAG' at the last 128 bytes
-          if (bytes[0] === 0x54 && bytes[1] === 0x41 && bytes[2] === 0x47) {
-            const dec = new TextDecoder('iso-8859-1');
-            meta.title = dec.decode(bytes.slice(3, 33)).replace(/\0/g,'').trim();
-            meta.artist = dec.decode(bytes.slice(33, 63)).replace(/\0/g,'').trim();
-            meta.album = dec.decode(bytes.slice(63, 93)).replace(/\0/g,'').trim();
-          }
-        } catch(e) {}
-        resolve(meta);
-      };
-      reader.onerror = () => resolve({ title:'', artist:'', album:'', artwork: null });
-      reader.readAsArrayBuffer(file.slice(file.size - 128));
-    });
-
-    if (id3v1.title || id3v1.artist) return id3v1;
-
-    // Fallback: use Audio element + browser metadata API
-    const browserMeta = await new Promise((resolve) => {
-      try {
-        const url = URL.createObjectURL(file);
-        const audio = new Audio();
-        const timeout = setTimeout(() => { resolve({ title:'', artist:'', album:'', artwork: null }); }, 3000);
-        audio.addEventListener('loadedmetadata', () => {
-          clearTimeout(timeout);
-          // Some browsers expose metadata through the media session
-          resolve({ title:'', artist:'', album:'', artwork: null, duration: audio.duration });
-          URL.revokeObjectURL(url);
-        });
-        audio.addEventListener('error', () => {
-          clearTimeout(timeout);
-          resolve({ title:'', artist:'', album:'', artwork: null });
-          URL.revokeObjectURL(url);
-        });
-        audio.src = url;
-      } catch(e) { resolve({ title:'', artist:'', album:'', artwork: null }); }
-    });
-
-    return browserMeta;
   }
 
   // ─── BPM Detection ───────────────────────────────────────────────────────────
@@ -339,50 +290,19 @@ const Engine = (() => {
       ctx2.fillStyle = '#ffcc00aa';
       ctx2.fillRect(fpX - 1, 0, 2, h);
     }
-
-    // Cue point marker
-    if (typeof d.cuePoint === 'number' && d.cuePoint > 0 && d.audio?.duration) {
-      const cpX = (d.cuePoint / d.audio.duration) * w;
-      ctx2.fillStyle = '#00e5ffcc';
-      ctx2.fillRect(cpX - 1, 0, 2, h);
-      // Small triangle at top
-      ctx2.beginPath();
-      ctx2.moveTo(cpX - 4, 0);
-      ctx2.lineTo(cpX + 4, 0);
-      ctx2.lineTo(cpX, 6);
-      ctx2.closePath();
-      ctx2.fill();
-    }
   }
 
-  // ─── Stream resolver — calls server which tries Piped→Cobalt→Invidious ──────
+  // ─── Piped direct audio stream ────────────────────────────────────────────────
   async function getPipedAudioUrl(videoId) {
     try {
-      console.log(`[Engine] Getting audio stream for: ${videoId}`);
       const r = await fetch(`/api/piped/streams?videoId=${videoId}`);
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        console.error(`[Engine] Stream resolve failed HTTP ${r.status}: ${err.error || 'unknown'}`);
-        return null;
-      }
+      if (!r.ok) return null;
       const data = await r.json();
       if (data.audioStreams?.length > 0) {
-        // Proxy the stream URL through our server to avoid CORS issues with WebAudio
-        const rawUrl = data.audioStreams[0].url;
-        const proxiedUrl = `/api/stream/proxy?url=${encodeURIComponent(rawUrl)}`;
-        console.log(`[Engine] Got ${data.audioStreams.length} audio streams (quality: ${data.audioStreams[0].quality}), proxying through server`);
-        return {
-          url: proxiedUrl,
-          thumbnail: data.thumbnail,
-          title: data.title,
-          uploader: data.uploader,
-          duration: data.duration
-        };
+        return { url: data.audioStreams[0].url, thumbnail: data.thumbnail,
+                 title: data.title, uploader: data.uploader, duration: data.duration };
       }
-      console.error(`[Engine] No audio streams in response for ${videoId}`);
-    } catch(e) {
-      console.error(`[Engine] getPipedAudioUrl error:`, e.message);
-    }
+    } catch(e) {}
     return null;
   }
 
@@ -403,12 +323,12 @@ const Engine = (() => {
   }
   async function getTopTracks(artist, limit=5) {
     try { const d = await lfm({method:'artist.gettoptracks',artist,limit});
-      return (d.toptracks?.track||[]).map(t=>({title:t.name,artist,duration:Math.round((parseInt(t.duration)||0)/1000)})); }
+      return (d.toptracks?.track||[]).map(t=>({title:t.name,artist,duration:parseInt(t.duration)||0})); }
     catch(e) { return []; }
   }
   async function getSimilarTracks(artist, track, limit=5) {
     try { const d = await lfm({method:'track.getsimilar',artist,track,limit});
-      return (d.similartracks?.track||[]).map(t=>({title:t.name,artist:t.artist?.name||artist,duration:Math.round((parseInt(t.duration)||0)/1000)})); }
+      return (d.similartracks?.track||[]).map(t=>({title:t.name,artist:t.artist?.name||artist,duration:parseInt(t.duration)||0})); }
     catch(e) { return []; }
   }
   async function getTagTracks(tag, limit=8) {
@@ -419,10 +339,8 @@ const Engine = (() => {
   async function getTrackInfo(artist, track) {
     try { const d = await lfm({method:'track.getinfo',artist,track});
       const info = d.track;
-      const durMs = parseInt(info?.duration) || 0;
       return { tags:(info?.toptags?.tag||[]).slice(0,6).map(t=>t.name.toLowerCase()),
-        duration: durMs > 0 ? Math.round(durMs / 1000) : 0, // Last.fm returns ms, convert to seconds
-        album:info?.album?.title||'',
+        duration:parseInt(info?.duration)||0, album:info?.album?.title||'',
         image:(info?.album?.image||[]).find(i=>i.size==='extralarge')?.['#text']||'' }; }
     catch(e) { return {tags:[],duration:0,album:'',image:''}; }
   }
@@ -433,154 +351,17 @@ const Engine = (() => {
     catch(e) { return {tags:[],image:''}; }
   }
 
-  // ─── MusicBrainz Fallback ────────────────────────────────────────────────────
-  async function mbSimilarArtists(artist, limit=5) {
-    try {
-      const r = await fetch(`/api/musicbrainz/artist?query=${encodeURIComponent(artist)}&limit=1`);
-      const d = await r.json();
-      const mbid = d.artists?.[0]?.id;
-      if (!mbid) return [];
-      // Get artist relations
-      const r2 = await fetch(`/api/musicbrainz/artist/${mbid}?inc=artist-rels`);
-      const d2 = await r2.json();
-      const related = (d2.relations || [])
-        .filter(r => r.type === 'member of band' || r.type === 'collaboration' || r.type === 'is person')
-        .map(r => r.artist?.name).filter(Boolean).slice(0, limit);
-      return related;
-    } catch(e) { console.error('[MB] similar artists error:', e); return []; }
-  }
-
-  async function mbSearchTracks(artist, limit=5) {
-    try {
-      const r = await fetch(`/api/musicbrainz/recording?query=artist:${encodeURIComponent(artist)}&limit=${limit}`);
-      const d = await r.json();
-      return (d.recordings || []).map(rec => ({
-        title: rec.title,
-        artist: rec['artist-credit']?.[0]?.name || artist,
-        duration: rec.length ? Math.round(rec.length / 1000) : 0,
-        source: 'musicbrainz'
-      }));
-    } catch(e) { console.error('[MB] search error:', e); return []; }
-  }
-
-  async function mbSimilarTracks(artist, title, limit=5) {
-    // MusicBrainz doesn't have direct "similar tracks" — search by same artist + related
-    try {
-      const tracks = await mbSearchTracks(artist, limit);
-      // Filter out the original track
-      return tracks.filter(t => t.title.toLowerCase() !== title.toLowerCase());
-    } catch(e) { return []; }
-  }
-
-  // ─── Discogs Fallback ──────────────────────────────────────────────────────────
-  async function discogsSimilarTracks(artist, title, limit=5) {
-    try {
-      const r = await fetch(`/api/discogs/search?artist=${encodeURIComponent(artist)}&type=release&per_page=3`);
-      const d = await r.json();
-      const results = [];
-      for (const release of (d.results || []).slice(0, 2)) {
-        // Get tracklist from release
-        if (release.resource_url) {
-          try {
-            const r2 = await fetch(`/api/discogs/search?q=${encodeURIComponent(release.title + ' ' + artist)}&type=release&per_page=1`);
-            const d2 = await r2.json();
-            // Create track entries from the release info
-            if (d2.results?.[0]) {
-              results.push({
-                title: d2.results[0].title?.split(' - ')?.[1] || d2.results[0].title || release.title,
-                artist: artist,
-                duration: 0,
-                source: 'discogs'
-              });
-            }
-          } catch(e) {}
-        }
-      }
-      return results.filter(t => t.title.toLowerCase() !== title.toLowerCase()).slice(0, limit);
-    } catch(e) { console.error('[Discogs] error:', e); return []; }
-  }
-
-  // ─── Similar to Current (multi-source fallback chain) ─────────────────────────
-  async function findSimilarToCurrent(artist, title, limit=8) {
-    const results = { tracks: [], source: '' };
-
-    // 1. Last.fm track.getsimilar (primary)
-    try {
-      const lfmTracks = await getSimilarTracks(artist, title, limit);
-      if (lfmTracks.length > 0) {
-        results.tracks = lfmTracks.map(t => ({...t, source: 'lastfm'}));
-        results.source = 'Last.fm';
-        console.log(`[Similar] Got ${lfmTracks.length} from Last.fm`);
-        return results;
-      }
-    } catch(e) { console.warn('[Similar] Last.fm failed:', e.message); }
-
-    // 2. MusicBrainz fallback
-    try {
-      const mbTracks = await mbSimilarTracks(artist, title, limit);
-      if (mbTracks.length > 0) {
-        results.tracks = mbTracks;
-        results.source = 'MusicBrainz';
-        console.log(`[Similar] Got ${mbTracks.length} from MusicBrainz`);
-        return results;
-      }
-    } catch(e) { console.warn('[Similar] MusicBrainz failed:', e.message); }
-
-    // 3. Discogs fallback
-    try {
-      const dcTracks = await discogsSimilarTracks(artist, title, limit);
-      if (dcTracks.length > 0) {
-        results.tracks = dcTracks;
-        results.source = 'Discogs';
-        console.log(`[Similar] Got ${dcTracks.length} from Discogs`);
-        return results;
-      }
-    } catch(e) { console.warn('[Similar] Discogs failed:', e.message); }
-
-    // 4. Last.fm artist top tracks as last resort
-    try {
-      const topTracks = await getTopTracks(artist, limit);
-      if (topTracks.length > 0) {
-        results.tracks = topTracks.filter(t => t.title.toLowerCase() !== title.toLowerCase()).map(t => ({...t, source: 'lastfm-top'}));
-        results.source = 'Last.fm (top tracks)';
-        return results;
-      }
-    } catch(e) {}
-
-    results.source = 'none';
-    return results;
-  }
+  // ─── Video Search ─────────────────────────────────────────────────────────────
   async function searchVideo(artist, title) {
     try {
-      const q = `${artist} ${title}`;
-      console.log(`[Engine] Searching: "${q}"`);
-
-      // Try legacy endpoint first (returns videoId format)
-      const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q + ' audio')}`);
-      if (r.ok) {
-        const results = await r.json();
-        if (results.length > 0 && results[0].videoId) {
-          console.log(`[Engine] Found via legacy: ${results[0].videoId} — "${results[0].title}"`);
-          return results[0].videoId;
-        }
+      const q = `${artist} ${title} audio`;
+      const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`);
+      const results = await r.json();
+      if (results.length > 0) {
+        return { videoId: results[0].videoId, _source: results[0]._source, _instance: results[0]._instance };
       }
-
-      // Fallback: try unified search
-      const r2 = await fetch(`/api/search/all?q=${encodeURIComponent(q)}`);
-      if (r2.ok) {
-        const data = await r2.json();
-        if (data.results?.length > 0 && data.results[0].id) {
-          console.log(`[Engine] Found via ${data.source}: ${data.results[0].id} — "${data.results[0].title}"`);
-          return data.results[0].id;
-        }
-      }
-
-      console.warn(`[Engine] No results for: ${artist} — ${title}`);
       return null;
-    } catch(e) {
-      console.error(`[Engine] Video search error:`, e.message);
-      return null;
-    }
+    } catch { return null; }
   }
 
   // ─── AI ───────────────────────────────────────────────────────────────────────
@@ -610,8 +391,6 @@ const Engine = (() => {
     crossfade, getVULevel, drawWaveform,
     getPipedAudioUrl, searchVideo,
     lfm, getSimilarArtists, getTopTracks, getSimilarTracks, getTagTracks, getTrackInfo, getArtistInfo,
-    mbSimilarArtists, mbSearchTracks, mbSimilarTracks,
-    discogsSimilarTracks, findSimilarToCurrent,
     aiRecommend, broadcastNowPlaying,
     get isFading() { return isFading; },
     get audioCtx() { return audioCtx; }

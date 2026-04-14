@@ -7,6 +7,7 @@ services:
       - "3000:3000"
     volumes:
       - ./music:/music:ro
+      - ./cache:/app/cache
       - ./config.json:/app/config.json
     environment:
       - PORT=3000

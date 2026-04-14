@@ -29,23 +29,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadConfig();
   startClock();
   setupDropZone();
-  setupKeyboardShortcuts();
-  // Enter key for online song input
-  const onlineInput = document.getElementById('online-song-input');
-  if (onlineInput) onlineInput.addEventListener('keydown', e => { if (e.key === 'Enter') addOnlineSong(); });
   setStatus('Ready — add local files or set a seed artist in Discover tab');
   // Start render loop after a brief paint delay
   setTimeout(startRenderLoop, 200);
-  // Poll requests and listener count
-  setInterval(pollRequests, 10000);
-  setInterval(pollListenerCount, 15000);
-  loadPlaylistList();
-  // AudioContext resume on first touch (mobile)
-  const resumeAudio = () => { if (Engine.audioCtx?.state === 'suspended') Engine.audioCtx.resume(); document.removeEventListener('touchstart', resumeAudio); document.removeEventListener('click', resumeAudio); };
-  document.addEventListener('touchstart', resumeAudio, { once: true });
-  document.addEventListener('click', resumeAudio, { once: true });
-  // Responsive resize
-  window.addEventListener('resize', () => { Object.values(Engine.decks).forEach((d,i) => { const c = document.getElementById(`wave-${i===0?'a':'b'}`); if (c) c.width = c.offsetWidth; }); });
 });
 
 function setupAudioElements() {
@@ -90,22 +76,7 @@ async function loadConfig() {
     if (cfg.musicDirs) document.getElementById('cfg-dirs').value = cfg.musicDirs.join('\n');
     if (cfg.messages) { DJ.messages = cfg.messages; renderMessages(); }
 
-    // Display settings
-    const marqueeMode = document.getElementById('cfg-marquee-mode');
-    if (marqueeMode && cfg.marqueeMode) marqueeMode.value = cfg.marqueeMode;
-    const rssUrl = document.getElementById('cfg-rss-url');
-    if (rssUrl && cfg.rssUrl) rssUrl.value = cfg.rssUrl;
-    const bgArt = document.getElementById('cfg-bg-art');
-    if (bgArt && cfg.bgArtSource) bgArt.value = cfg.bgArtSource;
-    toggleRssPreview();
-
     updateServiceIndicators();
-
-    // Auto-test music sources in background after 2 seconds
-    setTimeout(() => {
-      setStatus('Testing music sources...');
-      testAllServices();
-    }, 2000);
   } catch(e) {}
 }
 
@@ -148,110 +119,11 @@ async function saveConfig() {
     openaiKey: document.getElementById('cfg-openai').value,
     aiProvider: document.getElementById('cfg-ai-provider').value,
     musicDirs: document.getElementById('cfg-dirs').value.split('\n').map(s=>s.trim()).filter(Boolean),
-    messages: DJ.messages,
-    marqueeMode: document.getElementById('cfg-marquee-mode')?.value || 'static',
-    rssUrl: document.getElementById('cfg-rss-url')?.value || '',
-    bgArtSource: document.getElementById('cfg-bg-art')?.value || 'track'
+    messages: DJ.messages
   };
   await fetch('/api/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  await loadConfig();
-  setStatus('Configuration saved ✓ — testing services...');
-  // Auto-test after save
-  await testAllServices();
-}
-
-// ─── API Service Testing ─────────────────────────────────────────────────────
-async function testAllServices() {
-  const banner = document.getElementById('service-test-banner');
-  if (banner) { banner.style.display = 'block'; banner.textContent = 'Testing services...'; banner.style.color = 'var(--accent)'; banner.style.background = 'rgba(0,229,255,0.06)'; banner.style.borderColor = 'rgba(0,229,255,0.2)'; }
-
-  try {
-    const r = await fetch('/api/test/services');
-    const results = await r.json();
-
-    // Update indicators
-    setTestResult('test-lastfm', results.lastfm);
-    setTestResult('test-spotify', results.spotify);
-    setTestResult('test-ai', results.ai);
-    setTestResult('test-musicbrainz', results.musicbrainz);
-    setTestResult('test-discogs', results.discogs);
-
-    // Update streaming sources
-    const streamEl = document.getElementById('test-streaming');
-    if (streamEl && results.sources) {
-      const lines = [];
-      for (const [type, instances] of Object.entries(results.sources)) {
-        const up = instances.filter(s => s.ok).length;
-        const color = up > 0 ? 'var(--green)' : 'var(--accent2)';
-        const best = instances.filter(s=>s.ok).sort((a,b)=>(a.latency||9999)-(b.latency||9999))[0];
-        lines.push(`<div style="display:flex;justify-content:space-between;padding:2px 0"><span><span style="color:${color}">${up > 0 ? '●' : '✗'}</span> ${type}</span><span style="color:var(--muted)">${up}/${instances.length} up${best ? ` · ${best.latency}ms` : ''}</span></div>`);
-      }
-      streamEl.innerHTML = lines.join('');
-    }
-
-    // Update DJ state
-    DJ.hasLastfm = results.lastfm?.ok || false;
-    DJ.hasSpotify = results.spotify?.ok || false;
-    DJ.hasAI = results.ai?.ok || false;
-    updateServiceIndicators();
-
-    // Banner
-    if (banner) {
-      const s = results.summary;
-      banner.textContent = `${s.connected} of ${s.total} services · ${s.sourcesUp} of ${s.sourcesTotal} music sources up`;
-      banner.style.color = s.sourcesUp > 0 ? 'var(--green)' : 'var(--accent2)';
-      banner.style.background = s.sourcesUp > 0 ? 'rgba(0,255,136,0.06)' : 'rgba(255,51,102,0.06)';
-      banner.style.borderColor = s.sourcesUp > 0 ? 'rgba(0,255,136,0.2)' : 'rgba(255,51,102,0.2)';
-    }
-    setStatus(`Services tested: ${results.summary.connected}/${results.summary.total} services, ${results.summary.sourcesUp} music sources up`);
-  } catch(e) {
-    if (banner) { banner.textContent = 'Test failed: ' + e.message; banner.style.color = 'var(--accent2)'; }
-  }
-}
-
-function setTestResult(elId, result) {
-  const el = document.getElementById(elId);
-  if (!el) return;
-  if (result?.ok) {
-    el.innerHTML = `<span style="color:var(--green)">● Connected</span>`;
-  } else {
-    el.innerHTML = `<span style="color:var(--accent2)">✗ ${escHtml(result?.error || 'Failed')}</span>`;
-  }
-}
-
-// ─── Similar to Current ──────────────────────────────────────────────────────
-async function findSimilarToCurrent() {
-  const cur = DJ.queue[DJ.trackIndex];
-  if (!cur || !cur.artist || !cur.title) {
-    setStatus('No track is currently playing');
-    return;
-  }
-  setStatus(`Finding tracks similar to "${cur.artist} — ${cur.title}"...`);
-
-  try {
-    const result = await Engine.findSimilarToCurrent(cur.artist, cur.title, 8);
-    if (result.tracks.length === 0) {
-      setStatus('No similar tracks found from any source');
-      return;
-    }
-
-    setStatus(`Found ${result.tracks.length} similar tracks from ${result.source}`);
-    showDiscoverResults(result.tracks, `Similar to "${cur.title}" (${result.source})`);
-
-    // Auto-queue the first few
-    let added = 0;
-    for (const t of result.tracks.slice(0, 4)) {
-      if (added >= 3) break;
-      if (await enqueueOnlineTrack(t)) added++;
-    }
-    if (added > 0) {
-      renderQueue();
-      setStatus(`Queued ${added} similar tracks from ${result.source}`);
-    }
-  } catch(e) {
-    console.error('[Similar]', e);
-    setStatus('Error finding similar tracks: ' + e.message);
-  }
+  await loadConfig(); // Refresh indicators
+  setStatus('Configuration saved ✓');
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
@@ -267,29 +139,10 @@ async function addLocalFiles(fileList) {
     if (!file.type.startsWith('audio/') && !file.name.match(/\.(mp3|flac|wav|ogg|m4a|aac|opus|wma)$/i)) continue;
     const url = URL.createObjectURL(file);
 
-    // Parse filename as fallback — handle multiple patterns:
-    // "Artist - Title.mp3", "01 Artist - Title.mp3", "01. Title.mp3", "Title.mp3"
-    const rawName = file.name.replace(/\.[^.]+$/, '');
-    // Strip leading track numbers like "01", "01.", "01 -"
-    const cleanName = rawName.replace(/^\d{1,3}[\.\-\s]+/, '').trim();
-    let fallbackTitle = cleanName, fallbackArtist = 'Unknown';
-
-    if (cleanName.includes(' - ')) {
-      const parts = cleanName.split(' - ');
-      fallbackArtist = parts[0].trim();
-      fallbackTitle = parts.slice(1).join(' - ').trim();
-    } else if (cleanName.includes(' — ')) {
-      const parts = cleanName.split(' — ');
-      fallbackArtist = parts[0].trim();
-      fallbackTitle = parts.slice(1).join(' — ').trim();
-    } else if (cleanName.includes('_')) {
-      // "Artist_Title" format
-      const parts = cleanName.split('_');
-      if (parts.length >= 2) {
-        fallbackArtist = parts[0].replace(/([a-z])([A-Z])/g, '$1 $2').trim();
-        fallbackTitle = parts.slice(1).join(' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
-      }
-    }
+    // Parse filename as fallback
+    const nameParts = file.name.replace(/\.[^.]+$/, '').split(' - ');
+    const fallbackTitle = nameParts.length >= 2 ? nameParts.slice(1).join(' - ') : nameParts[0];
+    const fallbackArtist = nameParts.length >= 2 ? nameParts[0] : 'Unknown';
 
     const track = {
       type: 'local', file, url,
@@ -297,23 +150,16 @@ async function addLocalFiles(fileList) {
       duration: 0, tags: [], artwork: null, youtubeId: null
     };
 
-    // Read ID3/metadata tags asynchronously
+    // Read ID3 tags asynchronously
     Engine.readFileMetadata(file).then(meta => {
       if (meta.title) track.title = meta.title;
       if (meta.artist) track.artist = meta.artist;
       if (meta.album) track.album = meta.album;
       if (meta.artwork) track.artwork = meta.artwork;
-      if (meta.duration && !track.duration) track.duration = meta.duration;
       renderLocalFiles();
-      renderQueue(); // Also update queue in case track was already added
       // Update deck display if this track is currently playing
       const d = Engine.decks[DJ.currentDeck];
-      if (d.track === track) {
-        updateDeckArtwork(DJ.currentDeck, track);
-        document.getElementById(`title-${DJ.currentDeck}`).textContent = track.title || '—';
-        document.getElementById(`artist-${DJ.currentDeck}`).textContent = track.artist || '—';
-        document.getElementById(`album-${DJ.currentDeck}`).textContent = track.album || '';
-      }
+      if (d.track === track) updateDeckArtwork(DJ.currentDeck, track);
     });
 
     DJ.localFiles.push(track);
@@ -341,8 +187,8 @@ function renderLocalFiles() {
       ${f.artwork ? `<img src="${f.artwork}" style="width:32px;height:32px;border-radius:2px;object-fit:cover;flex-shrink:0">` :
         '<div style="width:32px;height:32px;background:var(--border);border-radius:2px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px">♪</div>'}
       <div style="flex:1;overflow:hidden;margin:0 8px">
-        <div class="local-file-name">${escHtml(f.title || f.file?.name || 'Unknown')}</div>
-        <div style="font-size:9px;color:var(--muted)">${escHtml(f.artist || 'Unknown')}${f.album ? ' · ' + escHtml(f.album) : ''}</div>
+        <div class="local-file-name">${f.title}</div>
+        <div style="font-size:9px;color:var(--muted)">${f.artist}${f.album?' · '+f.album:''}</div>
       </div>
       <div class="local-file-meta">${f.duration ? fmt(f.duration) : '—'}</div>
       <button class="btn" style="padding:3px 8px;font-size:9px;margin-left:4px" onclick="addSingleToQueue(${i})">Queue</button>
@@ -426,9 +272,6 @@ async function loadTrackOnDeck(deck, track) {
   Engine.decks[deck].fadePoint = null;
   Engine.decks[deck].bpm = null;
   DJ.fadeLock = false;
-  // Reset cue button label
-  const cueBtn = document.getElementById(`cue-btn-${deck}`);
-  if (cueBtn) { cueBtn.textContent = 'SET'; cueBtn.style.color = ''; }
 
   const audio = getDeckAudio(deck);
   let streamUrl = null;
@@ -443,27 +286,25 @@ async function loadTrackOnDeck(deck, track) {
     setStatus(`⬇ Downloading: ${track.artist} — ${track.title}...`);
     try {
       const r = await fetch('/api/cache/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId: track.youtubeId, title: track.title, artist: track.artist })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: track.youtubeId, title: track.title, artist: track.artist, _source: track._source || '', _instance: track._instance || '' })
       });
       const data = await r.json();
       if (r.ok && data.url) {
         streamUrl = data.url;
         track._streamUrl = data.url;
-        track._cacheSource = data.source || 'cache';
         if (data.title && (!track.title || track.title === '?')) track.title = data.title;
         setStatus(`▶ Playing: ${track.title} (${data.cached ? 'cached' : 'via ' + (data.source||'download')})`);
         audio.src = streamUrl;
         audio.load();
       } else {
-        const errMsg = data.error || 'Download failed';
-        setStatus(`⚠ ${errMsg}. Skipping "${track.title}"...`);
+        setStatus(`⚠ ${data.error || 'Download failed'}. Skipping "${track.title}"...`);
+        console.error('[LoadDeck] Download failed:', data.error);
         setTimeout(() => advanceQueue(), 2000);
         return;
       }
     } catch(e) {
-      setStatus(`⚠ Download error: ${e.message}. Skipping...`);
+      setStatus(`⚠ Error: ${e.message}. Skipping...`);
       setTimeout(() => advanceQueue(), 2000);
       return;
     }
@@ -503,19 +344,12 @@ async function loadTrackOnDeck(deck, track) {
 
 async function onMetaLoaded(deck) {
   const audio = getDeckAudio(deck);
-  let dur = audio.duration;
+  const dur = audio.duration;
   const track = Engine.decks[deck].track;
-
-  // Guard: if audio reports absurd duration, use track metadata instead
-  if (!isFinite(dur) || dur > 36000) {
-    dur = track?.duration || 0;
-  } else if (track && dur > 0) {
-    track.duration = dur; // Update track metadata with actual audio duration
-  }
+  if (track && dur) track.duration = dur;
 
   // Update duration display
   document.getElementById(`dur-${deck}`).textContent = fmt(dur);
-  renderQueue(); // Update queue to show correct durations
 
   // Smart fade analysis
   if (document.getElementById('smart-fade')?.checked && audio.src) {
@@ -553,12 +387,10 @@ function advanceQueue() {
   DJ.history.push(justPlayed);
   DJ.trackIndex++;
 
-  // Mark the just-played track as played in the download cache (triggers auto-cleanup)
+  // Mark as played in cache (triggers auto-cleanup of old cached files)
   if (justPlayed?.youtubeId) {
-    fetch('/api/cache/played', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId: justPlayed.youtubeId })
-    }).catch(() => {});
+    fetch('/api/cache/played', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId: justPlayed.youtubeId }) }).catch(() => {});
   }
 
   if (DJ.trackIndex >= DJ.queue.length) {
@@ -586,17 +418,6 @@ function advanceQueue() {
   // Keep queue topped up
   if (DJ.queue.length - DJ.trackIndex < 3) fetchMoreOnline();
   checkAutoCleanTemp();
-
-  // Pre-download the NEXT track in background
-  const preloadTrack = DJ.queue[DJ.trackIndex + 1];
-  if (preloadTrack?.youtubeId) {
-    fetch('/api/cache/download', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId: preloadTrack.youtubeId, title: preloadTrack.title, artist: preloadTrack.artist })
-    }).then(r => r.json()).then(d => {
-      if (d.ok) console.log(`[Preload] Ready: ${preloadTrack.title} (${d.cached ? 'cached' : d.source})`);
-    }).catch(() => {});
-  }
 }
 
 // ─── Deck Controls ────────────────────────────────────────────────────────────
@@ -604,30 +425,17 @@ function deckPlay(deck) {
   if (!DJ.started) { startPlayback(); return; }
   Engine.initAudioCtx();
   Engine.ensureDeckConnected(deck);
-  getDeckAudio(deck).play().catch(()=>{});
+  const audio = getDeckAudio(deck);
+  if (!audio.src) { setStatus(`No track on Deck ${deck.toUpperCase()} — queue something first`); return; }
+  audio.play().then(() => setStatus(`▶ Playing Deck ${deck.toUpperCase()}`))
+    .catch(e => setStatus(`Play error: ${e.message} — click again`));
 }
 function deckPause(deck) { getDeckAudio(deck).pause(); }
 function deckStop(deck) { const a = getDeckAudio(deck); a.pause(); a.currentTime = 0; }
 function deckSkip(deck) { if (deck === DJ.currentDeck) triggerCrossfade(); }
 function setCue(deck) {
-  const audio = getDeckAudio(deck);
-  if (!audio || !audio.duration) { setStatus('Load a track before setting cue'); return; }
-  Engine.decks[deck].cuePoint = audio.currentTime;
-  setStatus(`Cue set @ ${fmt(audio.currentTime)} on Deck ${deck.toUpperCase()}`);
-  const btn = document.getElementById(`cue-btn-${deck}`);
-  if (btn) { btn.style.color = 'var(--accent)'; btn.textContent = `SET ${fmt(audio.currentTime)}`; }
-}
-function gotoCue(deck) {
-  const cp = Engine.decks[deck].cuePoint;
-  if (typeof cp !== 'number') { setStatus('No cue point set — click SET first'); return; }
-  const audio = getDeckAudio(deck);
-  if (!audio || !audio.duration) { setStatus('No track loaded on Deck ' + deck.toUpperCase()); return; }
-  audio.currentTime = Math.min(cp, audio.duration);
-  if (audio.paused) {
-    Engine.ensureDeckConnected(deck);
-    audio.play().catch(()=>{});
-  }
-  setStatus(`Jump to cue @ ${fmt(cp)} on Deck ${deck.toUpperCase()}`);
+  Engine.decks[deck].cuePoint = getDeckAudio(deck).currentTime;
+  setStatus(`Cue set @ ${fmt(Engine.decks[deck].cuePoint)}`);
 }
 function seekDeck(deck, event) {
   const audio = getDeckAudio(deck);
@@ -649,15 +457,8 @@ function onXfader(val) {
 function updateDeckUI(deck) {
   const audio = getDeckAudio(deck);
   const cur = audio.currentTime || 0;
-  let dur = audio.duration || 0;
-
-  // Guard: if audio reports absurd duration (> 10 hours or Infinity), use track metadata
-  if (!isFinite(dur) || dur > 36000) {
-    const track = Engine.decks[deck].track;
-    dur = track?.duration || 0;
-  }
-
-  const remain = dur > 0 ? dur - cur : 0;
+  const dur = audio.duration || 0;
+  const remain = dur - cur;
   const pct = dur > 0 ? (cur / dur * 100) : 0;
 
   document.getElementById(`prog-${deck}`).style.width = pct + '%';
@@ -665,24 +466,10 @@ function updateDeckUI(deck) {
   document.getElementById(`remain-${deck}`).textContent = remain > 0 ? '-' + fmt(remain) : '0:00';
   document.getElementById(`dur-${deck}`).textContent = fmt(dur);
 
-  // Periodically broadcast elapsed for display page interpolation (~every 1s)
-  if (deck === DJ.currentDeck && Math.floor(cur) !== Math.floor(cur - 0.3)) {
+  // Periodically broadcast elapsed for display page interpolation
+  if (deck === DJ.currentDeck && Math.round(cur) % 5 === 0) {
     const track = Engine.decks[deck].track;
-    const audioA = getDeckAudio('a');
-    const audioB = getDeckAudio('b');
-    const xfader = document.getElementById('crossfader');
-    if (track) Engine.broadcastNowPlaying({
-      nowPlaying: { title: track.title, artist: track.artist, album: track.album, artwork: track.artwork || track.image || '', elapsed: cur, duration: dur, fadePoint: Engine.decks[deck].fadePoint },
-      isPlaying: true,
-      deckState: {
-        activeDeck: DJ.currentDeck,
-        crossfader: parseFloat(xfader?.value || 0),
-        decks: {
-          a: { elapsed: audioA?.currentTime || 0, duration: audioA?.duration || 0, gain: Engine.decks.a.gain?.gain?.value ?? 0 },
-          b: { elapsed: audioB?.currentTime || 0, duration: audioB?.duration || 0, gain: Engine.decks.b.gain?.gain?.value ?? 0 }
-        }
-      }
-    });
+    if (track) Engine.broadcastNowPlaying({ nowPlaying: { ...track, elapsed: cur, duration: dur } });
   }
 
   // Auto-mix: fire once when remain enters the fade window
@@ -777,8 +564,7 @@ function renderQueue() {
   const list = document.getElementById('queue-list');
   document.getElementById('q-count').textContent = DJ.queue.length;
   if (!DJ.queue.length) {
-    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:11px">Queue empty — add tracks from Library or Discover</div>';
-    updateIdleDeckPreview();
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:11px">Queue empty</div>';
     return;
   }
   list.innerHTML = DJ.queue.map((t, i) => {
@@ -789,24 +575,20 @@ function renderQueue() {
     const badgeClass = isPlay ? 'badge-play' : isNext ? 'badge-next' : t.type==='local' ? 'badge-loc' : 'badge-q';
     const badgeText = isPlay ? '▶ NOW' : isNext ? 'NEXT' : t.type==='temp' ? 'TEMP' : src;
     const badgeStyle = t.type==='temp' ? 'style="background:rgba(255,204,0,0.15);color:#ffcc00"' : '';
-    const loadBtns = !isPlay && !isPast ? `<button class="ctrl-btn" style="padding:2px 5px;font-size:8px" onclick="loadToDeck('a',${i})" title="Load to Deck A">→A</button>
-      <button class="ctrl-btn" style="padding:2px 5px;font-size:8px" onclick="loadToDeck('b',${i})" title="Load to Deck B">→B</button>` : '';
     return `<div class="qitem${isPlay?' playing':''}${isNext?' next':''}${isPast?' past':''} ${t.type}"
       draggable="${!isPlay}" data-idx="${i}"
       ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)"
-      ondrop="onDrop(event,${i})" ondragleave="onDragLeave(event)"
-      ontouchstart="onTouchDragStart(event,${i})" ontouchmove="onTouchDragMove(event)" ontouchend="onTouchDragEnd(event,${i})">
-      <div class="q-num" style="cursor:grab;user-select:none" title="Drag to reorder">⠿</div>
+      ondrop="onDrop(event,${i})" ondragleave="onDragLeave(event)">
+      <div class="q-num">${i+1}</div>
       <div class="q-src">${src}</div>
       <div class="q-info">
-        <div class="q-title">${escHtml(t.title || '?')}</div>
-        <div class="q-artist">${escHtml(t.artist || '?')}${t.album?' · '+escHtml(t.album):''}</div>
+        <div class="q-title">${t.title}</div>
+        <div class="q-artist">${t.artist}${t.album?' · '+t.album:''}</div>
         ${t.tags?.length ? `<div class="q-tags">${t.tags.slice(0,3).join(' · ')}</div>` : ''}
       </div>
       <span class="q-badge ${badgeClass}" ${badgeStyle}>${badgeText}</span>
       <div class="q-dur">${t.duration ? fmt(t.duration) : '—'}</div>
-      <div style="display:flex;gap:2px;align-items:center">${loadBtns}
-      <button class="q-remove" onclick="removeFromQueue(${i})" ${isPlay?'disabled style="opacity:0.2"':''}>×</button></div>
+      <button class="q-remove" onclick="removeFromQueue(${i})">×</button>
     </div>`;
   }).join('');
   list.querySelector('.playing')?.scrollIntoView({ block:'nearest', behavior:'smooth' });
@@ -818,74 +600,6 @@ function renderQueue() {
     const ea = document.getElementById('np-sidebar-artist'); if (ea) ea.textContent = np.artist;
     const eg = document.getElementById('np-sidebar-genre'); if (eg) eg.textContent = np.tags?.slice(0,2).join(', ')||'—';
   }
-
-  updateIdleDeckPreview();
-}
-
-// Show preview of next track on the idle deck
-function updateIdleDeckPreview() {
-  const nextTrack = DJ.queue[DJ.trackIndex + 1];
-  const idleDeck = getNextDeck();
-  const titleEl = document.getElementById(`title-${idleDeck}`);
-  const artistEl = document.getElementById(`artist-${idleDeck}`);
-
-  // Only update if the idle deck doesn't have a track loaded
-  if (Engine.decks[idleDeck].track) return;
-  if (nextTrack && titleEl && artistEl) {
-    titleEl.textContent = `⏭ ${nextTrack.title || '?'}`;
-    titleEl.style.opacity = '0.5';
-    artistEl.textContent = nextTrack.artist || '?';
-    artistEl.style.opacity = '0.5';
-  }
-}
-
-// Load a specific queue item directly to a deck
-function loadToDeck(deck, queueIdx) {
-  const track = DJ.queue[queueIdx];
-  if (!track) return;
-  Engine.initAudioCtx();
-  Engine.ensureDeckConnected(deck);
-  loadTrackOnDeck(deck, track);
-  setStatus(`Loaded "${track.title}" on Deck ${deck.toUpperCase()}`);
-}
-
-// Load next queued track onto the idle deck
-function loadNextOnIdleDeck() {
-  const nextTrack = DJ.queue[DJ.trackIndex + 1];
-  if (!nextTrack) { setStatus('No next track in queue'); return; }
-  const idleDeck = getNextDeck();
-  loadToDeck(idleDeck, DJ.trackIndex + 1);
-}
-
-// ─── Touch drag-to-reorder support ──────────────────────────────────────────
-let touchDragIdx = null;
-let touchDragEl = null;
-
-function onTouchDragStart(e, idx) {
-  touchDragIdx = idx;
-  touchDragEl = e.currentTarget;
-  touchDragEl.style.opacity = '0.5';
-}
-
-function onTouchDragMove(e) {
-  if (touchDragIdx === null) return;
-  e.preventDefault();
-}
-
-function onTouchDragEnd(e, targetIdx) {
-  if (touchDragIdx === null || touchDragIdx === targetIdx) {
-    if (touchDragEl) touchDragEl.style.opacity = '1';
-    touchDragIdx = null;
-    touchDragEl = null;
-    return;
-  }
-  const item = DJ.queue.splice(touchDragIdx, 1)[0];
-  DJ.queue.splice(targetIdx, 0, item);
-  if (touchDragIdx < DJ.trackIndex) DJ.trackIndex--;
-  else if (targetIdx <= DJ.trackIndex) DJ.trackIndex++;
-  touchDragIdx = null;
-  touchDragEl = null;
-  renderQueue();
 }
 
 let dragIdx = null;
@@ -933,7 +647,6 @@ async function startAutoDiscover() {
   DJ.knownArtists = [artist];
   DJ.usedTracks.clear();
   DJ.seedTags = [];
-  clearDiscoverResults();
 
   try {
     const info = track ? await Engine.getTrackInfo(artist, track) : await Engine.getArtistInfo(artist);
@@ -943,9 +656,6 @@ async function startAutoDiscover() {
     let seeds = track ? [{title:track,artist}] : [];
     const tops = await Engine.getTopTracks(artist, 4);
     seeds.push(...tops);
-
-    // Show found tracks in the Discover results panel before queuing
-    showDiscoverResults(seeds, 'Top tracks');
 
     for (const t of seeds.slice(0, 3)) await enqueueOnlineTrack(t);
 
@@ -957,7 +667,7 @@ async function startAutoDiscover() {
 
     // Keep filling
     setTimeout(() => fetchMoreOnline(), 2000);
-  } catch(e) { setStatus('Discovery error: ' + e.message); console.error('[Discovery]', e); }
+  } catch(e) { setStatus('Discovery error: ' + e.message); }
 }
 
 async function fetchMoreOnline() {
@@ -969,7 +679,6 @@ async function fetchMoreOnline() {
   try {
     if ((mode === 'similar' || mode === 'both') && DJ.knownArtists.length) {
       const base = DJ.knownArtists[Math.floor(Math.random() * Math.min(DJ.knownArtists.length, 5))];
-      setStatus(`Finding artists similar to ${base}...`);
       const similar = await Engine.getSimilarArtists(base, 6);
       for (const a of similar.slice(0, 3)) {
         const tracks = await Engine.getTopTracks(a, 2);
@@ -978,12 +687,11 @@ async function fetchMoreOnline() {
     }
     if ((mode === 'tag' || mode === 'both') && DJ.seedTags.length) {
       const tag = DJ.seedTags[Math.floor(Math.random() * DJ.seedTags.length)];
-      setStatus(`Finding tracks tagged "${tag}"...`);
       const tagTracks = await Engine.getTagTracks(tag, 5);
       candidates.push(...tagTracks);
     }
     const cur = DJ.queue[DJ.trackIndex];
-    if (cur && cur.artist && cur.title) {
+    if (cur && cur.type === 'online') {
       const sim = await Engine.getSimilarTracks(cur.artist, cur.title, 5);
       candidates.push(...sim);
     }
@@ -993,18 +701,13 @@ async function fetchMoreOnline() {
       return !DJ.usedTracks.has(key) && c.artist && c.title;
     }).sort(() => Math.random() - 0.5);
 
-    // Show what we found
-    if (candidates.length > 0) showDiscoverResults(candidates, 'Discovered');
-
     let added = 0;
     for (const t of candidates) {
       if (added >= 4) break;
       if (await enqueueOnlineTrack(t)) added++;
     }
     if (added > 0) { renderQueue(); setStatus(`Queued ${added} new track${added!==1?'s':''} from discovery`); }
-    else if (candidates.length === 0) { setStatus('No new candidates found — try broadening seed tags'); }
-    else { setStatus('Found candidates but could not resolve streams — instances may be down'); }
-  } catch(e) { setStatus('Discovery error: ' + e.message); console.error('[Discovery]', e); }
+  } catch(e) { setStatus('Discovery error: ' + e.message); }
   finally { DJ.discovering = false; }
 }
 
@@ -1012,195 +715,28 @@ async function enqueueOnlineTrack(t) {
   const key = `${t.artist?.toLowerCase()}::${t.title?.toLowerCase()}`;
   if (DJ.usedTracks.has(key) || !t.artist || !t.title) return false;
 
-  setStatus(`Searching: ${t.artist} — ${t.title}...`);
-  try {
-    const videoId = await Engine.searchVideo(t.artist, t.title);
-    if (!videoId) {
-      console.warn(`[Enqueue] No source found for: ${t.artist} — ${t.title}`);
-      setStatus(`⚠ No source for: ${t.artist} — ${t.title} (all search instances may be down)`);
-      updateDiscoverItemStatus(t, 'not-found');
-      return false;
-    }
+  setStatus(`Searching: ${t.title} — ${t.artist}`);
+  const result = await Engine.searchVideo(t.artist, t.title);
+  if (!result || !result.videoId) { setStatus(`No source for: ${t.artist} — ${t.title}`); return false; }
 
-    let info = { tags: [], album: '', image: '', duration: 0 };
-    if (DJ.hasLastfm) {
-      try { info = await Engine.getTrackInfo(t.artist, t.title); } catch(e) {}
-    }
-    DJ.usedTracks.add(key);
+  let info = { tags: [], album: '', image: '', duration: 0 };
+  if (DJ.hasLastfm) { try { info = await Engine.getTrackInfo(t.artist, t.title); } catch(e) {} }
+  DJ.usedTracks.add(key);
 
-    const track = {
-      type: 'online', youtubeId: videoId,
-      title: t.title, artist: t.artist,
-      album: info.album || '', tags: info.tags || [],
-      duration: info.duration || t.duration || 0,
-      image: info.image || '', artwork: info.image || ''
-    };
-    DJ.queue.push(track);
-    if (!DJ.knownArtists.includes(t.artist)) DJ.knownArtists.push(t.artist);
-    (info.tags||[]).forEach(tag => { if (!DJ.seedTags.includes(tag)) DJ.seedTags.push(tag); });
-    renderQueue();
-    updateDiscoverItemStatus(t, 'queued');
-    setStatus(`✓ Queued: ${t.artist} — ${t.title}`);
-    return true;
-  } catch(e) {
-    console.error(`[Enqueue] Error for ${t.artist} — ${t.title}:`, e);
-    setStatus(`Error queuing ${t.artist} — ${t.title}: ${e.message}`);
-    updateDiscoverItemStatus(t, 'error');
-    return false;
-  }
+  const track = {
+    type: 'online', youtubeId: result.videoId,
+    _source: result._source || '', _instance: result._instance || '',
+    title: t.title, artist: t.artist,
+    album: info.album || '', tags: info.tags || [],
+    duration: info.duration || t.duration || 0,
+    image: info.image || '', artwork: info.image || ''
+  };
+  DJ.queue.push(track);
+  if (!DJ.knownArtists.includes(t.artist)) DJ.knownArtists.push(t.artist);
+  (info.tags||[]).forEach(tag => { if (!DJ.seedTags.includes(tag)) DJ.seedTags.push(tag); });
+  renderQueue();
+  return true;
 }
-
-// ─── Discovery Results Panel ─────────────────────────────────────────────────
-function clearDiscoverResults() {
-  const el = document.getElementById('discover-results');
-  if (el) el.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:12px;text-align:center">Run a discovery to see results here</div>';
-}
-
-function showDiscoverResults(tracks, label) {
-  const el = document.getElementById('discover-results');
-  if (!el || !tracks.length) return;
-
-  const existingHtml = el.innerHTML.includes('disc-item') ? el.innerHTML : '';
-  const newHtml = tracks.map(t => {
-    const safeTitle = escHtml(t.title || 'Unknown Title');
-    const safeArtist = escHtml(t.artist || 'Unknown Artist');
-    const id = `disc-${(t.artist||'').replace(/\W/g,'')}-${(t.title||'').replace(/\W/g,'')}`.slice(0,60);
-    return `<div class="disc-item" id="${id}" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
-      <div style="flex:1;overflow:hidden;min-width:0">
-        <div style="color:#e8f0ff;font-size:13px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${safeTitle}</div>
-        <div style="color:#8899bb;font-size:11px;margin-top:2px">${safeArtist}${t.duration ? ' · ' + fmt(t.duration) : ''}</div>
-      </div>
-      <span class="disc-status" style="font-size:9px;color:#556;min-width:50px;text-align:center">ready</span>
-      <button class="btn" style="padding:5px 14px;font-size:11px;white-space:nowrap;flex-shrink:0"
-        onclick="manualEnqueueDiscover('${escAttr(t.artist)}','${escAttr(t.title)}',this)">+ Queue</button>
-    </div>`;
-  }).join('');
-
-  if (existingHtml.includes('disc-item')) {
-    el.insertAdjacentHTML('beforeend', newHtml);
-  } else {
-    el.innerHTML = `<div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--accent);padding:8px 14px;border-bottom:1px solid var(--border);font-weight:bold">${label}</div>` + newHtml;
-  }
-}
-
-function updateDiscoverItemStatus(t, status) {
-  const id = `disc-${(t.artist||'').replace(/\W/g,'')}-${(t.title||'').replace(/\W/g,'')}`.slice(0,60);
-  const el = document.getElementById(id);
-  if (!el) return;
-  const statusEl = el.querySelector('.disc-status');
-  const btn = el.querySelector('button');
-  if (status === 'queued') {
-    if (statusEl) { statusEl.textContent = '✓ Queued'; statusEl.style.color = 'var(--green)'; }
-    if (btn) { btn.disabled = true; btn.textContent = 'Queued'; }
-  } else if (status === 'not-found') {
-    if (statusEl) { statusEl.textContent = '✗ No video'; statusEl.style.color = 'var(--accent2)'; }
-  } else if (status === 'error') {
-    if (statusEl) { statusEl.textContent = '✗ Error'; statusEl.style.color = 'var(--accent2)'; }
-  } else if (status === 'searching') {
-    if (statusEl) { statusEl.textContent = '⟳ ...'; statusEl.style.color = 'var(--accent)'; }
-  }
-}
-
-async function manualEnqueueDiscover(artist, title, btn) {
-  if (btn) { btn.disabled = true; btn.textContent = '...'; }
-  const result = await enqueueOnlineTrack({ artist, title });
-  if (!result && btn) {
-    btn.disabled = false;
-    btn.textContent = 'Retry';
-    btn.style.borderColor = 'var(--accent2)';
-    btn.style.color = 'var(--accent2)';
-  }
-}
-
-// ─── Add Online Song by Search (Queue Tab) ──────────────────────────────────
-async function addOnlineSong() {
-  const input = document.getElementById('online-song-input');
-  const statusEl = document.getElementById('online-add-status');
-  if (!input) return;
-  const query = input.value.trim();
-  if (!query) { if (statusEl) statusEl.textContent = 'Enter an artist and title'; return; }
-
-  if (statusEl) { statusEl.textContent = 'Searching all sources...'; statusEl.style.color = 'var(--accent)'; }
-
-  // Try to parse "artist - title" or just search as-is
-  let artist = '', title = '';
-  if (query.includes(' - ')) {
-    const parts = query.split(' - ');
-    artist = parts[0].trim();
-    title = parts.slice(1).join(' - ').trim();
-  } else if (query.includes(' — ')) {
-    const parts = query.split(' — ');
-    artist = parts[0].trim();
-    title = parts.slice(1).join(' — ').trim();
-  } else {
-    title = query;
-  }
-
-  try {
-    const searchQ = artist ? `${artist} ${title}` : query;
-
-    // Use unified search for better results display
-    let results = [];
-    let source = 'none';
-
-    // Try unified search first (shows source)
-    try {
-      const r = await fetch(`/api/search/all?q=${encodeURIComponent(searchQ + ' audio')}`);
-      const data = await r.json();
-      if (data.results?.length > 0) {
-        results = data.results;
-        source = data.source;
-      }
-    } catch(e) {}
-
-    // Fallback to legacy search
-    if (!results.length) {
-      const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(searchQ + ' audio')}`);
-      const legacy = await r.json();
-      if (legacy.length > 0) {
-        results = legacy.map(l => ({ id: l.videoId, title: l.title, artist: l.author, duration: l.lengthSeconds }));
-        source = 'piped';
-      }
-    }
-
-    if (!results.length) {
-      if (statusEl) { statusEl.textContent = `No results for "${query}" — all music sources may be down. Check Settings > Test Services.`; statusEl.style.color = 'var(--accent2)'; }
-      return;
-    }
-
-    const best = results[0];
-    const videoId = best.id || best.videoId;
-    const trackTitle = title || best.title || query;
-    const trackArtist = artist || best.artist || best.author || 'Unknown';
-
-    if (statusEl) { statusEl.textContent = `Found via ${source}: "${trackTitle}" — resolving stream...`; statusEl.style.color = 'var(--accent)'; }
-
-    // Try to get metadata from Last.fm
-    let info = { tags: [], album: '', image: '', duration: 0 };
-    if (DJ.hasLastfm) {
-      try { info = await Engine.getTrackInfo(trackArtist, trackTitle); } catch(e) {}
-    }
-
-    const track = {
-      type: 'online', youtubeId: videoId,
-      title: trackTitle, artist: trackArtist,
-      album: info.album || '', tags: info.tags || [],
-      duration: info.duration || best.duration || best.lengthSeconds || 0,
-      image: info.image || best.thumbnail || '', artwork: info.image || best.thumbnail || ''
-    };
-    DJ.queue.push(track);
-    renderQueue();
-    input.value = '';
-    if (statusEl) { statusEl.textContent = `✓ Queued: ${trackArtist} — ${trackTitle} (via ${source})`; statusEl.style.color = 'var(--green)'; }
-    setStatus(`Queued: ${trackArtist} — ${trackTitle}`);
-  } catch(e) {
-    console.error('[AddOnline]', e);
-    if (statusEl) { statusEl.textContent = `Error: ${e.message}`; statusEl.style.color = 'var(--accent2)'; }
-  }
-}
-
-function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function escAttr(s) { return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 
 // ─── Spotify ──────────────────────────────────────────────────────────────────
 async function spotifySearch() {
@@ -1228,39 +764,21 @@ async function spotifySearch() {
     }
     div.innerHTML = tracks.length ? tracks.map((t,i) => `
       <div class="spotify-result">
-        ${t.image?`<img class="sp-img" src="${escHtml(t.image)}">`:'<div class="sp-img" style="background:var(--border);display:flex;align-items:center;justify-content:center">♪</div>'}
-        <div class="sp-info">
-          <div class="sp-name">${escHtml(t.title)}</div>
-          <div class="sp-artist">${escHtml(t.artist)}${t.album?' · '+escHtml(t.album):''}</div>
-        </div>
-        <button class="btn" style="padding:3px 8px;font-size:9px" onclick="queueSpotifyResult(${i})">+ Queue</button>
+        ${t.image?`<img class="sp-img" src="${t.image}">`:'<div class="sp-img" style="background:var(--border)">♪</div>'}
+        <div class="sp-info"><div class="sp-name">${t.title}</div><div class="sp-artist">${t.artist}${t.album?' · '+t.album:''}</div></div>
+        <button class="btn" style="padding:3px 8px;font-size:9px" onclick='queueSpotifyTrack(${JSON.stringify(t).replace(/'/g,"&#39;")})'>Queue</button>
       </div>`).join('') : '<div style="color:var(--muted);font-size:11px;padding:8px">No results</div>';
-    // Store results for button reference
-    window._spotifyResults = tracks;
   } catch(e) { div.innerHTML = `<div style="color:var(--accent2);font-size:11px;padding:8px">Error: ${e.message}</div>`; }
 }
 
-async function queueSpotifyResult(index) {
-  const t = window._spotifyResults?.[index];
-  if (!t) return;
-  await queueSpotifyTrack(t);
-}
-
 async function queueSpotifyTrack(t) {
-  setStatus(`Finding stream for "${t.artist} — ${t.title}"...`);
-  try {
-    const videoId = await Engine.searchVideo(t.artist, t.title);
-    if (videoId) {
-      DJ.queue.push({...t, type:'online', youtubeId:videoId, artwork:t.image});
-      renderQueue();
-      setStatus(`Queued: ${t.artist} — ${t.title}`);
-    } else {
-      setStatus(`No video found for: ${t.artist} — ${t.title}`);
-    }
-  } catch(e) {
-    console.error('[SpotifyQueue]', e);
-    setStatus(`Error queuing ${t.title}: ${e.message}`);
-  }
+  setStatus(`Finding "${t.title}"...`);
+  const result = await Engine.searchVideo(t.artist, t.title);
+  if (result && result.videoId) {
+    DJ.queue.push({...t, type:'online', youtubeId:result.videoId, _source:result._source||'', _instance:result._instance||'', artwork:t.image});
+    renderQueue();
+    setStatus(`Queued: ${t.title}`);
+  } else { setStatus(`Not found: ${t.title}`); }
 }
 
 // ─── AI ───────────────────────────────────────────────────────────────────────
@@ -1271,48 +789,22 @@ async function aiAnalyzeAndRecommend() {
   try {
     const cur = DJ.queue[DJ.trackIndex];
     const recs = await Engine.aiRecommend(cur, DJ.history, DJ.seedTags, document.getElementById('ai-mood')?.value);
-    const results = Array.isArray(recs) ? recs : [];
-    window._aiResults = results;
-    el.innerHTML = results.length ? results.map((r, i) =>
+    el.innerHTML = (Array.isArray(recs) ? recs : []).map(r =>
       `<div style="margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:6px">
-        <div style="color:var(--bright)">${escHtml(r.artist)} — ${escHtml(r.title)}</div>
-        <div style="color:var(--accent3);font-size:10px">${escHtml(r.reason||'')}</div>
+        <div style="color:var(--bright)">${r.title} — ${r.artist}</div>
+        <div style="color:var(--accent3);font-size:10px">${r.reason||''}</div>
         <button class="btn" style="padding:3px 8px;font-size:9px;margin-top:4px"
-          onclick="enqueueAIResult(${i},this)">+ Queue</button>
-      </div>`).join('') : '<span style="color:var(--muted)">No recommendations returned</span>';
+          onclick="enqueueAITrack('${r.artist.replace(/'/g,"\\'")}','${r.title.replace(/'/g,"\\'")}')">+ Queue</button>
+      </div>`).join('') || '<span style="color:var(--muted)">No recommendations returned</span>';
   } catch(e) { el.innerHTML = `<span style="color:var(--accent2)">Error: ${e.message}</span>`; }
 }
 
-async function enqueueAIResult(index, btn) {
-  const r = window._aiResults?.[index];
-  if (!r) return;
-  if (btn) { btn.disabled = true; btn.textContent = '...'; }
-  try {
-    const videoId = await Engine.searchVideo(r.artist, r.title);
-    if (videoId) {
-      DJ.queue.push({type:'online',youtubeId:videoId,title:r.title,artist:r.artist,tags:DJ.seedTags.slice(0,3)});
-      renderQueue();
-      setStatus(`Queued: ${r.artist} — ${r.title}`);
-      if (btn) { btn.textContent = '✓'; btn.style.color = 'var(--green)'; btn.style.borderColor = 'var(--green)'; }
-    } else {
-      setStatus(`No video found for: ${r.artist} — ${r.title}`);
-      if (btn) { btn.disabled = false; btn.textContent = 'Retry'; btn.style.color = 'var(--accent2)'; btn.style.borderColor = 'var(--accent2)'; }
-    }
-  } catch(e) {
-    console.error('[AIQueue]', e);
-    setStatus(`Error: ${e.message}`);
-    if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
-  }
-}
-
 async function enqueueAITrack(artist, title) {
-  try {
-    const videoId = await Engine.searchVideo(artist, title);
-    if (videoId) {
-      DJ.queue.push({type:'online',youtubeId:videoId,title,artist,tags:DJ.seedTags.slice(0,3)});
-      renderQueue(); setStatus(`Queued: ${artist} — ${title}`);
-    } else setStatus(`No video found for: ${artist} — ${title}`);
-  } catch(e) { setStatus(`Error: ${e.message}`); }
+  const result = await Engine.searchVideo(artist, title);
+  if (result?.videoId) {
+    DJ.queue.push({type:'online',youtubeId:result.videoId,_source:result._source||'',_instance:result._instance||'',title,artist,tags:DJ.seedTags.slice(0,3)});
+    renderQueue(); setStatus(`Queued: ${title}`);
+  } else setStatus(`Not found: ${title}`);
 }
 
 async function aiRefillQueue() {
@@ -1322,8 +814,8 @@ async function aiRefillQueue() {
     const recs = await Engine.aiRecommend(DJ.queue[DJ.trackIndex], DJ.history, DJ.seedTags, document.getElementById('ai-mood')?.value||'');
     let added = 0;
     for (const r of (Array.isArray(recs)?recs:[])) {
-      const vid = await Engine.searchVideo(r.artist, r.title);
-      if (vid) { DJ.queue.push({type:'online',youtubeId:vid,title:r.title,artist:r.artist,tags:[]}); added++; }
+      const result = await Engine.searchVideo(r.artist, r.title);
+      if (result?.videoId) { DJ.queue.push({type:'online',youtubeId:result.videoId,_source:result._source||'',_instance:result._instance||'',title:r.title,artist:r.artist,tags:[]}); added++; }
     }
     renderQueue(); setStatus(`AI added ${added} tracks`);
   } catch(e) { setStatus('AI error: '+e.message); }
@@ -1331,79 +823,28 @@ async function aiRefillQueue() {
 
 // ─── Broadcast Now Playing ────────────────────────────────────────────────────
 async function broadcastNP(track) {
-  if (!track) return;
   const next = DJ.queue[DJ.trackIndex+1];
-  const audioA = getDeckAudio('a');
-  const audioB = getDeckAudio('b');
+  const audio = getDeckAudio(DJ.currentDeck);
   const genre = track.tags?.[0] || DJ.seedTags[0] || '';
   // Build stream URL for display page audio relay
   let streamUrl = '';
   if (track.type === 'local') streamUrl = track.url || '';
   else if (track.type === 'temp') streamUrl = track.url || '';
+  // For online tracks, streamUrl is the Piped direct URL stored in track._streamUrl
   else if (track._streamUrl) streamUrl = '/api/piped/relay?url=' + encodeURIComponent(track._streamUrl);
 
-  // Build next track stream URL
-  let nextStreamUrl = '';
-  if (next) {
-    if (next.type === 'local' || next.type === 'temp') nextStreamUrl = next.url || '';
-    else if (next._streamUrl) nextStreamUrl = '/api/piped/relay?url=' + encodeURIComponent(next._streamUrl);
-  }
-
-  // Background art - try to get artist image if that mode is selected
-  let artistImageUrl = '';
-  const bgSource = document.getElementById('cfg-bg-art')?.value || 'track';
-  if (bgSource === 'artist' && track.artist && DJ.hasLastfm) {
-    try {
-      const info = await Engine.getArtistInfo(track.artist);
-      artistImageUrl = info.image || '';
-    } catch(e) {}
-  }
-
-  const xfader = document.getElementById('crossfader');
   await Engine.broadcastNowPlaying({
     nowPlaying: {
-      title: track.title || 'Unknown Title',
-      artist: track.artist || 'Unknown Artist',
-      album: track.album || '',
-      duration: track.duration || audioA?.duration || audioB?.duration || 0,
-      elapsed: getDeckAudio(DJ.currentDeck)?.currentTime || 0,
+      title: track.title, artist: track.artist, album: track.album,
+      duration: track.duration || audio?.duration || 0,
+      elapsed: audio?.currentTime || 0,
       fadePoint: Engine.decks[DJ.currentDeck].fadePoint,
-      tags: track.tags || [],
-      artwork: track.artwork || track.image || '',
-      image: track.image || track.artwork || '',
+      tags: track.tags, artwork: track.artwork || track.image || '',
       streamUrl
     },
-    nextUp: next ? {
-      title: next.title || '?',
-      artist: next.artist || '?',
-      artwork: next.artwork || next.image || '',
-      streamUrl: nextStreamUrl
-    } : null,
+    nextUp: next ? { title: next.title, artist: next.artist, artwork: next.artwork||next.image||'' } : null,
     genre: genre ? genre.charAt(0).toUpperCase()+genre.slice(1) : '',
-    isPlaying: true, messages: DJ.messages,
-    bgArtSource: bgSource,
-    bgImageUrl: track.artwork || track.image || '',
-    artistImageUrl,
-    deckState: {
-      activeDeck: DJ.currentDeck,
-      crossfader: parseFloat(xfader?.value || 0),
-      decks: {
-        a: {
-          track: Engine.decks.a.track ? { title: Engine.decks.a.track.title, artist: Engine.decks.a.track.artist, streamUrl: Engine.decks.a.track._streamUrl ? '/api/piped/relay?url=' + encodeURIComponent(Engine.decks.a.track._streamUrl) : (Engine.decks.a.track.url || '') } : null,
-          elapsed: audioA?.currentTime || 0,
-          duration: audioA?.duration || 0,
-          gain: Engine.decks.a.gain?.gain?.value ?? (DJ.currentDeck === 'a' ? 1 : 0),
-          fadePoint: Engine.decks.a.fadePoint
-        },
-        b: {
-          track: Engine.decks.b.track ? { title: Engine.decks.b.track.title, artist: Engine.decks.b.track.artist, streamUrl: Engine.decks.b.track._streamUrl ? '/api/piped/relay?url=' + encodeURIComponent(Engine.decks.b.track._streamUrl) : (Engine.decks.b.track.url || '') } : null,
-          elapsed: audioB?.currentTime || 0,
-          duration: audioB?.duration || 0,
-          gain: Engine.decks.b.gain?.gain?.value ?? (DJ.currentDeck === 'b' ? 1 : 0),
-          fadePoint: Engine.decks.b.fadePoint
-        }
-      }
-    }
+    isPlaying: true, messages: DJ.messages
   });
 }
 
@@ -1555,287 +996,11 @@ function setupDropZone() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(s) {
-  if (!s || isNaN(s) || !isFinite(s) || s < 0) return '0:00';
-  // Guard against ms values accidentally passed as seconds (> 1 hour likely means ms)
-  if (s > 36000) s = Math.round(s / 1000);
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  if (m >= 60) {
-    const h = Math.floor(m / 60);
-    const rm = m % 60;
-    return `${h}:${rm.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
-  }
-  return `${m}:${sec.toString().padStart(2,'0')}`;
+  if (!s || isNaN(s) || s < 0) return '0:00';
+  return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;
 }
 function setStatus(msg) {
   const el = document.getElementById('status');
   if (el) el.textContent = msg;
   console.log('[AutoDJ]', msg);
-}
-
-// ─── Authentication ─────────────────────────────────────────────────────────
-async function doLogout() {
-  try {
-    await fetch('/api/auth/logout', { method: 'POST' });
-  } catch(e) {}
-  window.location.href = '/login';
-}
-
-async function changePassword() {
-  const statusEl = document.getElementById('pw-change-status');
-  const currentPw = document.getElementById('cfg-current-pw').value;
-  const newPw = document.getElementById('cfg-new-pw').value;
-  const confirmPw = document.getElementById('cfg-confirm-pw').value;
-
-  statusEl.style.display = 'none';
-
-  if (!currentPw || !newPw || !confirmPw) {
-    showPwStatus('Please fill in all password fields', false);
-    return;
-  }
-  if (newPw !== confirmPw) {
-    showPwStatus('New passwords do not match', false);
-    return;
-  }
-  if (newPw.length < 6) {
-    showPwStatus('New password must be at least 6 characters', false);
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/auth/change-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw })
-    });
-    const data = await res.json();
-
-    if (data.ok) {
-      showPwStatus('Password changed successfully', true);
-      document.getElementById('cfg-current-pw').value = '';
-      document.getElementById('cfg-new-pw').value = '';
-      document.getElementById('cfg-confirm-pw').value = '';
-    } else {
-      showPwStatus(data.error || 'Failed to change password', false);
-    }
-  } catch(e) {
-    showPwStatus('Connection error', false);
-  }
-}
-
-function showPwStatus(msg, success) {
-  const el = document.getElementById('pw-change-status');
-  el.style.display = 'block';
-  el.textContent = msg;
-  if (success) {
-    el.style.background = 'rgba(0,255,136,0.08)';
-    el.style.border = '1px solid rgba(0,255,136,0.25)';
-    el.style.color = 'var(--green)';
-  } else {
-    el.style.background = 'rgba(255,51,102,0.08)';
-    el.style.border = '1px solid rgba(255,51,102,0.25)';
-    el.style.color = 'var(--accent2)';
-  }
-}
-
-// ─── RSS / Display Settings ─────────────────────────────────────────────────
-function toggleRssPreview() {
-  const mode = document.getElementById('cfg-marquee-mode')?.value;
-  const rssEl = document.getElementById('rss-config');
-  const staticEl = document.getElementById('static-msg-config');
-  if (rssEl) rssEl.style.display = mode === 'rss' ? 'block' : 'none';
-  if (staticEl) staticEl.style.display = mode === 'static' ? 'block' : 'none';
-}
-
-async function previewRSS() {
-  const url = document.getElementById('cfg-rss-url')?.value;
-  const preview = document.getElementById('rss-preview');
-  if (!url || !preview) return;
-  preview.innerHTML = '<div style="color:var(--accent)">Fetching...</div>';
-  try {
-    const r = await fetch(`/api/rss/proxy?url=${encodeURIComponent(url)}`);
-    const data = await r.json();
-    if (data.items?.length) {
-      preview.innerHTML = data.items.slice(0, 8).map(i =>
-        `<div style="padding:3px 0;border-bottom:1px solid var(--border)">📰 ${escHtml(i.title)}</div>`
-      ).join('') + `<div style="padding:3px 0;color:var(--green)">${data.items.length} items found</div>`;
-    } else {
-      preview.innerHTML = '<div style="color:var(--accent2)">No RSS items found — check the URL</div>';
-    }
-  } catch(e) {
-    preview.innerHTML = `<div style="color:var(--accent2)">Error: ${e.message}</div>`;
-  }
-}
-
-// ─── Keyboard Shortcuts ──────────────────────────────────────────────────────
-let focusDeck = 'a';
-
-function setupKeyboardShortcuts() {
-  document.addEventListener('keydown', e => {
-    // Don't trigger if user is typing in an input
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-
-    switch(e.key) {
-      case ' ': // Space = play/pause active deck
-        e.preventDefault();
-        const audio = getDeckAudio(focusDeck);
-        if (audio) { audio.paused ? deckPlay(focusDeck) : deckPause(focusDeck); }
-        break;
-      case 'a': case 'A': focusDeck = 'a'; setStatus('Focus: Deck A'); highlightFocusDeck(); break;
-      case 'b': case 'B': focusDeck = 'b'; setStatus('Focus: Deck B'); highlightFocusDeck(); break;
-      case 'ArrowLeft': e.preventDefault(); seekBy(focusDeck, -5); break;
-      case 'ArrowRight': e.preventDefault(); seekBy(focusDeck, 5); break;
-      case 'ArrowUp': e.preventDefault(); adjustVol(focusDeck, 0.05); break;
-      case 'ArrowDown': e.preventDefault(); adjustVol(focusDeck, -0.05); break;
-      case 'q': case 'Q': loadNextOnIdleDeck(); break;
-      case 'Escape': deckStop('a'); deckStop('b'); setStatus('Stopped'); break;
-      case '?': toggleShortcutHelp(); break;
-    }
-  });
-}
-
-function seekBy(deck, sec) {
-  const audio = getDeckAudio(deck);
-  if (audio && audio.duration) audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + sec));
-}
-
-function adjustVol(deck, delta) {
-  const g = Engine.decks[deck].gain;
-  if (g) { g.gain.value = Math.max(0, Math.min(1.5, g.gain.value + delta)); }
-  const slider = document.getElementById(`vol-${deck}`);
-  if (slider) { slider.value = Engine.decks[deck].gain?.gain?.value || 1; }
-}
-
-function highlightFocusDeck() {
-  document.getElementById('deck-a')?.classList.toggle('focused', focusDeck === 'a');
-  document.getElementById('deck-b')?.classList.toggle('focused', focusDeck === 'b');
-}
-
-function toggleShortcutHelp() {
-  let modal = document.getElementById('shortcut-modal');
-  if (modal) { modal.remove(); return; }
-  modal = document.createElement('div');
-  modal.id = 'shortcut-modal';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center';
-  modal.onclick = () => modal.remove();
-  modal.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:24px 32px;max-width:400px;font-size:12px;color:var(--text)" onclick="event.stopPropagation()">
-    <div style="font-size:14px;font-weight:bold;margin-bottom:12px;color:var(--accent)">⌨ Keyboard Shortcuts</div>
-    <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 16px">
-      <kbd>Space</kbd><span>Play/Pause focused deck</span>
-      <kbd>A / B</kbd><span>Focus Deck A or B</span>
-      <kbd>← →</kbd><span>Seek ±5 seconds</span>
-      <kbd>↑ ↓</kbd><span>Volume up/down</span>
-      <kbd>Q</kbd><span>Load next on idle deck</span>
-      <kbd>Esc</kbd><span>Stop both decks</span>
-      <kbd>?</kbd><span>Toggle this help</span>
-    </div>
-    <div style="margin-top:12px;text-align:right"><button class="btn" onclick="this.closest('#shortcut-modal').remove()">Close</button></div>
-  </div>`;
-  document.body.appendChild(modal);
-}
-
-// ─── Playlists ───────────────────────────────────────────────────────────────
-async function loadPlaylistList() {
-  const sel = document.getElementById('playlist-select');
-  if (!sel) return;
-  try {
-    const r = await fetch('/api/playlists');
-    const playlists = await r.json();
-    sel.innerHTML = '<option value="">— Select Playlist —</option>' +
-      playlists.map(p => `<option value="${escHtml(p.filename.replace('.json',''))}">${escHtml(p.name)} (${p.trackCount} tracks)</option>`).join('');
-  } catch(e) {}
-}
-
-async function savePlaylist() {
-  const name = prompt('Playlist name:');
-  if (!name) return;
-  const tracks = DJ.queue.map(t => ({ title: t.title, artist: t.artist, album: t.album||'', duration: t.duration||0, tags: t.tags||[], type: t.type, url: t.type==='local'?'':t.url||'', youtubeId: t.youtubeId||'' }));
-  try {
-    await fetch('/api/playlists', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name, tracks }) });
-    setStatus(`Playlist "${name}" saved (${tracks.length} tracks)`);
-    loadPlaylistList();
-  } catch(e) { setStatus('Save failed: ' + e.message); }
-}
-
-async function loadPlaylist(mode) {
-  const sel = document.getElementById('playlist-select');
-  if (!sel?.value) return;
-  try {
-    const r = await fetch(`/api/playlists/${sel.value}`);
-    const data = await r.json();
-    if (mode === 'replace') { DJ.queue = []; DJ.trackIndex = -1; }
-    for (const t of (data.tracks||[])) {
-      DJ.queue.push({ ...t, type: t.type || 'online' });
-    }
-    renderQueue();
-    setStatus(`Loaded playlist "${data.name}" (${data.tracks?.length||0} tracks)${mode==='replace'?' — replaced queue':' — appended'}`);
-  } catch(e) { setStatus('Load failed: ' + e.message); }
-}
-
-async function deletePlaylist() {
-  const sel = document.getElementById('playlist-select');
-  if (!sel?.value || !confirm(`Delete playlist "${sel.value}"?`)) return;
-  try {
-    await fetch(`/api/playlists/${sel.value}`, { method: 'DELETE' });
-    setStatus('Playlist deleted');
-    loadPlaylistList();
-  } catch(e) { setStatus('Delete failed: ' + e.message); }
-}
-
-// ─── Song Requests ───────────────────────────────────────────────────────────
-async function pollRequests() {
-  try {
-    const r = await fetch('/api/requests');
-    const requests = await r.json();
-    const badge = document.getElementById('request-badge');
-    const list = document.getElementById('request-list');
-    if (badge) {
-      badge.textContent = requests.length;
-      badge.style.display = requests.length > 0 ? 'inline-block' : 'none';
-    }
-    if (list) {
-      list.innerHTML = requests.length === 0 ? '<div style="color:var(--muted);font-size:10px;padding:8px">No pending requests</div>' :
-        requests.map(r => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
-          <div style="flex:1;overflow:hidden"><div style="font-size:11px;color:var(--text)">${escHtml(r.artist)} — ${escHtml(r.title)}</div>
-          ${r.message ? `<div style="font-size:9px;color:var(--muted)">"${escHtml(r.message)}"</div>`:''}</div>
-          <button class="btn" style="padding:2px 8px;font-size:9px" onclick="queueRequest(${r.id},'${escAttr(r.artist)}','${escAttr(r.title)}')">+ Queue</button>
-          <button class="ctrl-btn" style="padding:2px 6px;font-size:9px" onclick="dismissRequest(${r.id})">×</button>
-        </div>`).join('');
-    }
-  } catch(e) {}
-}
-
-async function queueRequest(id, artist, title) {
-  try {
-    await addOnlineSongDirect(artist, title);
-    await fetch(`/api/requests/${id}`, { method: 'DELETE' });
-    pollRequests();
-  } catch(e) { setStatus('Could not queue request: ' + e.message); }
-}
-
-async function addOnlineSongDirect(artist, title) {
-  const q = `${artist} ${title}`;
-  setStatus(`Searching: ${artist} — ${title}...`);
-  const sr = await (await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`)).json();
-  if (!sr.length) throw new Error('No results');
-  const best = sr[0];
-  const track = { type:'online', title: title||best.title, artist: artist||best.author, album:'', duration: best.lengthSeconds||0, tags:[], youtubeId: best.videoId };
-  DJ.queue.push(track);
-  renderQueue();
-  setStatus(`Queued: ${track.artist} — ${track.title}`);
-}
-
-async function dismissRequest(id) {
-  await fetch(`/api/requests/${id}`, { method: 'DELETE' });
-  pollRequests();
-}
-
-// ─── Listener Count ──────────────────────────────────────────────────────────
-async function pollListenerCount() {
-  try {
-    const r = await fetch('/api/listeners');
-    const data = await r.json();
-    const el = document.getElementById('listener-count');
-    if (el) el.textContent = `${data.count || 0} listener${data.count !== 1 ? 's' : ''}`;
-  } catch(e) {}
 }
