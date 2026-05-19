@@ -102,6 +102,8 @@ let config = {
   spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
   openaiKey: process.env.OPENAI_API_KEY || '',
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
+  opencodeKey: process.env.OPENCODE_API_KEY || '',
+  opencodeBaseUrl: process.env.OPENCODE_BASE_URL || '',
   aiProvider: 'anthropic',
   musicDirs: process.env.MUSIC_DIR ? [process.env.MUSIC_DIR] : [path.join(__dirname, 'music')],
   messages: ["🎵 Vibes are immaculate tonight","🔊 AutoDJ is live","🎧 Peak vibes engaged","💿 Hand-selected by algorithms","🕺 You should be dancing right now","🎶 This song is better loud","🌊 Riding the wave"],
@@ -139,9 +141,10 @@ let sharedState = {
   playedIds: [],
   config: { rssFeedUrl: config.rssFeedUrl || '', marqueeMode: config.marqueeMode || 'rss', filterTopicChannels: config.filterTopicChannels !== false, sessionDuration: config.sessionDuration || 0, queueLimit: config.queueLimit || 0 }
 };
-const sseClients = new Set();
-function broadcastState() { const d = JSON.stringify(sharedState); for (const c of sseClients) { try { c.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(c); } } }
-function broadcastCommand(cmd, extra = {}) { const d = JSON.stringify({ ...sharedState, command: cmd, ...extra }); for (const c of sseClients) { try { c.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(c); } } }
+const sseClients = new Map();
+let sseIdCounter = 0;
+function broadcastState() { const d = JSON.stringify(sharedState); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastCommand(cmd, extra = {}) { const d = JSON.stringify({ ...sharedState, command: cmd, ...extra }); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 
 let playbackTimer = null;
 function clearPlaybackTimer() { if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; } }
@@ -223,6 +226,7 @@ async function startPlayback() {
   sharedState.sessionActive = true;
   sharedState.sessionStart = Date.now();
   sharedState.playerMode = sseClients.size > 0 ? 'display' : 'headless';
+  log('Playback', `Session started (${sseClients.size} listener(s))`);
   saveQueueToDisk(sharedState.queue);
   await advanceTrack();
   return { ok: true };
@@ -296,11 +300,12 @@ function getHealthy(list) {
 app.get('/api/config', (req, res) => res.json({
   lastfmKey: config.lastfmKey ? '●●●set●●●' : '', jamendoClientId: config.jamendoClientId ? '●●●set●●●' : '',
   spotifyClientId: config.spotifyClientId || '',
-  openaiKey: config.openaiKey ? '●●●set●●●' : '', anthropicKey: config.anthropicKey ? '●●●set●●●' : '',
+  openaiKey: config.openaiKey ? '●●●set●●●' : '', anthropicKey: config.anthropicKey ? '●●●set●●●' : '', opencodeKey: config.opencodeKey ? '●●●set●●●' : '',
+  opencodeBaseUrl: config.opencodeBaseUrl || '',
   aiProvider: config.aiProvider, musicDirs: config.musicDirs, messages: config.messages,
   invidiousRedirector: config.invidiousRedirector || '',
   squidProxies: Array.isArray(config.squidProxies) ? config.squidProxies : [],
-  hasLastfm: !!config.lastfmKey, hasJamendo: !!config.jamendoClientId, hasSpotify: !!(config.spotifyClientId && config.spotifyClientSecret), hasAI: !!(config.anthropicKey || config.openaiKey),
+  hasLastfm: !!config.lastfmKey, hasJamendo: !!config.jamendoClientId, hasSpotify: !!(config.spotifyClientId && config.spotifyClientSecret), hasAI: !!(config.anthropicKey || config.openaiKey || config.opencodeKey),
   hasMetube: !!(METUBE_BASE && METUBE_DOWNLOADS_DIR), hasSquid: !!(Array.isArray(config.squidProxies) && config.squidProxies.length),
   metubeFirst: config.metubeFirst !== false,
   preDownloadCount: config.preDownloadCount || 5,
@@ -321,6 +326,8 @@ app.post('/api/config', (req, res) => {
   if (b.spotifyClientSecret) config.spotifyClientSecret = b.spotifyClientSecret;
   if (b.openaiKey && !b.openaiKey.includes('●')) config.openaiKey = b.openaiKey;
   if (b.anthropicKey && !b.anthropicKey.includes('●')) config.anthropicKey = b.anthropicKey;
+  if (b.opencodeKey && !b.opencodeKey.includes('●')) config.opencodeKey = b.opencodeKey;
+  if (b.opencodeBaseUrl !== undefined) config.opencodeBaseUrl = String(b.opencodeBaseUrl || '').trim();
   if (b.aiProvider) config.aiProvider = b.aiProvider;
   if (b.musicDirs) config.musicDirs = b.musicDirs;
   if (b.messages) { config.messages = b.messages; sharedState.messages = b.messages; }
@@ -394,6 +401,7 @@ app.post('/api/ai/recommend', async (req, res) => {
   try {
     if(config.aiProvider==='anthropic'&&config.anthropicKey){const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':config.anthropicKey,'anthropic-version':'2023-06-01','content-type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1024,messages:[{role:'user',content:prompt}]})}); const d=await r.json(); res.json(JSON.parse((d.content?.[0]?.text||'[]').replace(/```json|```/g,'').trim()));}
     else if(config.aiProvider==='openai'&&config.openaiKey){const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Authorization':`Bearer ${config.openaiKey}`,'Content-Type':'application/json'},body:JSON.stringify({model:'gpt-4o-mini',messages:[{role:'user',content:prompt}]})}); const d=await r.json(); res.json(JSON.parse((d.choices?.[0]?.message?.content||'[]').replace(/```json|```/g,'').trim()));}
+    else if(config.aiProvider==='opencode'&&config.opencodeKey){const base=config.opencodeBaseUrl||'https://api.opencode.ai/v1';const r=await fetch(`${base}/chat/completions`,{method:'POST',headers:{'Authorization':`Bearer ${config.opencodeKey}`,'Content-Type':'application/json'},body:JSON.stringify({model:'opencode-model',messages:[{role:'user',content:prompt}]})});const d=await r.json();res.json(JSON.parse((d.choices?.[0]?.message?.content||'[]').replace(/```json|```/g,'').trim()));}
     else res.status(400).json({error:'No AI configured'});
   } catch(e) { res.status(500).json({error:e.message}); }
 });
@@ -1106,17 +1114,42 @@ app.post('/api/playback/played', (req, res) => {
 // ─── SSE / Now Playing ────────────────────────────────────────────────────────
 app.get('/api/nowplaying/stream', (req, res) => {
   res.setHeader('Content-Type','text/event-stream'); res.setHeader('Cache-Control','no-cache'); res.setHeader('Connection','keep-alive'); res.flushHeaders();
-  sseClients.add(res);
+  const id = ++sseIdCounter;
+  const info = {
+    id,
+    ip: req.ip || req.connection?.remoteAddress || 'unknown',
+    ua: req.headers['user-agent'] || 'unknown',
+    page: req.query.page || 'display',
+    connectedAt: Date.now()
+  };
+  sseClients.set(id, { res, info });
   sharedState.playerMode = 'display';
+  log('SSE', `Listener #${id} connected (${info.ip})`);
   res.write(`data: ${JSON.stringify(sharedState)}\n\n`);
   req.on('close', () => {
-    sseClients.delete(res);
+    sseClients.delete(id);
+    log('SSE', `Listener #${id} disconnected`);
     if (sseClients.size === 0 && sharedState.sessionActive) {
       sharedState.playerMode = 'headless';
     }
   });
 });
-app.get('/api/listeners', (req, res) => res.json({count:sseClients.size}));
+app.get('/api/listeners', (req, res) => {
+  const listeners = [];
+  for (const [id, c] of sseClients) {
+    const ua = c.info.ua;
+    const isMobile = /mobile|android|iphone|ipad|ipod/i.test(ua);
+    const isTablet = /tablet|ipad/i.test(ua);
+    const browser = ua.includes('Chrome') ? 'Chrome' : ua.includes('Firefox') ? 'Firefox' : ua.includes('Safari') ? 'Safari' : ua.includes('Edge') ? 'Edge' : 'Other';
+    const os = ua.includes('Windows') ? 'Windows' : ua.includes('Mac') ? 'macOS' : ua.includes('Linux') ? 'Linux' : ua.includes('Android') ? 'Android' : ua.includes('iPhone') ? 'iOS' : 'Other';
+    listeners.push({
+      id, ip: c.info.ip, browser, os, page: c.info.page,
+      isMobile, isTablet,
+      connectedAgo: Date.now() - c.info.connectedAt
+    });
+  }
+  res.json({ count: sseClients.size, listeners });
+});
 app.post('/api/nowplaying/update', (req, res) => {
   const b = req.body || {};
   if (b.nowPlaying) {

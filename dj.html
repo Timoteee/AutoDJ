@@ -523,6 +523,7 @@ input[type="number"] { width: 70px; }
     <button class="tab" data-tab="discover" onclick="showTab('discover')">Discover</button>
     <button class="tab" data-tab="logs" onclick="showTab('logs');fetchLogs()">Logs</button>
     <button class="tab" data-tab="settings" onclick="showTab('settings')">Settings</button>
+    <button class="tab" data-tab="listeners" onclick="showTab('listeners');fetchListeners()">Listeners</button>
   </div>
 
   <!-- MIX TAB -->
@@ -875,6 +876,7 @@ input[type="number"] { width: 70px; }
             <select id="cfg-ai-provider">
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="openai">OpenAI (GPT)</option>
+              <option value="opencode">OpenCode AI</option>
             </select>
           </div>
           <div class="field">
@@ -884,6 +886,15 @@ input[type="number"] { width: 70px; }
           <div class="field">
             <label>OpenAI API Key</label>
             <input type="password" id="cfg-openai" placeholder="sk-...">
+          </div>
+          <div class="field">
+            <label>OpenCode API Key</label>
+            <input type="password" id="cfg-opencode" placeholder="oc_...">
+          </div>
+          <div class="field">
+            <label>OpenCode Base URL (optional)</label>
+            <input type="url" id="cfg-opencode-url" placeholder="https://api.opencode.ai/v1">
+            <div class="field-hint">Leave blank for default. Change for self-hosted deployments.</div>
           </div>
           <button class="btn accent" onclick="saveConfig()">Save Keys</button>
           <button type="button" class="btn" onclick="testSources()">Test music sources</button>
@@ -958,6 +969,37 @@ input[type="number"] { width: 70px; }
             <input type="text" id="new-msg" placeholder="Add a message..." style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:6px 10px;font-size:11px;border-radius:2px;outline:none">
             <button class="btn accent" onclick="addMessage()">Add</button>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LISTENERS TAB -->
+  <div id="tab-listeners" class="tab-content">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Connected Listeners <span id="listener-count-badge" style="color:var(--accent)">0</span></span>
+        <button class="btn" style="font-size:9px;padding:4px 8px" onclick="fetchListeners()">Refresh</button>
+      </div>
+      <div class="panel-body" style="padding:8px 0">
+        <div style="font-size:10px;color:var(--muted);padding:0 16px 8px">Display pages connected via SSE. Disconnects within 30s of page close.</div>
+        <div id="listener-table-wrap" style="overflow-x:auto">
+          <table id="listener-table" style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border);color:var(--muted);font-size:9px;letter-spacing:2px;text-transform:uppercase">
+                <th style="padding:6px 12px;text-align:left">#</th>
+                <th style="padding:6px 12px;text-align:left">IP</th>
+                <th style="padding:6px 12px;text-align:left">Browser</th>
+                <th style="padding:6px 12px;text-align:left">OS</th>
+                <th style="padding:6px 12px;text-align:left">Device</th>
+                <th style="padding:6px 12px;text-align:left">Page</th>
+                <th style="padding:6px 12px;text-align:right">Connected</th>
+              </tr>
+            </thead>
+            <tbody id="listener-tbody">
+              <tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted)">No listeners connected. Open /display in another tab.</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

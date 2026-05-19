@@ -166,6 +166,9 @@ async function loadConfig() {
     if (cfg.spotifyClientId) document.getElementById('cfg-sp-id').value = cfg.spotifyClientId;
     if (cfg.anthropicKey) document.getElementById('cfg-anthropic').placeholder = '●●● configured ●●●';
     if (cfg.openaiKey) document.getElementById('cfg-openai').placeholder = '●●● configured ●●●';
+    if (cfg.opencodeKey) document.getElementById('cfg-opencode').placeholder = '●●● configured ●●●';
+    const ocUrl = document.getElementById('cfg-opencode-url');
+    if (ocUrl && cfg.opencodeBaseUrl) ocUrl.value = cfg.opencodeBaseUrl;
     document.getElementById('cfg-ai-provider').value = cfg.aiProvider || 'anthropic';
     if (cfg.musicDirs) document.getElementById('cfg-dirs').value = cfg.musicDirs.join('\n');
     if (cfg.messages) { DJ.messages = cfg.messages; renderMessages(); }
@@ -241,6 +244,8 @@ async function saveConfig() {
     spotifyClientSecret: document.getElementById('cfg-sp-secret').value,
     anthropicKey: document.getElementById('cfg-anthropic').value,
     openaiKey: document.getElementById('cfg-openai').value,
+    opencodeKey: document.getElementById('cfg-opencode')?.value || '',
+    opencodeBaseUrl: document.getElementById('cfg-opencode-url')?.value?.trim() || '',
     aiProvider: document.getElementById('cfg-ai-provider').value,
     musicDirs: document.getElementById('cfg-dirs').value.split('\n').map(s=>s.trim()).filter(Boolean),
     messages: DJ.messages,
@@ -1443,6 +1448,36 @@ async function updateSystemStats() {
 }
 setInterval(updateSystemStats, 3000);
 updateSystemStats();
+
+// ─── Listeners ────────────────────────────────────────────────────────────────
+async function fetchListeners() {
+  try {
+    const r = await fetch('/api/listeners');
+    const d = await r.json();
+    const badge = document.getElementById('listener-count-badge');
+    if (badge) badge.textContent = d.count || '0';
+    const tbody = document.getElementById('listener-tbody');
+    if (!tbody) return;
+    if (!d.listeners || d.listeners.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted)">No listeners connected. Open /display in another tab.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.listeners.map(l => {
+      const device = l.isMobile ? '📱 Mobile' : l.isTablet ? '📟 Tablet' : '🖥️ Desktop';
+      const ago = l.connectedAgo < 60000 ? `${Math.floor(l.connectedAgo/1000)}s` : `${Math.floor(l.connectedAgo/60000)}m`;
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:6px 12px;color:var(--muted)">${l.id}</td>
+        <td style="padding:6px 12px;font-family:monospace;font-size:10px">${l.ip}</td>
+        <td style="padding:6px 12px">${l.browser}</td>
+        <td style="padding:6px 12px">${l.os}</td>
+        <td style="padding:6px 12px">${device}</td>
+        <td style="padding:6px 12px"><span style="background:var(--surface2);padding:2px 8px;border-radius:var(--radius-sm);font-size:10px;color:var(--accent)">${l.page}</span></td>
+        <td style="padding:6px 12px;text-align:right;color:var(--muted)">${ago}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { /* ignore poll errors */ }
+}
+setInterval(fetchListeners, 5000);
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 function renderMessages() {
