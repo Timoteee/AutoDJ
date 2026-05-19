@@ -245,6 +245,14 @@ The following were identified in review and **implemented**:
 | **Service Worker** | Updated with cache-first for app shell, network-first for pages, API/stream skip |
 | **Meta tags** | `theme-color` (dark/light), `apple-mobile-web-app-capable`, `viewport-fit=cover` on both pages |
 
+### Phase 5b — OpenCode AI provider + Listener tracking
+| Area | Change |
+|------|--------|
+| **OpenCode AI** | New AI provider option (`opencode`); `opencodeKey` + `opencodeBaseUrl` config fields; Settings UI with key input and optional base URL; uses OpenAI-compatible `/chat/completions` format |
+| **Rich listener tracking** | `sseClients` changed from `Set<res>` to `Map<id, {res, info}>` tracking IP, user-agent, page, connection time |
+| **Listeners tab** | New tab on DJ console with auto-refreshing table (every 5s) showing connected display clients: ID, IP, browser, OS, device type, page, connection duration |
+| **`/api/listeners`** | Now returns per-device details (`browser`, `os`, `isMobile`, `isTablet`, `connectedAgo`) plus total count |
+
 ---
 
 ## Immediate verification checklist
@@ -423,7 +431,7 @@ METUBE_DOWNLOADS_DIR=/metube_downloads
 | GET | `/api/nowplaying/stream` | SSE stream for display page |
 | GET | `/api/nowplaying` | Current playback state |
 | POST | `/api/nowplaying/update` | Update playback state (DJ → display) |
-| GET | `/api/listeners` | SSE client count |
+| GET | `/api/listeners` | SSE client list with device info (browser, OS, mobile/desktop, connected time) |
 | POST | `/api/cache/downloadBatch` | Download N tracks in parallel |
 | GET | `/api/logs` | Get recent server logs (query: `?level=`, `?tag=`) |
 | DELETE | `/api/logs` | Clear server log buffer |

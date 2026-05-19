@@ -71,7 +71,7 @@ Six lanes tried in priority order: **Invidious** → **Piped** → **DAB** → *
 ### 🧠 Discovery
 - **Last.fm** (free) — similar artists, genre-tagged recommendations
 - **Spotify** (free credentials) — artist top tracks, recommendations seeded from any track
-- **AI** (optional Claude/GPT) — describe a mood in plain English
+- **AI** (optional Claude/GPT/OpenCode) — describe a mood in plain English
 
 ### 📺 Now Playing Display
 Full-screen display with large artwork, track info, animated orbs, lyrics (synced LRC), mega progress bar with fade zone marker, next-up preview, live clock, marquee (RSS headlines + custom messages), and side visualizer bars.
@@ -91,6 +91,9 @@ Installable as a standalone app. Manifest, service worker with app shell caching
 ### 📊 System Stats
 Live stat cards on the Mix tab: CPU, RAM, Disk, Temp Storage, Session, Queue — polled every 3 seconds.
 
+### 👥 Listener Tracking
+**Listeners tab** shows every device connected to the Now Playing display: IP, browser (Chrome/Firefox/Safari/Edge), OS (Windows/macOS/Linux/Android/iOS), device type (mobile/tablet/desktop), page, and connection duration. Auto-refreshes every 5 seconds.
+
 ---
 
 ## First-Time Setup
@@ -98,7 +101,7 @@ Live stat cards on the Mix tab: CPU, RAM, Disk, Temp Storage, Session, Queue —
 1. Open `http://localhost:3000/dj`
 2. Go to **Settings** tab
 3. Add a **Last.fm API key** (free at [last.fm/api](https://www.last.fm/api)) — enables Discovery
-4. Optionally add **Spotify**, **Jamendo**, **Anthropic/OpenAI** keys
+4. Optionally add **Spotify**, **Jamendo**, **Anthropic/OpenAI/OpenCode** keys
 5. Click **Save Settings**
 6. Go to **Discover** tab, enter a seed artist, click **Start Discovery**
 7. Go to **Mix** tab and press ▶
@@ -168,6 +171,8 @@ SPOTIFY_CLIENT_ID=your_id
 SPOTIFY_CLIENT_SECRET=your_secret
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
+OPENCODE_API_KEY=oc_...
+OPENCODE_BASE_URL=https://api.opencode.ai/v1
 PORT=3000
 MUSIC_DIR=/path/to/music
 METUBE_URL=http://metube:8081
@@ -201,7 +206,7 @@ METUBE_DOWNLOADS_DIR=/metube_downloads
 
 <div align="center">
 
-Built with Node.js · Express · Web Audio API · Last.fm · Spotify · Invidious · Piped · DAB · LRCLIB · Anthropic / OpenAI
+Built with Node.js · Express · Web Audio API · Last.fm · Spotify · Invidious · Piped · DAB · LRCLIB · Anthropic / OpenAI / OpenCode
 
 *Point it at a song. Walk away. Come back to a perfect mix.*
 
