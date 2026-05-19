@@ -1,0 +1,9 @@
+node_modules/
+cache/
+music/
+config.json
+queue.json
+*.log
+.DS_Store
+Thumbs.db
+@eaDir
