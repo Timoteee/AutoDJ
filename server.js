@@ -46,6 +46,21 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(__dirname));
 
+// ─── Rate Limiter ──────────────────────────────────────────────────────────────
+const rateStore = new Map();
+setInterval(() => { const now = Date.now(); for (const [k, timestamps] of rateStore) { const valid = timestamps.filter(t => now - t < 60000); if (valid.length) rateStore.set(k, valid); else rateStore.delete(k); } }, 60000);
+function rateLimit(maxPerMinute = 60) {
+  return (req, res, next) => {
+    const key = req.ip || req.connection?.remoteAddress || 'unknown';
+    const now = Date.now();
+    const timestamps = (rateStore.get(key) || []).filter(t => now - t < 60000);
+    if (timestamps.length >= maxPerMinute) return res.status(429).json({ error: 'Too many requests, slow down' });
+    timestamps.push(now);
+    rateStore.set(key, timestamps);
+    next();
+  };
+}
+
 // ─── Temp Upload Storage ──────────────────────────────────────────────────────
 const TEMP_DIR = path.join(os.tmpdir(), 'autodj-temp');
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
@@ -104,6 +119,7 @@ let config = {
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   opencodeKey: process.env.OPENCODE_API_KEY || '',
   opencodeBaseUrl: process.env.OPENCODE_BASE_URL || '',
+  opencodeModel: 'opencode-model',
   aiProvider: 'anthropic',
   musicDirs: process.env.MUSIC_DIR ? [process.env.MUSIC_DIR] : [path.join(__dirname, 'music')],
   messages: ["🎵 Vibes are immaculate tonight","🔊 AutoDJ is live","🎧 Peak vibes engaged","💿 Hand-selected by algorithms","🕺 You should be dancing right now","🎶 This song is better loud","🌊 Riding the wave"],
@@ -123,7 +139,7 @@ let config = {
   sessionDuration: 0,
   queueLimit: 0
 };
-if (fs.existsSync(CONFIG_FILE)) { try { Object.assign(config, JSON.parse(fs.readFileSync(CONFIG_FILE,'utf8'))); } catch(e) {} }
+if (fs.existsSync(CONFIG_FILE)) { try { Object.assign(config, JSON.parse(fs.readFileSync(CONFIG_FILE,'utf8'))); } catch(e) { log('Config', `WARNING: Failed to parse config.json — ${e.message}. Using defaults.`); } }
 if (!Array.isArray(config.squidProxies)) config.squidProxies = [];
 function saveConfig() { fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2)); }
 
@@ -204,15 +220,17 @@ async function advanceTrack() {
   // Broadcast play command
   broadcastCommand('play', { url: streamUrl });
 
-  // Auto-advance timer
-  const dur = (track.duration && Number.isFinite(track.duration) && track.duration > 0) ? track.duration : 0;
-  if (dur > 5) {
-    const fadeSec = 8;
-    const advIn = Math.max(1, dur - fadeSec) * 1000;
-    playbackTimer = setTimeout(async () => {
-      await preCacheNextTrack();
-      advanceTrack();
-    }, advIn);
+  // Auto-advance timer (headless fallback only — display clients use relay ended-event)
+  if (sseClients.size === 0) {
+    const dur = (track.duration && Number.isFinite(track.duration) && track.duration > 0) ? track.duration : 0;
+    if (dur > 5) {
+      const fadeSec = 8;
+      const advIn = Math.max(1, dur - fadeSec) * 1000;
+      playbackTimer = setTimeout(async () => {
+        await preCacheNextTrack();
+        advanceTrack();
+      }, advIn);
+    }
   }
 
   // Pre-cache next track
@@ -221,12 +239,15 @@ async function advanceTrack() {
 
 async function startPlayback() {
   if (sharedState.queue.length === 0) return { error: 'Queue empty' };
-  sharedState.trackIndex = Math.max(0, sharedState.trackIndex);
-  if (sharedState.trackIndex >= sharedState.queue.length) sharedState.trackIndex = 0;
+  if (sharedState.trackIndex < 0 || sharedState.trackIndex >= sharedState.queue.length) {
+    sharedState.trackIndex = -1; // advanceTrack() will increment to 0
+  } else {
+    sharedState.trackIndex--; // counteract advanceTrack()'s ++
+  }
   sharedState.sessionActive = true;
   sharedState.sessionStart = Date.now();
   sharedState.playerMode = sseClients.size > 0 ? 'display' : 'headless';
-  log('Playback', `Session started (${sseClients.size} listener(s))`);
+  log('Playback', `Session started (${sseClients.size} listener(s), trackIndex will be ${sharedState.trackIndex + 1})`);
   saveQueueToDisk(sharedState.queue);
   await advanceTrack();
   return { ok: true };
@@ -302,6 +323,7 @@ app.get('/api/config', (req, res) => res.json({
   spotifyClientId: config.spotifyClientId || '',
   openaiKey: config.openaiKey ? '●●●set●●●' : '', anthropicKey: config.anthropicKey ? '●●●set●●●' : '', opencodeKey: config.opencodeKey ? '●●●set●●●' : '',
   opencodeBaseUrl: config.opencodeBaseUrl || '',
+  opencodeModel: config.opencodeModel || 'opencode-model',
   aiProvider: config.aiProvider, musicDirs: config.musicDirs, messages: config.messages,
   invidiousRedirector: config.invidiousRedirector || '',
   squidProxies: Array.isArray(config.squidProxies) ? config.squidProxies : [],
@@ -328,6 +350,7 @@ app.post('/api/config', (req, res) => {
   if (b.anthropicKey && !b.anthropicKey.includes('●')) config.anthropicKey = b.anthropicKey;
   if (b.opencodeKey && !b.opencodeKey.includes('●')) config.opencodeKey = b.opencodeKey;
   if (b.opencodeBaseUrl !== undefined) config.opencodeBaseUrl = String(b.opencodeBaseUrl || '').trim();
+  if (b.opencodeModel !== undefined) config.opencodeModel = String(b.opencodeModel || 'opencode-model').trim();
   if (b.aiProvider) config.aiProvider = b.aiProvider;
   if (b.musicDirs) config.musicDirs = b.musicDirs;
   if (b.messages) { config.messages = b.messages; sharedState.messages = b.messages; }
@@ -358,7 +381,15 @@ const AUDIO_EXTS = ['.mp3','.flac','.wav','.ogg','.m4a','.aac','.opus','.wma'];
 function scanDir(dir) { const r=[]; if (!fs.existsSync(dir)) return r; const walk=(d)=>{try{for(const e of fs.readdirSync(d,{withFileTypes:true})){const f=path.join(d,e.name);if(e.isDirectory())walk(f);else if(AUDIO_EXTS.includes(path.extname(e.name).toLowerCase()))r.push(f);}}catch(e){}}; walk(dir); return r; }
 app.get('/api/local/scan', (req, res) => {
   const all = []; for (const dir of config.musicDirs) all.push(...scanDir(dir));
-  res.json(all.map(fp => { const n=path.basename(fp,path.extname(fp)),p=n.split(' - '); return { type:'local',filepath:fp,filename:path.basename(fp),size:fs.statSync(fp).size, title:p.length>=2?p.slice(1).join(' - '):n, artist:p.length>=2?p[0]:'Unknown', album:'',duration:0 }; }));
+  res.json(all.map(fp => {
+    const rel = (config.musicDirs||[]).reduce((acc, d) => {
+      const resolved = path.resolve(d);
+      return acc.startsWith(resolved) ? acc.slice(resolved.length).replace(/^[\\/]/, '') : acc;
+    }, fp);
+    const n=path.basename(fp,path.extname(fp)),p=n.split(' - ');
+    try { const size = fs.statSync(fp).size; return { type:'local', path:rel, filename:path.basename(fp), size, title:p.length>=2?p.slice(1).join(' - '):n, artist:p.length>=2?p[0]:'Unknown', album:'',duration:0 }; }
+    catch { return null; }
+  }).filter(Boolean));
 });
 function streamFile(fp, req, res) {
   const stat=fs.statSync(fp), ext=path.extname(fp).toLowerCase();
@@ -369,8 +400,10 @@ function streamFile(fp, req, res) {
   } else { res.writeHead(200,{'Content-Length':stat.size,'Content-Type':mime,'Accept-Ranges':'bytes'}); fs.createReadStream(fp).pipe(res); }
 }
 app.get('/api/local/stream', (req, res) => {
-  const fp=req.query.path; if(!fp||!fs.existsSync(fp)) return res.status(404).send('Not found');
-  if(!config.musicDirs.some(d=>fp.startsWith(d))&&!fp.startsWith(path.join(__dirname,'music'))) return res.status(403).send('Forbidden');
+  const raw=req.query.path; if(!raw) return res.status(400).send('Missing path');
+  const fp=path.resolve(raw);
+  const allowed=[...(config.musicDirs||[]),path.join(__dirname,'music')].some(d=>fp.startsWith(path.resolve(d)));
+  if(!allowed||!fs.existsSync(fp)) return res.status(404).send('Not found');
   streamFile(fp, req, res);
 });
 
@@ -395,13 +428,21 @@ app.get('/api/spotify/:endpoint(*)', async (req, res) => {
 });
 
 // ─── AI ───────────────────────────────────────────────────────────────────────
-app.post('/api/ai/recommend', async (req, res) => {
+app.post('/api/ai/recommend', rateLimit(20), async (req, res) => {
   const{history,currentTrack,tags,mood}=req.body;
   const prompt=`You are an expert DJ AI. Recommend 5 songs for the best mix flow.\nCurrent: ${JSON.stringify(currentTrack)}\nHistory: ${JSON.stringify((history||[]).slice(-5))}\nTags: ${(tags||[]).join(', ')}\nMood: ${mood||'any'}\nRespond ONLY with JSON array: [{"title":string,"artist":string,"reason":string}]`;
   try {
     if(config.aiProvider==='anthropic'&&config.anthropicKey){const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':config.anthropicKey,'anthropic-version':'2023-06-01','content-type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1024,messages:[{role:'user',content:prompt}]})}); const d=await r.json(); res.json(JSON.parse((d.content?.[0]?.text||'[]').replace(/```json|```/g,'').trim()));}
     else if(config.aiProvider==='openai'&&config.openaiKey){const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Authorization':`Bearer ${config.openaiKey}`,'Content-Type':'application/json'},body:JSON.stringify({model:'gpt-4o-mini',messages:[{role:'user',content:prompt}]})}); const d=await r.json(); res.json(JSON.parse((d.choices?.[0]?.message?.content||'[]').replace(/```json|```/g,'').trim()));}
-    else if(config.aiProvider==='opencode'&&config.opencodeKey){const base=config.opencodeBaseUrl||'https://api.opencode.ai/v1';const r=await fetch(`${base}/chat/completions`,{method:'POST',headers:{'Authorization':`Bearer ${config.opencodeKey}`,'Content-Type':'application/json'},body:JSON.stringify({model:'opencode-model',messages:[{role:'user',content:prompt}]})});const d=await r.json();res.json(JSON.parse((d.choices?.[0]?.message?.content||'[]').replace(/```json|```/g,'').trim()));}
+    else if(config.aiProvider==='opencode'&&config.opencodeKey){
+      const base=(config.opencodeBaseUrl||'https://api.opencode.ai/v1').replace(/\/+$/,'');
+      const model=config.opencodeModel||'opencode-model';
+      const r=await fetch(`${base}/chat/completions`,{method:'POST',headers:{'Authorization':`Bearer ${config.opencodeKey}`,'Content-Type':'application/json'},body:JSON.stringify({model,messages:[{role:'user',content:prompt}]})});
+      if(!r.ok){const errBody=await r.text().catch(()=>''); throw new Error(`OpenCode HTTP ${r.status}: ${errBody.slice(0,200)}`);}
+      const d=await r.json();
+      if(!d.choices?.[0]?.message?.content) throw new Error('OpenCode: empty response');
+      res.json(JSON.parse((d.choices[0].message.content||'[]').replace(/```json|```/g,'').trim()));
+    }
     else res.status(400).json({error:'No AI configured'});
   } catch(e) { res.status(500).json({error:e.message}); }
 });
@@ -555,7 +596,7 @@ function filterTopicResults(results) {
   });
 }
 
-app.get('/api/youtube/search', async (req, res) => {
+app.get('/api/youtube/search', rateLimit(30), async (req, res) => {
   const{q}=req.query; if(!q) return res.json([]);
   log('Search', `"${q}"`);
 
@@ -604,9 +645,17 @@ async function tryMetubeDownload(videoId, title, artist) {
   try {
     const mf = await metubeAddAndWaitFile(videoId);
     if (mf) {
+      // Double-check file exists before copy (filesystem race)
+      if (!fs.existsSync(mf)) { log('Cache', `MeTube file vanished: ${mf}`); return null; }
       const ext = path.extname(mf) || '.mp3';
       const fp = cachePathForId(videoId, ext);
-      await fs.promises.copyFile(mf, fp);
+      try { await fs.promises.copyFile(mf, fp); } catch (copyErr) {
+        log('Cache', `MeTube copy failed (${mf}): ${copyErr.message}`);
+        // Try once more after a short wait
+        await sleep(2000);
+        if (fs.existsSync(mf)) await fs.promises.copyFile(mf, fp);
+        else return null;
+      }
       const sz = fs.statSync(fp).size;
       if (sz > 1000) {
         audioCache.push({ id: videoId, filepath: fp, title: title || videoId, artist: artist || '', downloadedAt: Date.now(), playedAt: null, size: sz, source: 'metube' });
@@ -618,25 +667,44 @@ async function tryMetubeDownload(videoId, title, artist) {
   return null;
 }
 
+// Download dedup set — prevent concurrent downloads of the same videoId
+const downloadingIds = new Set();
+
 // Download + cache a track for reliable playback
-app.post('/api/cache/download', async (req, res) => {
+app.post('/api/cache/download', rateLimit(20), async (req, res) => {
   const{videoId,title,artist,_source,_instance}=req.body;
   if(!videoId) return res.status(400).json({error:'Missing track ID'});
+
+  // Dedup: reject if already downloading
+  if (downloadingIds.has(videoId)) {
+    log('Cache', `Dedup: ${videoId} already downloading, returning cached if available`);
+    // Poll for completion up to 60s
+    for (let i = 0; i < 30; i++) {
+      await sleep(2000);
+      const existing = audioCache.find(e => e.id === videoId);
+      if (existing?.filepath && fs.existsSync(existing.filepath)) {
+        return res.json({ok:true,cached:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:existing.title,source:'cache'});
+      }
+      if (!downloadingIds.has(videoId)) break; // download finished or failed
+    }
+    return res.status(429).json({error:'Download already in progress'});
+  }
 
   // Check cache
   const existing=audioCache.find(e=>e.id===videoId);
   if(existing?.filepath&&fs.existsSync(existing.filepath)) return res.json({ok:true,cached:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:existing.title,source:'cache'});
   if(existing) audioCache=audioCache.filter(e=>e.id!==videoId);
 
+  downloadingIds.add(videoId);
   log('Cache', `Downloading: ${title || videoId} (src=${_source || 'auto'}, id=${videoId})`);
 
-  // Try MeTube first if configured
-  if (config.metubeFirst !== false) {
-    const metubeResult = await tryMetubeDownload(videoId, title, artist);
-    if (metubeResult) return res.json(metubeResult);
-  }
-
   try {
+    // Try MeTube first if configured
+    if (config.metubeFirst !== false) {
+      const metubeResult = await tryMetubeDownload(videoId, title, artist);
+      if (metubeResult) { downloadingIds.delete(videoId); return res.json(metubeResult); }
+    }
+
     let streamUrl=null, src=_source||'unknown';
 
     if (_source === 'squid') {
@@ -697,19 +765,19 @@ app.post('/api/cache/download', async (req, res) => {
       if (metubeResult) return res.json(metubeResult);
     }
 
-    if(!streamUrl) return res.status(404).json({error:'No stream from any source (DAB/Jamendo/HiFi/Piped/Invidious/MeTube/Squid)'});
+    if(!streamUrl) { downloadingIds.delete(videoId); return res.status(404).json({error:'No stream from any source (DAB/Jamendo/HiFi/Piped/Invidious/MeTube/Squid)'}); }
 
     // Download using pipeline (safe, no memory leaks)
     log('Cache', `Fetching from ${src}: ${streamUrl.slice(0, 80)}...`);
     const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(),90000);
     try {
       const ar=await fetch(streamUrl,{signal:ctrl.signal,headers:musicHeaders()}); clearTimeout(to);
-      if(!ar.ok){await ar.body?.cancel(); return res.status(502).json({error:`HTTP ${ar.status}`});}
-      const ct=ar.headers.get('content-type')||'', ext=ct.includes('mpeg')||ct.includes('mp3')?'.mp3':ct.includes('mp4')?'.m4a':'.webm';
+      if(!ar.ok){await ar.body?.cancel(); downloadingIds.delete(videoId); return res.status(502).json({error:`HTTP ${ar.status}`});}
+      const ct=ar.headers.get('content-type')||'', ext=ct.includes('mpeg')||ct.includes('mp3')?'.mp3':ct.includes('mp4')?'.m4a':ct.includes('ogg')||ct.includes('opus')?'.ogg':ct.includes('flac')?'.flac':ct.includes('wav')||ct.includes('wave')?'.wav':ct.includes('aac')?'.aac':'.webm';
       const fp=cachePathForId(videoId,ext);
       await pipeline(Readable.fromWeb(ar.body),fs.createWriteStream(fp));
       const sz=fs.statSync(fp).size;
-      if(sz<1000){fs.unlinkSync(fp); return res.status(502).json({error:`File too small (${sz}B)`});}
+      if(sz<1000){fs.unlinkSync(fp); downloadingIds.delete(videoId); return res.status(502).json({error:`File too small (${sz}B)`});}
       audioCache.push({id:videoId,filepath:fp,title:title||videoId,artist:artist||'',downloadedAt:Date.now(),playedAt:null,size:sz,source:src});
       cleanTempAfterDownloads();
       log('Cache', `OK: ${title} (${(sz/1048576).toFixed(1)}MB via ${src})`);
@@ -724,20 +792,20 @@ app.post('/api/cache/download', async (req, res) => {
           log('Verify', `ID3 match OK for "${title}" — title=${(titleSim*100).toFixed(0)}% artist=${(artistSim*100).toFixed(0)}%`);
         }
       });
-      res.json({ok:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:title||videoId,source:src,size:sz});
-    } catch(e) { clearTimeout(to); throw e; }
-  } catch(e) { log('Cache', e.message); if (IS_DEV) console.error(e); res.status(500).json({error:e.message}); }
+      downloadingIds.delete(videoId); res.json({ok:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:title||videoId,source:src,size:sz});
+    } catch(e) { clearTimeout(to); downloadingIds.delete(videoId); throw e; }
+  } catch(e) { downloadingIds.delete(videoId); log('Cache', e.message); if (IS_DEV) console.error(e); res.status(500).json({error:e.message}); }
 });
 
 app.get('/api/cache/stream/:id', (req, res) => {
-  const id = decodeURIComponent(req.params.id);
+  const id = req.params.id;
   const e=audioCache.find(x=>x.id===id);
   if(!e?.filepath||!fs.existsSync(e.filepath)) return res.status(404).json({error:'Not cached'});
   streamFile(e.filepath, req, res);
 });
 
 /** Batch download — downloads multiple tracks concurrently (respects maxConcurrentDownloads). */
-app.post('/api/cache/downloadBatch', async (req, res) => {
+app.post('/api/cache/downloadBatch', rateLimit(10), async (req, res) => {
   const { tracks } = req.body;
   if (!Array.isArray(tracks) || !tracks.length) return res.status(400).json({ error: 'No tracks' });
   const maxConcurrent = config.maxConcurrentDownloads || 3;
@@ -746,7 +814,7 @@ app.post('/api/cache/downloadBatch', async (req, res) => {
     const batch = tracks.slice(i, i + maxConcurrent);
     const batchResults = await Promise.allSettled(batch.map(async (t) => {
       try {
-        const resp = await fetch(`${req.protocol}://${req.hostname}:${PORT}/api/cache/download`, {
+        const resp = await fetch(`http://127.0.0.1:${PORT}/api/cache/download`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ videoId: t.videoId, title: t.title, artist: t.artist, _source: t._source || '', _instance: t._instance || '' })
         });
@@ -795,7 +863,7 @@ app.get('/api/test/sources', async (req, res) => {
 });
 
 // ─── Temp Upload ──────────────────────────────────────────────────────────────
-app.post('/api/temp/upload', upload.array('files',100), (req, res) => {
+app.post('/api/temp/upload', rateLimit(10), upload.array('files',100), (req, res) => {
   if(!req.files?.length) return res.status(400).json({error:'No files'});
   const added=req.files.map(f=>{tempFiles.push({filepath:f.path,filename:f.originalname,storedName:f.filename,size:f.size,uploadedAt:Date.now()}); const n=path.basename(f.originalname,path.extname(f.originalname)),p=n.split(' - '); return {filepath:f.path,filename:f.originalname,size:f.size,title:p.length>=2?p.slice(1).join(' - '):n,artist:p.length>=2?p[0]:'Unknown',storedName:f.filename,url:`/api/temp/stream?file=${encodeURIComponent(f.filename)}`};});
   res.json({ok:true,files:added,count:added.length});
@@ -822,8 +890,12 @@ app.get('/api/piped/relay', async (req, res) => {
   const{url}=req.query; if(!url) return res.status(400).send('Missing url');
   try {
     const decoded = decodeURIComponent(url);
-    const target = /^https?:\/\//i.test(decoded) ? decoded : new URL(decoded, `http://127.0.0.1:${PORT}`).href;
-    const up=await fetch(target,{signal:AbortSignal.timeout(15000),headers:{...musicHeaders(),'Range':req.headers.range||'bytes=0-'}}); res.status(up.status); ['content-type','content-length','content-range','accept-ranges'].forEach(h=>{const v=up.headers.get(h);if(v)res.setHeader(h,v);}); res.setHeader('Access-Control-Allow-Origin','*'); Readable.fromWeb(up.body).pipe(res); }
+    if (decoded.startsWith('//')) return res.status(400).send('Bad url');
+    const parsed = new URL(decoded);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return res.status(400).send('Bad url');
+    const hn = parsed.hostname.toLowerCase();
+    if (hn === 'localhost' || hn === '127.0.0.1' || hn === '::1' || hn === '0.0.0.0' || hn.startsWith('10.') || hn.startsWith('192.168.') || hn.startsWith('172.16.') || hn.endsWith('.local')) return res.status(400).send('Blocked');
+    const up=await fetch(decoded,{signal:AbortSignal.timeout(15000),headers:{...musicHeaders(),'Range':req.headers.range||'bytes=0-'}}); res.status(up.status); ['content-type','content-length','content-range','accept-ranges'].forEach(h=>{const v=up.headers.get(h);if(v)res.setHeader(h,v);}); res.setHeader('Access-Control-Allow-Origin','*'); Readable.fromWeb(up.body).pipe(res); }
   catch(e) { if(!res.headersSent) res.status(502).send('Relay error'); }
 });
 
@@ -879,6 +951,7 @@ app.get('/api/logs', (req, res) => {
 app.delete('/api/logs', (req, res) => { logRing.length = 0; res.json({ ok: true }); });
 
 // ─── RSS Feed for Marquee ───────────────────────────────────────────────────────
+let rssLastLog = 0;
 const _xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -921,8 +994,17 @@ function parseRSSItems(xml) {
   }
 }
 app.get('/api/rss', async (req, res) => {
-  const feedUrl = req.query.url || '';
-  if (!feedUrl || !feedUrl.startsWith('http')) return res.json({ items: [] });
+  const raw = req.query.url || '';
+  if (!raw) return res.json({ items: [] });
+  let feedUrl;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return res.json({ items: [] });
+    const hn = parsed.hostname.toLowerCase();
+    if (hn === 'localhost' || hn === '127.0.0.1' || hn === '::1' || hn === '0.0.0.0' || hn.startsWith('10.') || hn.startsWith('192.168.') || hn.startsWith('172.16.') || hn.endsWith('.local')) return res.json({ items: [] });
+    if (parsed.username || parsed.password) return res.json({ items: [] });
+    feedUrl = parsed.href;
+  } catch { return res.json({ items: [] }); }
   try {
     const r = await fetch(feedUrl, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': MUSIC_UA } });
     if (!r.ok) {
@@ -932,7 +1014,8 @@ app.get('/api/rss', async (req, res) => {
     const xml = await r.text();
     const items = parseRSSItems(xml);
     if (items) {
-      log('RSS', `${items.length} items from ${feedUrl}`);
+      const now = Date.now();
+      if (now - rssLastLog > 300000) { rssLastLog = now; log('RSS', `${items.length} items from ${feedUrl}`); }
       res.json({ items, feedUrl });
     } else {
       log('RSS', `Parse failed for ${feedUrl}`);
@@ -1001,26 +1084,38 @@ app.post('/api/cache/verify', (req, res) => {
 // ─── Keepalive / Ping ───────────────────────────────────────────────────────────
 app.get('/api/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
-// ─── WebRTC Signaling ───────────────────────────────────────────────────────────
+// ─── WebRTC Signaling (same-origin only) ────────────────────────────────────────
+function webrtcAuth(req, res, next) {
+  const origin = req.headers.origin || req.headers.referer || '';
+  if (!origin) return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const o = new URL(origin);
+    const serverHost = `localhost:${PORT}`;
+    if (o.host === serverHost || o.host === `127.0.0.1:${PORT}`) return next();
+    if (o.host === `[::1]:${PORT}`) return next();
+    if (o.hostname === req.hostname || o.host === req.get('host')) return next();
+  } catch {}
+  return res.status(403).json({ error: 'Forbidden' });
+}
 let webrtcState = { offer: null, answer: null, candidates: [] };
-app.post('/api/webrtc/offer', (req, res) => {
+app.post('/api/webrtc/offer', webrtcAuth, (req, res) => {
   webrtcState.offer = req.body;
   webrtcState.answer = null;
   webrtcState.candidates = [];
   res.json({ ok: true });
 });
-app.get('/api/webrtc/offer', (req, res) => res.json(webrtcState.offer || {}));
-app.post('/api/webrtc/answer', (req, res) => {
+app.get('/api/webrtc/offer', webrtcAuth, (req, res) => res.json(webrtcState.offer || {}));
+app.post('/api/webrtc/answer', webrtcAuth, (req, res) => {
   webrtcState.answer = req.body;
   res.json({ ok: true });
 });
-app.get('/api/webrtc/answer', (req, res) => res.json(webrtcState.answer || {}));
-app.post('/api/webrtc/ice', (req, res) => {
+app.get('/api/webrtc/answer', webrtcAuth, (req, res) => res.json(webrtcState.answer || {}));
+app.post('/api/webrtc/ice', webrtcAuth, (req, res) => {
   webrtcState.candidates.push(req.body);
   res.json({ ok: true });
 });
-app.get('/api/webrtc/ice', (req, res) => res.json(webrtcState.candidates));
-app.delete('/api/webrtc', (req, res) => {
+app.get('/api/webrtc/ice', webrtcAuth, (req, res) => res.json(webrtcState.candidates));
+app.delete('/api/webrtc', webrtcAuth, (req, res) => {
   webrtcState = { offer: null, answer: null, candidates: [] };
   res.json({ ok: true });
 });
@@ -1069,6 +1164,17 @@ app.post('/api/queue', (req, res) => {
   }
 });
 
+app.post('/api/queue/remove/:index', (req, res) => {
+  const idx = parseInt(req.params.index, 10);
+  if (isNaN(idx) || idx < 0 || idx >= sharedState.queue.length) return res.status(400).json({ error: 'Invalid index' });
+  const removed = sharedState.queue.splice(idx, 1)[0];
+  if (idx <= sharedState.trackIndex) sharedState.trackIndex = Math.max(-1, sharedState.trackIndex - 1);
+  saveQueueToDisk(sharedState.queue);
+  broadcastState();
+  log('Queue', `Removed: ${removed.title} (idx=${idx})`);
+  res.json({ ok: true });
+});
+
 app.post('/api/queue/clear', (req, res) => {
   stopPlayback();
   sharedState.queue = [];
@@ -1090,8 +1196,33 @@ app.post('/api/playback/stop', (req, res) => {
 });
 app.post('/api/playback/next', async (req, res) => {
   clearPlaybackTimer();
-  await preCacheNextTrack();
-  await advanceTrack();
+  const { trackIndex } = req.body || {};
+  if (typeof trackIndex === 'number' && trackIndex >= 0 && trackIndex < sharedState.queue.length) {
+    // Client is driving advancement — use its trackIndex (prevents desync)
+    sharedState.trackIndex = trackIndex;
+    if (sharedState.queue[trackIndex]) {
+      const track = sharedState.queue[trackIndex];
+      sharedState.nowPlaying = {
+        title: track.title || '', artist: track.artist || '',
+        duration: track.duration || 0, elapsed: 0, youtubeId: track.youtubeId || null,
+        artwork: track.artwork || '', album: track.album || '', tags: track.tags || []
+      };
+      sharedState.nextUp = sharedState.queue[trackIndex + 1] || null;
+      sharedState.isPlaying = true;
+      // Build stream URL
+      let streamUrl = '';
+      if (track.type === 'local' || track.type === 'temp') streamUrl = track.url || '';
+      else if (track.youtubeId) {
+        const cached = audioCache.find(e => e.id === track.youtubeId);
+        if (cached?.filepath) streamUrl = `/api/cache/stream/${encodeURIComponent(track.youtubeId)}`;
+      }
+      log('Playback', `Client sync: track ${trackIndex + 1}/${sharedState.queue.length}: ${track.title}`);
+      broadcastCommand('play', { url: streamUrl });
+    }
+  } else {
+    // Fallback: server-driven advance
+    await advanceTrack();
+  }
   res.json({ ok: true });
 });
 app.post('/api/playback/event', async (req, res) => {
@@ -1103,10 +1234,17 @@ app.post('/api/playback/event', async (req, res) => {
   }
   res.json({ ok: true });
 });
+const MAX_PLAYED_IDS = 2000;
+function prunePlayedIds() {
+  if (sharedState.playedIds.length > MAX_PLAYED_IDS) {
+    sharedState.playedIds = sharedState.playedIds.slice(-MAX_PLAYED_IDS);
+  }
+}
 app.post('/api/playback/played', (req, res) => {
   const { videoId } = req.body || {};
   if (videoId && !sharedState.playedIds.includes(videoId)) {
     sharedState.playedIds.push(videoId);
+    prunePlayedIds();
   }
   res.json({ ok: true, playedCount: sharedState.playedIds.length });
 });

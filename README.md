@@ -8,7 +8,7 @@
  ▀  ▀  ▀▀▀  ▀▀▀  ▀█▄▀▪▀▀▀▀▀• .▀  ▀
 ```
 
-**v4.3 — Automated DJ with persistent playback, Spotify-inspired UI, light/dark mode, and PWA support.**
+**v4.4 — OpenCode Zen, persistent queue, Spotify-inspired UI, light/dark mode, PWA support, full codebase audit + security hardening.**
 
 [![Node](https://img.shields.io/badge/node-22%2B-brightgreen?style=flat-square&logo=node.js)](https://nodejs.org)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker)](https://docker.com)
@@ -71,7 +71,7 @@ Six lanes tried in priority order: **Invidious** → **Piped** → **DAB** → *
 ### 🧠 Discovery
 - **Last.fm** (free) — similar artists, genre-tagged recommendations
 - **Spotify** (free credentials) — artist top tracks, recommendations seeded from any track
-- **AI** (optional Claude/GPT/OpenCode) — describe a mood in plain English
+- **AI** (optional Claude/GPT/OpenCode/OpenCode Zen) — describe a mood in plain English
 
 ### 📺 Now Playing Display
 Full-screen display with large artwork, track info, animated orbs, lyrics (synced LRC), mega progress bar with fade zone marker, next-up preview, live clock, marquee (RSS headlines + custom messages), and side visualizer bars.
@@ -94,6 +94,29 @@ Live stat cards on the Mix tab: CPU, RAM, Disk, Temp Storage, Session, Queue —
 ### 👥 Listener Tracking
 **Listeners tab** shows every device connected to the Now Playing display: IP, browser (Chrome/Firefox/Safari/Edge), OS (Windows/macOS/Linux/Android/iOS), device type (mobile/tablet/desktop), page, and connection duration. Auto-refreshes every 5 seconds.
 
+### 🎵 OpenCode Zen Integration
+Pre-configured model dropdown with categorized optgroups: **Free tier** (DeepSeek V4 Flash, MiniMax M2.5, GPT-5 Nano, Big Pickle), **GPT Series** (5.5 Pro through GPT-5), **Claude** (Opus/Sonnet/Haiku), **Other** (Gemini, GLM, Kimi, Qwen, MiniMax). Set base URL to `https://opencode.ai/zen/v1` for Zen models.
+
+### 🆕 v4.4 UI Improvements
+- **NEXT UP card** in Mix tab — prominent card for the next track with Play Now and Cue B buttons
+- **Now Playing card** in Mix tab — shows current track artwork, title, artist, elapsed timer
+- **Queue "Play Now"** — each queue row has a direct play button
+- **Search thumbnails** — online search results show small thumbnail images with bold titles
+- **Layout fixes** — responsive sidebar, scrollbar styles, overflow handling
+- **Download dedup** — server-side dedup prevents concurrent cache-download of the same `videoId`
+- **Settings scrolling** — long settings forms scroll within the panel instead of overflowing
+- **Display/DJ queue sync** — trackIndex passed client→server for consistent skip behavior
+
+### 🔒 Security Hardening (v4.4 audit)
+- **Path traversal fix** — `/api/local/stream` uses `path.resolve()` before validation
+- **SSRF protection** — `/api/piped/relay` and `/api/rss` reject private IPs, protocol-relative URLs, embedded credentials
+- **Rate limiting** — in-memory limiter on download, search, AI, and upload endpoints
+- **WebRTC auth** — signaling endpoints gated by same-origin check
+- **Path leak fix** — `/api/local/scan` returns relative paths instead of absolute server paths
+- **Content-type mapping** — proper extension mapping for ogg, flac, wav, aac
+- **playedIds pruning** — capped at 2000 entries to prevent unbounded array growth
+- **Config parse warnings** — malformed config.json now surfaces error in logs
+
 ---
 
 ## First-Time Setup
@@ -101,7 +124,7 @@ Live stat cards on the Mix tab: CPU, RAM, Disk, Temp Storage, Session, Queue —
 1. Open `http://localhost:3000/dj`
 2. Go to **Settings** tab
 3. Add a **Last.fm API key** (free at [last.fm/api](https://www.last.fm/api)) — enables Discovery
-4. Optionally add **Spotify**, **Jamendo**, **Anthropic/OpenAI/OpenCode** keys
+4. Optionally add **Spotify**, **Jamendo**, **Anthropic/OpenAI/OpenCode Zen** keys
 5. Click **Save Settings**
 6. Go to **Discover** tab, enter a seed artist, click **Start Discovery**
 7. Go to **Mix** tab and press ▶
@@ -133,10 +156,10 @@ Live stat cards on the Mix tab: CPU, RAM, Disk, Temp Storage, Session, Queue —
 ```
 autodj-v4/
 ├── server.js          ← Express backend (routes, sources, cache, auto-advance, SSE)
-├── engine.js          ← Browser audio engine (WebAudio, crossfade, waveform, BPM)
-├── dj.js              ← DJ console UI (queue, decks, settings, theme, playback)
+├── engine.js          ← Browser audio engine (WebAudio, crossfade, waveform, BPM, WebRTC)
+├── dj.js              ← DJ console UI (queue, decks, settings, theme, playback, WebRTC)
 ├── dj.html            ← DJ console HTML + CSS (Spotify-inspired, light/dark)
-├── display.html       ← Now-playing display (relay audio, lyrics, marquee, theme)
+├── display.html       ← Now-playing display (relay audio, lyrics, marquee, theme, WebRTC)
 ├── sw.js              ← Service worker (app shell caching)
 ├── manifest.json      ← PWA manifest
 ├── css/shared.css     ← Shared baseline
@@ -144,7 +167,9 @@ autodj-v4/
 ├── package.json       ← Dependencies (express, cors, multer, fast-xml-parser)
 ├── Dockerfile         ← node:22-alpine
 ├── docker-compose.yml ← Mounts music/, cache/, config.json
-└── config.json        ← Runtime config (populated via Settings UI)
+├── config.json        ← Runtime config (populated via Settings UI)
+├── HANDOFF.md         ← Project handoff document (full API ref, architecture, history)
+└── scripts/           ← Probe/utility scripts
 ```
 
 ---
@@ -189,6 +214,7 @@ METUBE_DOWNLOADS_DIR=/metube_downloads
 - **Smart Fade** works best on tracks with natural outros. Set crossfade to 2-3s for hard cuts.
 - **Temp uploads** are ephemeral — auto-deleted when queue clears.
 - **Theme toggle** in the topbar — cycles light/dark. Respects system preference by default.
+- **WebRTC Share Audio** — stream audio to the display page over WebRTC (experimental, same-LAN only).
 
 ---
 

@@ -21,14 +21,14 @@
   --surface: #181818;
   --surface2: #282828;
   --surface3: #333333;
-  --border: #333333;
+  --border: #404040;
   --accent: #1db954;
   --accent-hover: #1ed760;
   --accent2: #e74c3c;
   --accent3: #8b5cf6;
   --green: #1db954;
   --yellow: #f59e0b;
-  --text: #b3b3b3;
+  --text: #e0e0e0;
   --bright: #ffffff;
   --muted: #727272;
   --glow-g: rgba(29,185,84,0.2);
@@ -44,14 +44,14 @@
   --surface: #f6f6f6;
   --surface2: #e8e8e8;
   --surface3: #d9d9d9;
-  --border: #d9d9d9;
+  --border: #c0c0c0;
   --accent: #1db954;
   --accent-hover: #169c46;
   --accent2: #e74c3c;
   --accent3: #7c3aed;
   --green: #1db954;
   --yellow: #d97706;
-  --text: #535353;
+  --text: #333333;
   --bright: #191919;
   --muted: #a0a0a0;
   --glow-g: rgba(29,185,84,0.12);
@@ -119,8 +119,15 @@ body::before {
   display: flex; flex-direction: column; gap: 10px;
 }
 
-.main-content::-webkit-scrollbar { width: 4px; }
-.main-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.main-content::-webkit-scrollbar { width: 6px; }
+.main-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.main-content::-webkit-scrollbar-track { background: transparent; }
+
+/* Global scrollbar styles */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 
 /* ─── Tabs ───────────────────────────────────── */
 .tab-bar {
@@ -293,6 +300,8 @@ body::before {
 .q-tags { font-size: 8px; color: var(--accent3); }
 .q-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
 .q-remove:hover { color: var(--accent2); }
+.q-play-now { background: none; border: 1px solid var(--accent); color: var(--accent); cursor: pointer; font-size: 10px; padding: 2px 6px; border-radius: 3px; line-height: 1; }
+.q-play-now:hover { background: var(--accent); color: #fff; }
 
 .q-badge { font-size: 8px; padding: 2px 5px; border-radius: 2px; text-transform: uppercase; letter-spacing: 1px; }
 .badge-play { background: rgba(255,51,102,0.2); color: var(--accent2); }
@@ -485,11 +494,12 @@ input[type="number"] { width: 70px; }
   .queue-grid { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: 1fr; }
   .stats-bar { grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+}
 
 @media (max-width: 480px) {
   .stats-bar { grid-template-columns: 1fr 1fr; }
   .topbar .clock-display { display: none; }
-  .mix-up-next { display: block; }
+  #mix-up-next { display: block; }
   body { font-size: 10px; }
   .vu-meters { height: 20px; }
   .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -629,7 +639,21 @@ input[type="number"] { width: 70px; }
       </div>
     </div>
 
-    <div id="mix-up-next" style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px"></div>
+    <div id="mix-now-playing" style="margin-top:12px;display:none">
+      <div style="padding:8px 12px;font-size:9px;letter-spacing:2px;color:var(--accent);text-transform:uppercase">Now Playing</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius-md)">
+        <div style="width:52px;height:52px;border-radius:4px;overflow:hidden;background:var(--surface2);flex-shrink:0">
+          <img id="np-art-thumb" style="width:100%;height:100%;object-fit:cover;display:none" alt="">
+        </div>
+        <div style="flex:1;min-width:0;overflow:hidden">
+          <div id="np-title-display" style="color:var(--bright);font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</div>
+          <div id="np-artist-display" style="color:var(--text);font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</div>
+          <div id="np-time-display" style="color:var(--muted);font-size:10px;margin-top:4px;font-family:'Orbitron',sans-serif"><span id="np-elapsed-display">0:00</span> / <span id="np-duration-display">0:00</span></div>
+        </div>
+        <button class="btn accent" style="padding:6px 12px;font-size:10px;flex-shrink:0" onclick="fetch('/api/playback/next',{method:'POST'})">▶ Next</button>
+      </div>
+    </div>
+    <div id="mix-up-next" style="margin-top:12px;padding-top:0"></div>
 
     <!-- System Stats Bar -->
     <div class="stats-bar">
@@ -651,10 +675,11 @@ input[type="number"] { width: 70px; }
         <div class="stat-sub" id="stat-disk-sub">— free of —</div>
         <div class="stat-bar-bg"><div class="stat-bar-fill" id="stat-disk-bar" style="width:0%"></div></div>
       </div>
-      <div class="stat-card temp-storage">
+        <div class="stat-card temp-storage">
         <div class="stat-label">Temp Storage</div>
         <div class="stat-value" id="stat-temp">—</div>
-        <div class="stat-sub" id="stat-uptime">—</div>
+        <div class="stat-sub" id="stat-temp-sub">—</div>
+        <div class="stat-bar-bg"><div class="stat-bar-fill" id="stat-temp-bar" style="width:0%"></div></div>
       </div>
       <div class="stat-card session">
         <div class="stat-label">Session</div>
@@ -842,7 +867,7 @@ input[type="number"] { width: 70px; }
         </div>
       </div>
       <div class="panel-body" style="padding:0">
-        <div id="log-entries" style="max-height:500px;overflow-y:auto;font-size:10px;line-height:1.6;font-family:'Share Tech Mono',monospace">
+        <div id="log-entries" style="max-height:500px;overflow-y:auto;font-size:10px;line-height:1.6;font-family:'Share Tech Mono',monospace;word-break:break-all">
           <div style="padding:16px;text-align:center;color:var(--muted)">Loading logs...</div>
         </div>
       </div>
@@ -854,7 +879,7 @@ input[type="number"] { width: 70px; }
     <div class="settings-grid">
       <div class="panel">
         <div class="panel-header"><span class="panel-title">API Keys</span></div>
-        <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:10px;max-height:70vh;overflow-y:auto">
           <div class="field">
             <label>Last.fm API Key <a href="https://www.last.fm/api/account/create" target="_blank" style="color:var(--accent);font-size:9px">GET FREE →</a></label>
             <input type="password" id="cfg-lastfm" placeholder="Enter Last.fm API key...">
@@ -896,6 +921,56 @@ input[type="number"] { width: 70px; }
             <input type="url" id="cfg-opencode-url" placeholder="https://api.opencode.ai/v1">
             <div class="field-hint">Leave blank for default. Change for self-hosted deployments.</div>
           </div>
+          <div class="field">
+            <label>OpenCode Model</label>
+            <select id="cfg-opencode-model">
+              <optgroup label="OpenCode Zen — Free">
+                <option value="deepseek-v4-flash-free">DeepSeek V4 Flash (free)</option>
+                <option value="minimax-m2.5-free">MiniMax M2.5 (free)</option>
+                <option value="gpt-5-nano">GPT-5 Nano</option>
+                <option value="big-pickle">Big Pickle</option>
+              </optgroup>
+              <optgroup label="OpenCode Zen — GPT Series">
+                <option value="gpt-5.5-pro">GPT-5.5 Pro</option>
+                <option value="gpt-5.5">GPT-5.5</option>
+                <option value="gpt-5.4-pro">GPT-5.4 Pro</option>
+                <option value="gpt-5.4">GPT-5.4</option>
+                <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
+                <option value="gpt-5.4-nano">GPT-5.4 Nano</option>
+                <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
+                <option value="gpt-5.3-codex-spark">GPT-5.3 Codex Spark</option>
+                <option value="gpt-5.2-codex">GPT-5.2 Codex</option>
+                <option value="gpt-5.2">GPT-5.2</option>
+                <option value="gpt-5.1-codex-max">GPT-5.1 Codex Max</option>
+                <option value="gpt-5.1-codex-mini">GPT-5.1 Codex Mini</option>
+                <option value="gpt-5.1-codex">GPT-5.1 Codex</option>
+                <option value="gpt-5.1">GPT-5.1</option>
+                <option value="gpt-5-codex">GPT-5 Codex</option>
+                <option value="gpt-5">GPT-5</option>
+              </optgroup>
+              <optgroup label="OpenCode Zen — Claude">
+                <option value="claude-opus-4-7">Claude Opus 4.7</option>
+                <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                <option value="claude-opus-4-5">Claude Opus 4.5</option>
+                <option value="claude-opus-4-1">Claude Opus 4.1</option>
+                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+                <option value="claude-sonnet-4">Claude Sonnet 4</option>
+                <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                <option value="claude-haiku-3-5">Claude Haiku 3.5</option>
+              </optgroup>
+              <optgroup label="OpenCode Zen — Other">
+                <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
+                <option value="gemini-3-flash">Gemini 3 Flash</option>
+                <option value="glm-5.1">GLM-5.1</option>
+                <option value="glm-5">GLM-5</option>
+                <option value="kimi-k2.6">Kimi K2.6</option>
+                <option value="qwen3.6-plus">Qwen3.6 Plus</option>
+                <option value="minimax-m2.7">MiniMax M2.7</option>
+              </optgroup>
+            </select>
+            <div class="field-hint">Set base URL to https://opencode.ai/zen/v1 for Zen models</div>
+          </div>
           <button class="btn accent" onclick="saveConfig()">Save Keys</button>
           <button type="button" class="btn" onclick="testSources()">Test music sources</button>
           <div id="src-test-out" style="font-size:10px;color:var(--muted);line-height:1.5;min-height:1.2em"></div>
@@ -904,7 +979,6 @@ input[type="number"] { width: 70px; }
       <div class="panel">
         <div class="panel-header"><span class="panel-title">Playback Settings</span></div>
         <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
-          <div class="field"><label>Default Crossfade (s)</label><input type="number" id="cfg-fade" value="8" min="2" max="60"></div>
           <div class="field"><label>Pre-download Ahead (tracks)</label><input type="number" id="cfg-predownload" value="5" min="1" max="20"></div>
           <div class="field"><label>Max Concurrent Downloads</label><input type="number" id="cfg-max-concurrent" value="3" min="1" max="10"></div>
           <div class="field"><label>Smart Fade at %</label><input type="number" id="cfg-fade-pct" value="80" min="10" max="100"></div>
@@ -916,11 +990,8 @@ input[type="number"] { width: 70px; }
             <textarea id="cfg-dirs" rows="3" placeholder="/music&#10;/home/user/Music"></textarea>
             <div class="field-hint">Server-side paths. Restart server after changing.</div>
           </div>
-          <div class="toggle-row"><input type="checkbox" id="cfg-smartfade" checked><label>Smart Fade Point Analysis</label></div>
           <div class="toggle-row"><input type="checkbox" id="cfg-metube-first" checked><label>Try MeTube first (download priority)</label></div>
           <div class="toggle-row"><input type="checkbox" id="cfg-filter-topic" checked><label>Filter -Topic channels (YouTube)</label></div>
-          <div class="toggle-row"><input type="checkbox" id="cfg-ai-queue" checked><label>AI Queue Intelligence</label></div>
-          <div class="toggle-row"><input type="checkbox" id="cfg-genre-lock"><label>Genre Lock</label></div>
           <div class="field">
             <label>Invidious redirect / extra instance (optional)</label>
             <input type="url" id="cfg-invidious-redirect" placeholder="https://your-invidious.example.com">

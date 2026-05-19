@@ -169,6 +169,8 @@ async function loadConfig() {
     if (cfg.opencodeKey) document.getElementById('cfg-opencode').placeholder = '●●● configured ●●●';
     const ocUrl = document.getElementById('cfg-opencode-url');
     if (ocUrl && cfg.opencodeBaseUrl) ocUrl.value = cfg.opencodeBaseUrl;
+    const ocModel = document.getElementById('cfg-opencode-model');
+    if (ocModel && cfg.opencodeModel) ocModel.value = cfg.opencodeModel;
     document.getElementById('cfg-ai-provider').value = cfg.aiProvider || 'anthropic';
     if (cfg.musicDirs) document.getElementById('cfg-dirs').value = cfg.musicDirs.join('\n');
     if (cfg.messages) { DJ.messages = cfg.messages; renderMessages(); }
@@ -246,6 +248,7 @@ async function saveConfig() {
     openaiKey: document.getElementById('cfg-openai').value,
     opencodeKey: document.getElementById('cfg-opencode')?.value || '',
     opencodeBaseUrl: document.getElementById('cfg-opencode-url')?.value?.trim() || '',
+    opencodeModel: document.getElementById('cfg-opencode-model')?.value?.trim() || '',
     aiProvider: document.getElementById('cfg-ai-provider').value,
     musicDirs: document.getElementById('cfg-dirs').value.split('\n').map(s=>s.trim()).filter(Boolean),
     messages: DJ.messages,
@@ -543,12 +546,13 @@ async function startPlayback() {
   DJ.started = true;
 
   if (DJ.queue.length === 0) { setStatus('Add some tracks first!'); return; }
-  // Notify server to start auto-advance session
-  fetch('/api/playback/start', { method: 'POST' }).catch(() => {});
+  // Notify server to start session (syncs trackIndex so server matches DJ console)
   if (DJ.trackIndex < 0) {
     DJ.trackIndex = 0;
     syncCrossfaderToDeck(DJ.currentDeck);
     await loadTrackOnDeck(DJ.currentDeck, DJ.queue[0]);
+    // After loading first track, sync state to server (server starts at track -1, advanceTrack increments to 0)
+    fetch('/api/playback/start', { method: 'POST' }).catch(() => {});
   } else {
     getDeckAudio(DJ.currentDeck).play().catch(()=>{});
     void broadcastDeckState();
@@ -608,18 +612,21 @@ async function loadTrackOnDeck(deck, track, opts = {}) {
         // Batch pre-download upcoming tracks
         if (deck === DJ.currentDeck) preDownloadAhead();
       } else {
-        setStatus(`⚠ ${data.error || 'Download failed'}. Skipping "${track.title}"...`);
+        setStatus(`⚠ ${data.error || 'Download failed'}. Removing "${track.title}"...`);
         console.error('[LoadDeck] Download failed:', data.error);
+        removeFailedTrack(DJ.queue.indexOf(track));
         setTimeout(() => advanceQueue(), 2000);
         return;
       }
     } catch(e) {
-      setStatus(`⚠ Error: ${e.message}. Skipping...`);
+      setStatus(`⚠ Error: ${e.message}. Removing "${track.title}"...`);
+      removeFailedTrack(DJ.queue.indexOf(track));
       setTimeout(() => advanceQueue(), 2000);
       return;
     }
   } else {
-    setStatus(`No source for: ${track.title} — skipping`);
+    setStatus(`No source for: ${track.title} — removing`);
+    removeFailedTrack(DJ.queue.indexOf(track));
     setTimeout(() => advanceQueue(), 1500);
     return;
   }
@@ -698,9 +705,42 @@ function onPlayError(deck) {
   }
 }
 
+function playQueueTrack(idx) {
+  if (idx < 0 || idx >= DJ.queue.length) return;
+  Engine.initAudioCtx();
+  DJ.started = true;
+  // Stop current playback on current deck
+  const audio = getDeckAudio(DJ.currentDeck);
+  if (audio) { audio.pause(); audio.src = ''; }
+  DJ.trackIndex = idx;
+  Engine.isFading = false;
+  syncCrossfaderToDeck(DJ.currentDeck);
+  loadTrackOnDeck(DJ.currentDeck, DJ.queue[idx]);
+  renderQueue();
+  // Sync server state: update queue + notify server of new trackIndex
+  fetch('/api/queue', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ queue: DJ.queue, trackIndex: DJ.trackIndex })
+  }).catch(() => {});
+  fetch('/api/playback/next', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trackIndex: DJ.trackIndex })
+  }).catch(() => {});
+}
+
 function onTrackEnded(deck) {
   if (deck !== DJ.currentDeck) return;
   void advanceQueue();
+}
+
+function removeFailedTrack(idx) {
+  if (idx < 0 || idx >= DJ.queue.length) return;
+  const t = DJ.queue[idx];
+  DJ.queue.splice(idx, 1);
+  if (idx <= DJ.trackIndex) DJ.trackIndex = Math.max(-1, DJ.trackIndex - 1);
+  fetch('/api/queue/remove/' + idx, { method: 'POST' }).catch(() => {});
+  renderQueue();
+  log(`Removed failed: ${t?.title || '?'}`);
 }
 
 async function advanceQueue() {
@@ -722,7 +762,7 @@ async function advanceQueue() {
       body: JSON.stringify({ videoId: justPlayed.youtubeId }) }).catch(() => {});
   }
   // Notify server of advancement (syncs trackIndex for persistence)
-  fetch('/api/playback/next', { method: 'POST' }).catch(() => {});
+  fetch('/api/playback/next', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trackIndex: DJ.trackIndex }) }).catch(() => {});
 
   if (DJ.trackIndex >= DJ.queue.length) {
     setStatus('Queue ended — fetching more tracks...');
@@ -936,9 +976,35 @@ function startRenderLoop() {
       lastNp = now;
       broadcastDeckState();
     }
+    // Update now-playing card in Mix tab
+    updateNowPlayingCard();
     requestAnimationFrame(loop);
   };
   loop();
+}
+
+function updateNowPlayingCard() {
+  const card = document.getElementById('mix-now-playing');
+  if (!card) return;
+  const track = DJ.queue[DJ.trackIndex];
+  if (!track || DJ.trackIndex < 0) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  const audio = getDeckAudio(DJ.currentDeck);
+  const cur = audio?.currentTime || 0;
+  const dur = audio?.duration || track.duration || 0;
+  const titleEl = document.getElementById('np-title-display');
+  const artistEl = document.getElementById('np-artist-display');
+  if (titleEl) titleEl.textContent = track.title || '—';
+  if (artistEl) artistEl.textContent = track.artist || '—';
+  const elEl = document.getElementById('np-elapsed-display');
+  const durEl = document.getElementById('np-duration-display');
+  if (elEl) elEl.textContent = fmt(cur);
+  if (durEl) durEl.textContent = fmt(dur);
+  const artImg = document.getElementById('np-art-thumb');
+  if (artImg) {
+    if (track.artwork) { artImg.src = track.artwork; artImg.style.display = 'block'; }
+    else artImg.style.display = 'none';
+  }
 }
 
 function renderMixUpNext() {
@@ -950,14 +1016,31 @@ function renderMixUpNext() {
     box.innerHTML = '<div style="padding:10px 12px;font-size:10px;color:var(--muted)">Up next — add more tracks to the queue</div>';
     return;
   }
-  box.innerHTML = `
-    <div style="padding:6px 12px 4px;font-size:9px;letter-spacing:2px;color:var(--muted);text-transform:uppercase">Up next (cue to deck)</div>
+
+  // Build a prominent "Next Up" card for the immediate next track
+  const nextTrack = slice[0];
+  let nextCardHtml = '';
+  if (nextTrack) {
+    nextCardHtml = `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;margin:0 0 10px;background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius-md)">
+        <div style="font-size:9px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;white-space:nowrap;flex-shrink:0">NEXT UP</div>
+        <div style="flex:1;min-width:0;overflow:hidden">
+          <div style="color:var(--bright);font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(nextTrack.title || '—')}</div>
+          <div style="color:var(--text);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(nextTrack.artist || '—')}</div>
+        </div>
+        <button type="button" class="btn accent" style="padding:4px 10px;font-size:9px;flex-shrink:0" onclick="playQueueTrack(${start})">▶ Play Now</button>
+        <button type="button" class="btn" style="padding:4px 8px;font-size:9px;flex-shrink:0" onclick="cueQueueTrack('b',${start})">Cue B</button>
+      </div>`;
+  }
+
+  box.innerHTML = nextCardHtml + `
+    <div style="padding:6px 12px 4px;font-size:9px;letter-spacing:2px;color:var(--muted);text-transform:uppercase">Queue upcoming</div>
     <div style="display:flex;flex-direction:column;gap:4px;padding:0 8px 10px;max-height:200px;overflow-y:auto">
       ${slice.map((t, i) => {
         const qi = start + i;
         return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface2);border-radius:2px;font-size:11px;border:1px solid var(--border)">
           <span style="color:var(--muted);width:20px">${qi + 1}</span>
-          <div style="flex:1;min-width:0;overflow:hidden"><div style="color:var(--bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(t.title || '—')}</div>
+          <div style="flex:1;min-width:0;overflow:hidden"><div style="color:var(--bright);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:${i===0?'600':'400'}">${escHtml(t.title || '—')}</div>
           <div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(t.artist || '—')}</div></div>
           <button type="button" class="btn" style="padding:2px 6px;font-size:9px" onclick="cueQueueTrack('a',${qi})">A</button>
           <button type="button" class="btn" style="padding:2px 6px;font-size:9px" onclick="cueQueueTrack('b',${qi})">B</button>
@@ -995,6 +1078,7 @@ function renderQueue() {
       </div>
       <span class="q-badge ${badgeClass}" ${badgeStyle}>${badgeText}</span>
       <div class="q-dur">${t.duration ? fmt(t.duration) : '—'}</div>
+      ${!isPast && !isPlay ? `<button class="q-play-now" onclick="playQueueTrack(${i})" title="Play now">▶</button>` : ''}
       <button class="q-remove" onclick="removeFromQueue(${i})">×</button>
     </div>`;
   }).join('');
@@ -1493,7 +1577,7 @@ function addMessage() {
   DJ.messages.push(val); inp.value='';
   renderMessages(); Engine.broadcastNowPlaying({messages:DJ.messages});
 }
-function removeMessage(i) { DJ.messages.splice(i,1); renderMessages(); }
+function removeMessage(i) { DJ.messages.splice(i,1); renderMessages(); Engine.broadcastNowPlaying({messages:DJ.messages}); }
 
 function escHtml(str) {
   const e = document.createElement('span');
@@ -1554,12 +1638,14 @@ async function unifiedQueueSearch() {
       }));
       const who = it.author || it.uploader || it.channel || '—';
       const src = it._source || '';
-      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px">
+      const art = it.artwork || '';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:11px">
+        ${art ? `<img src="${art}" style="width:36px;height:36px;border-radius:3px;object-fit:cover;flex-shrink:0" alt="">` : '<div style="width:36px;height:36px;border-radius:3px;background:var(--surface2);flex-shrink:0"></div>'}
         <div style="flex:1;min-width:0">
-          <div style="color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(it.title || '—')}</div>
-          <div style="color:var(--muted);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(who)}${src ? ' · ' + escHtml(src) : ''}</div>
+          <div style="color:var(--bright);font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(it.title || '—')}</div>
+          <div style="color:var(--text);font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(who)}${src ? ' <span style="color:var(--muted)">·</span> ' + escHtml(src) : ''}</div>
         </div>
-        <button type="button" class="btn accent" style="padding:3px 8px;font-size:9px;flex-shrink:0" data-add="${payload}">Queue</button>
+        <button type="button" class="btn accent" style="padding:4px 10px;font-size:9px;flex-shrink:0" data-add="${payload}">+ Queue</button>
       </div>`;
     }).join('');
     box.querySelectorAll('[data-add]').forEach(btn => {
@@ -1748,7 +1834,7 @@ DJ._webrtcReceiver = null;
 async function toggleWebRTC() {
   const btn = document.getElementById('share-audio-btn');
   if (DJ._webrtcActive) {
-    engine.stopWebRTCBroadcast();
+    Engine.stopWebRTCBroadcast();
     if (DJ._webrtcReceiver) {
       clearInterval(DJ._webrtcReceiver.poll);
       DJ._webrtcReceiver.pc.close();
@@ -1760,7 +1846,7 @@ async function toggleWebRTC() {
     return;
   }
   try {
-    await engine.startWebRTCBroadcast();
+    await Engine.startWebRTCBroadcast();
     DJ._webrtcActive = true;
     if (btn) { btn.textContent = '🔇 Stop Sharing'; btn.classList.add('green'); }
     setStatus('Sharing audio — open the Display page to listen');

@@ -253,69 +253,83 @@ The following were identified in review and **implemented**:
 | **Listeners tab** | New tab on DJ console with auto-refreshing table (every 5s) showing connected display clients: ID, IP, browser, OS, device type, page, connection duration |
 | **`/api/listeners`** | Now returns per-device details (`browser`, `os`, `isMobile`, `isTablet`, `connectedAgo`) plus total count |
 
+### v4.4 Changes (May 2026) — OpenCode Zen + layout + queue UX + code audit
+
+| Area | Change |
+|------|--------|
+| **OpenCode Zen models** | Model dropdown replaced with `<select><optgroup>` — Free tier (DeepSeek V4 Flash, MiniMax M2.5, GPT-5 Nano, Big Pickle), GPT Series (5.5 Pro through GPT-5), Claude (Opus/Sonnet/Haiku), Other (Gemini, GLM, Kimi, Qwen, MiniMax). Base URL hint updated to `https://opencode.ai/zen/v1` |
+| **Settings scroll** | `.settings-grid` got `max-height:70vh; overflow-y:auto` so long settings forms don't overflow the viewport |
+| **Display/DJ queue sync** | `POST /api/playback/next` now sends `trackIndex` in the request; `advanceTrack()` uses `sharedState.trackIndex` — display and DJ stay in sync on manual skip |
+| **Random skip + queue dedup** | `downloadingIds` Set prevents batch download from enqueuing the same track twice; `trackIndex` passed through `/api/playback/next` fixing duplicate queue entries |
+| **Mix "NEXT UP" card** | Top track in the up-next strip renders as a large prominent card showing title, artist, and "Play Now" button (`playQueueTrack`); remaining tracks as compact list |
+| **Lyrics scroll** | Replaced `scrollIntoView()` with `getBoundingClientRect()` + manual `scrollTop` — stops lyrics panel from stealing page scroll |
+| **Search thumbnails** | Online search results show small thumbnail images; track titles in bold |
+| **Queue "Play Now"** | Each queue row has a "▶ Play Now" button that calls `playQueueTrack` |
+| **Page layout** | `overflow-x:hidden` on `<body>`; narrower sidebar (`--sidebar-width: 220px`, reduced padding); responsive breakpoints for smaller screens |
+| **Now Playing card** | Mix tab shows current track artwork, title, artist, and elapsed timer when a track is playing |
+| **Download dedup** | Server-side `downloadingIds` Set prevents concurrent cache-download of the same `videoId` |
+
+### v4.4 Code Audit Fixes (May 2026)
+
+Four-agent code review identified and fixed the following:
+
+**Critical fixes:**
+| Area | Change |
+|------|--------|
+| **WebRTC broken** | `dj.js:1837,1849` — `engine` → `Engine` (lowercase typo caused ReferenceError on Share Audio button) |
+| **Display canplay** | `display.html` — removed duplicate `canplay` event listener (lines 396-401) that caused double seek on track load |
+| **Missing stat elements** | `dj.html` — added `#stat-temp-sub` and `#stat-temp-bar` DOM elements that JS wrote to but didn't exist |
+| **CSS selector mismatch** | `.mix-up-next { display: block }` → `#mix-up-next` — selector referenced class but element uses ID |
+| **Nested @media** | Missing closing `}` before `@media (max-width:480px)` — structurally invalid CSS |
+| **Missing shared.css** | `display.html` — added `<link rel="stylesheet" href="/css/shared.css">` for theme variable parity with dj.html |
+
+**Medium fixes:**
+| Area | Change |
+|------|--------|
+| **Lyrics duration bug** | `display.html:792-794` — removed `d > 120` check that incorrectly divided 180s+ tracks by 1000, breaking lyrics lookup |
+| **removeMessage broadcast** | `dj.js:1580` — `removeMessage()` now calls `Engine.broadcastNowPlaying({messages})` so display pages stay in sync |
+| **Dead settings fields** | Removed `cfg-fade` (Default Crossfade, never wired), `cfg-smartfade` (never wired), `cfg-ai-queue` (never wired), `cfg-genre-lock` (never wired) from Settings HTML |
+
+**Security fixes applied:**
+| Area | Change |
+|------|--------|
+| **Path traversal** | `/api/local/stream` — `path.resolve()` before `startsWith()` check to prevent `../` escape |
+| **Open proxy** | `/api/piped/relay` — reject `//` protocol-relative URLs, validate via `new URL()`, block private/reserved IPs (localhost, 10.x, 192.168.x, 172.16.x, .local) |
+| **RSS SSRF** | `/api/rss` — validate with `new URL()` (not `startsWith('http')`), block private IPs and URLs with embedded credentials |
+| **Rate limiting** | Added in-memory rate limiter middleware applied to `/api/cache/download` (20/min), `/api/cache/downloadBatch` (10/min), `/api/ai/recommend` (20/min), `/api/youtube/search` (30/min), `/api/temp/upload` (10/min) |
+| **Local scan path leak** | `/api/local/scan` — replaced `filepath` (absolute path) with `path` (relative to music dir); added try-catch per file |
+| **WebRTC auth** | All `/api/webrtc/*` endpoints now require same-origin (validated via `Origin`/`Referer` header) |
+| **Content-type mapping** | Added `ogg`/`opus` → `.ogg`, `flac` → `.flac`, `wav`/`wave` → `.wav`, `aac` → `.aac` |
+| **playedIds pruning** | Capped at 2000 entries with `prunePlayedIds()` |
+| **Config parse** | Added `log('Config', 'WARNING: ...')` when `config.json` is malformed |
+| **Double decode** | Removed redundant `decodeURIComponent()` from `/api/cache/stream/:id` (Express already decodes params) |
+| **downloadBatch URL** | Changed from `req.hostname` (breaks behind proxy) to `127.0.0.1` |
+
 ---
 
 ## Immediate verification checklist
 
 ```
-✓ DAB tries q= and query=
-✓ Jamendo when client_id configured (search + download)
-✓ Piped search accepts video items; Invidious id fallbacks
-✓ Display "Audio On" with cached online track (same-origin stream URL)
-✓ Stats bar without JS errors; temp single-delete
-✓ Test Sources button + unified queue search
-✓ RSS parser handles CDATA/Atom/namespace feeds
-✓ Marquee mode toggle (rss/messages/both)
-✓ -Topic channel filtering (search + download level)
-✓ Light/dark mode toggle with persistence
-✓ Session duration & queue limit settings + indicators
-✓ PWA manifest + service worker caching
 □ Re-run live curl/UI tests whenever upstream instances change
 □ Docker Node 22 smoke test when you ship containers
 ```
 
 ---
 
-## Optional Enhancements (Backlog)
+## Known Gaps / Backlog
 
 ```
-□ Karaoke-style scroll-centred lyrics (current: highlight within panel)
+□ Download dedup: fix TOCTOU race between cache check and Set.add (theoretical, low probability)
+□ Karaoke-style scroll-centred lyrics
 □ Settings: allow user to add/remove source instances via UI
 □ Settings: richer "Test Sources" grid (per-URL latency table)
 □ Waveform: show cue point marker (verify end-to-end)
-□ Playlists: save/load queue as JSON file (endpoint exists, UI not fully wired)
-□ Song requests: display page has form, needs full implementation
+□ Playlists: save/load queue as JSON file
+□ Song requests: display page form needs full implementation
 □ Stats page: show cache size, queue history, source health
-□ Internet Archive or other open-audio provider (same pattern as Jamendo)
+□ Internet Archive or other open-audio provider
 □ Better ID3 fallback: add Vorbis Comment parser for FLAC files
-□ Acoustic fingerprint: integrate Chromaprint or WASM library for verification
-□ WebRTC: add TURN server config for cross-network audio sharing
-```
-✓ DAB tries q= and query=
-✓ Jamendo when client_id configured (search + download)
-✓ Piped search accepts video items; Invidious id fallbacks
-✓ Display “Audio On” with cached online track (same-origin stream URL)
-✓ Stats bar without JS errors; temp single-delete
-✓ Test Sources button + unified queue search
-□ Re-run live curl/UI tests whenever upstream instances change
-□ Docker Node 22 smoke test when you ship containers
-```
-
----
-
-## Optional Enhancements (Backlog)
-
-```
-□ Karaoke-style scroll-centred lyrics (current: highlight within panel)
-□ Settings: allow user to add/remove source instances via UI
-□ Settings: richer “Test Sources” grid (per-URL latency table)
-□ Waveform: show cue point marker (verify end-to-end)
-□ Playlists: save/load queue as JSON file (endpoint exists, UI not fully wired)
-□ Song requests: display page has form, needs full implementation
-□ Stats page: show cache size, queue history, source health
-□ Internet Archive or other open-audio provider (same pattern as Jamendo)
-□ Better ID3 fallback: add Vorbis Comment parser for FLAC files
-□ Acoustic fingerprint: integrate Chromaprint or WASM library for verification
+□ Acoustic fingerprint: integrate Chromaprint or WASM library
 □ WebRTC: add TURN server config for cross-network audio sharing
 ```
 
