@@ -8,12 +8,11 @@
  ▀  ▀  ▀▀▀  ▀▀▀  ▀█▄▀▪▀▀▀▀▀• .▀  ▀
 ```
 
-**Intelligent local DJ engine with crossfading, AI queuing, live display, and full Docker support.**
+**v4.3 — Automated DJ with persistent playback, Spotify-inspired UI, light/dark mode, and PWA support.**
 
-[![Node](https://img.shields.io/badge/node-20%2B-brightgreen?style=flat-square&logo=node.js)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-22%2B-brightgreen?style=flat-square&logo=node.js)](https://nodejs.org)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker)](https://docker.com)
-[![Last.fm](https://img.shields.io/badge/last.fm-free%20API-D51007?style=flat-square)](https://last.fm/api)
-[![Spotify](https://img.shields.io/badge/spotify-optional-1DB954?style=flat-square&logo=spotify)](https://developer.spotify.com)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)]()
 
 </div>
 
@@ -23,14 +22,16 @@
 
 You play one song. AutoDJ figures out the rest.
 
-It discovers similar tracks via Last.fm and Spotify, finds them on YouTube, analyzes each track for the best fade point, and crossfades between two virtual decks — automatically, continuously, without you touching anything. Drop it on a second screen, point it at a TV, and walk away.
+It discovers similar tracks via Last.fm and Spotify, finds them on YouTube/Invidious/Piped/DAB/HiFi, downloads each track to a local cache, analyzes it for the best fade point, and crossfades between two virtual decks — automatically, continuously, without you touching anything. Drop it on a second screen, point it at a TV, and walk away.
 
-It has two pages:
+**Persistent playback:** Close the DJ console tab — the Now Playing display keeps playing. The server auto-advances the queue independently.
+
+Two pages:
 
 | Page | URL | Who it's for |
 |------|-----|--------------|
-| **DJ Console** | `/dj` | You — full mixer, decks, queue control |
-| **Now Playing** | `/display` | Everyone else — big beautiful now-playing screen |
+| **DJ Console** | `/dj` | You — full mixer, decks, queue control, settings |
+| **Now Playing** | `/display` | Everyone else — big beautiful now-playing screen with relay audio |
 
 ---
 
@@ -39,194 +40,168 @@ It has two pages:
 ### Docker (recommended)
 
 ```bash
-# 1. Extract and enter the folder
-unzip autodj-v2.4.zip && cd autodj-v2.4
-
-# 2. Drop your music in (optional)
-mkdir -p music
-cp /your/music/*.mp3 music/
-
-# 3. Launch
 docker compose up -d
-
-# 4. Open the DJ console
 open http://localhost:3000/dj
 ```
 
 ### Node.js (no Docker)
 
 ```bash
+node --version  # must be v22+
 npm install
 node server.js
+# Open http://localhost:3000/dj
 ```
 
-Requires Node 18+. That's it — no database, no build step, no config required to start.
+No database. No build step. First-time setup: open Settings, add a Last.fm API key (free), set a seed artist on the Discover tab, and play.
 
 ---
 
 ## Features
 
 ### 🎛️ DJ Console
-
-Two full virtual decks with real-time waveform visualization and VU meters. Each deck shows the current track's title, artist, album, genre tags, BPM, and remaining time. A crossfader sits between them — drag it manually or let AutoDJ handle it.
-
-**Smart Fade Analysis** — before a track ends, AutoDJ scans its waveform to find the quietest low-energy section in the final stretch. That's where the crossfade starts. The result is a transition that feels intentional rather than abrupt.
-
-**BPM Detection** — live BPM is calculated from the audio waveform and displayed on each deck so you can eyeball compatibility before committing to a mix.
-
-**Cue Points** — mark any position on a track and snap back to it on demand.
+Two virtual decks with real-time waveform, BPM display, VU meters, cue points, and a crossfader. Live deck glows red. Smart Fade Analysis scans the waveform to find the quietest fade point before each transition.
 
 ### 📋 Queue Engine
+Drag-to-reorder queue with source badges. Queue persists across page reloads. Unified search lets you search all music sources at once. Queue limit setting caps total tracks.
 
-The queue shows every track coming up with source badges (LOCAL · TEMP · ONLINE · AUTO), drag-to-reorder handles, and per-track metadata. Queue modes:
+### 🔍 Music Sources
+Six lanes tried in priority order: **Invidious** → **Piped** → **DAB** → **Jamendo** (optional) → **HiFi** → **MeTube** (sidecar). YouTube -Topic channels filtered by default (toggle in Settings). All downloads cached locally so stream URLs never expire mid-track.
 
-- **Local First → Online** — burn through your library, then auto-fill from the internet
-- **Online First → Local** — start with discoveries, end with your own tracks
-- **Shuffle Mix** — interleave local and online tracks randomly
-- **Local Only** — never touch the internet
-- **Online Only** — full auto-DJ from seed artist
-
-### 🎵 Music Sources
-
-**Local files** — drag and drop audio files or entire folders directly into the browser. Supports MP3, FLAC, WAV, OGG, M4A, AAC, OPUS, WMA. AutoDJ parses `Artist - Title.mp3` filenames automatically.
-
-**Temp Upload** — upload files that are held in server temp storage for the duration of the session. They're automatically deleted when the queue clears or the server stops. Useful for one-off tracks you don't want to add to your permanent library.
-
-**Server library scan** — point AutoDJ at a folder on the server (e.g. a mounted NAS drive) and it will scan and index everything.
-
-### 🔍 Discovery
-
-**Last.fm** (free) — finds similar artists, genre-tagged tracks, and tracks similar to what's currently playing. The seed tags from your first track are used to keep the entire session genre-coherent.
-
-**Spotify** (free credentials) — search tracks, pull an artist's top songs, or generate Spotify recommendations seeded from any track. Results are matched to YouTube for playback.
-
-**AI Intelligence** (optional) — describe a mood or vibe in plain English and get curated track recommendations from Claude or GPT. "Late night coastal drive" or "high energy but not aggressive" both work. The AI sees your current track, recent history, and genre tags before responding.
+### 🧠 Discovery
+- **Last.fm** (free) — similar artists, genre-tagged recommendations
+- **Spotify** (free credentials) — artist top tracks, recommendations seeded from any track
+- **AI** (optional Claude/GPT) — describe a mood in plain English
 
 ### 📺 Now Playing Display
+Full-screen display with large artwork, track info, animated orbs, lyrics (synced LRC), mega progress bar with fade zone marker, next-up preview, live clock, marquee (RSS headlines + custom messages), and side visualizer bars.
 
-A full-screen display page built for a second monitor or TV. Shows:
+### 🔊 Persistent Playback
+The display page acts as a dedicated audio player. Close the DJ console — audio keeps going. The server runs an auto-advance engine: `advanceTrack()`, `preCacheNextTrack()`, playback timer. SSE broadcasts `play`/`stop` commands. Queue and track index persist to disk.
 
-- Large track title and artist in bold display type
-- Auto-detected genre badge
-- Mega progress bar with a yellow **fade zone** marker showing exactly when the crossfade will trigger
-- Time elapsed and time remaining countdown
-- Next up track preview
-- Live clock with date
-- Animated side visualizer bars
+### 🎨 Spotify-Inspired UI
+Green accent palette (`#1db954`). Light/dark mode with system preference detection and manual toggle (saved to localStorage). Smooth CSS transitions between themes. Responsive layout for mobile.
 
-A scrolling marquee runs across the bottom — fully customizable with your own messages in the Settings tab. Defaults include a rotating set of DJ commentary lines. The marquee pauses on hover.
+### ⏱️ Session Controls
+Set a session duration (hours) and queue limit (tracks) in Settings. Mix tab shows live indicators: remaining session time and queue count/limit. Session auto-stops when time expires.
+
+### 📱 PWA Ready
+Installable as a standalone app. Manifest, service worker with app shell caching, icons, and PWA meta tags on both pages.
 
 ### 📊 System Stats
-
-Four live stat cards on the Mix tab, polled every 3 seconds:
-
-- **CPU** — usage percentage, core count, model name. Turns red above 85%.
-- **RAM** — used/total, process memory footprint. Turns red above 85%.
-- **Disk** — used percentage, free space remaining.
-- **Temp Queue** — file count, total size of temp uploads, server uptime and platform.
+Live stat cards on the Mix tab: CPU, RAM, Disk, Temp Storage, Session, Queue — polled every 3 seconds.
 
 ---
 
-## API Keys
+## First-Time Setup
 
-Enter all keys in the **Settings tab** — no file editing required. Keys are saved to `config.json` and persist across restarts.
+1. Open `http://localhost:3000/dj`
+2. Go to **Settings** tab
+3. Add a **Last.fm API key** (free at [last.fm/api](https://www.last.fm/api)) — enables Discovery
+4. Optionally add **Spotify**, **Jamendo**, **Anthropic/OpenAI** keys
+5. Click **Save Settings**
+6. Go to **Discover** tab, enter a seed artist, click **Start Discovery**
+7. Go to **Mix** tab and press ▶
 
-| Service | Cost | Get it |
-|---------|------|--------|
-| Last.fm | Free | [last.fm/api/account/create](https://www.last.fm/api/account/create) |
-| Spotify | Free | [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) |
-| Anthropic (Claude) | Paid | [console.anthropic.com](https://console.anthropic.com) |
-| OpenAI (GPT) | Paid | [platform.openai.com](https://platform.openai.com) |
+---
 
-You only **need** Last.fm for full auto-DJ. Everything else is optional.
+## API Reference (Key Endpoints)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/config` | Get current config |
+| POST | `/api/config` | Update config |
+| GET | `/api/youtube/search?q=` | Unified search across all sources |
+| GET | `/api/system/stats` | CPU / RAM / disk / temp / session / queue |
+| POST | `/api/cache/download` | Download track to local cache |
+| GET | `/api/cache/stream/:id` | Stream cached audio (range requests) |
+| GET | `/api/lyrics?title=&artist=` | Get synced lyrics from LRCLIB |
+| GET | `/api/nowplaying/stream` | SSE stream for live state |
+| POST | `/api/playback/start` | Start auto-advance engine |
+| POST | `/api/playback/stop` | Stop playback |
+| POST | `/api/playback/next` | Advance to next track |
+| POST | `/api/nowplaying/clear` | Clear current track |
+| GET | `/api/local/scan` | Scan music directories |
 
 ---
 
 ## File Structure
 
 ```
-autodj/
-├── server.js          # Express backend — API proxy, file streaming, SSE, system stats
-├── dj.html            # DJ Console — mixer, decks, queue, library, discovery, settings
-├── display.html       # Now Playing — public display screen
-├── engine.js          # Audio engine — Web Audio API, BPM analysis, crossfade, waveform
-├── dj.js              # DJ UI logic — queue management, playback, temp uploads
-├── package.json
-├── Dockerfile
-├── docker-compose.yml
-├── config.json        # Generated on first save — holds your API keys
-└── music/             # Drop local tracks here
+autodj-v4/
+├── server.js          ← Express backend (routes, sources, cache, auto-advance, SSE)
+├── engine.js          ← Browser audio engine (WebAudio, crossfade, waveform, BPM)
+├── dj.js              ← DJ console UI (queue, decks, settings, theme, playback)
+├── dj.html            ← DJ console HTML + CSS (Spotify-inspired, light/dark)
+├── display.html       ← Now-playing display (relay audio, lyrics, marquee, theme)
+├── sw.js              ← Service worker (app shell caching)
+├── manifest.json      ← PWA manifest
+├── css/shared.css     ← Shared baseline
+├── icons/             ← App icons (SVG + 192/512 PNG)
+├── package.json       ← Dependencies (express, cors, multer, fast-xml-parser)
+├── Dockerfile         ← node:22-alpine
+├── docker-compose.yml ← Mounts music/, cache/, config.json
+└── config.json        ← Runtime config (populated via Settings UI)
 ```
 
 ---
 
 ## Docker Configuration
 
-### Using a different port
-
+### Custom port
 ```yaml
-# docker-compose.yml
 ports:
   - "8080:3000"   # access at http://localhost:8080
 ```
 
-### Mounting a music library
-
+### Mount music library
 ```yaml
 volumes:
-  - /mnt/nas/music:/music:ro      # NAS or external drive
+  - /mnt/nas/music:/music:ro
   - ./config.json:/app/config.json
 ```
 
-### Pre-loading API keys via environment
-
+### Environment variables (all optional)
 ```bash
-# .env
-LASTFM_API_KEY=your_key_here
+LASTFM_API_KEY=your_key
 SPOTIFY_CLIENT_ID=your_id
 SPOTIFY_CLIENT_SECRET=your_secret
 ANTHROPIC_API_KEY=sk-ant-...
-```
-
-```bash
-docker compose --env-file .env up -d
+OPENAI_API_KEY=sk-...
+PORT=3000
+MUSIC_DIR=/path/to/music
+METUBE_URL=http://metube:8081
+METUBE_DOWNLOADS_DIR=/metube_downloads
 ```
 
 ---
 
 ## Tips
 
-- **Put `/display` on a TV or second screen** via a browser in fullscreen mode (`F11`). It updates live over SSE — no polling lag.
-- **Name your files `Artist - Title.mp3`** for automatic metadata parsing. Works with any separator ` - `.
-- **Smart Fade** works best on tracks with a natural outro. For tracks that cut hard, set crossfade duration to 2–3s.
-- **Genre Lock** (Settings) keeps auto-discovery from straying too far from the seed genre.
-- **Temp uploads are ephemeral by design** — they live in the OS temp directory and are deleted when you clear the queue. Don't use temp for anything you want to keep.
-- The **AI queue refill** button works best when you've played a few tracks first, giving the AI enough history context to make good decisions.
+- **Put `/display` on a second screen** in fullscreen (`F11`). Updates live over SSE.
+- **Persistent playback:** Open the display page, enable audio, then close the DJ tab. The display keeps playing.
+- **Name files `Artist - Title.mp3`** for automatic metadata parsing.
+- **Smart Fade** works best on tracks with natural outros. Set crossfade to 2-3s for hard cuts.
+- **Temp uploads** are ephemeral — auto-deleted when queue clears.
+- **Theme toggle** in the topbar — cycles light/dark. Respects system preference by default.
 
 ---
 
 ## Troubleshooting
 
-**Tracks not playing / YouTube not loading**
-The app uses Invidious public instances to search YouTube without an API key. These can occasionally be slow or unreachable. Try a different network or VPN if searches consistently fail.
+**Nothing plays / searches fail** — Invidious/Piped instances may be down. Try a different network or VPN. Check Settings → Test Sources.
 
-**`ENOENT: no such file or directory, stat '/app/dj.html'`**
-Rebuild with `docker compose build --no-cache`. The image has a stale layer.
+**Display shows "Enable Audio" but no sound** — Browser requires a user gesture. Click the button. Audio must be re-enabled after page refresh.
 
-**`yaml: unmarshal errors` on `docker compose build`**
-Your `.dockerignore` file is corrupt. Replace it with the one from this zip — it should contain only plain filenames, one per line, no YAML syntax.
+**Docker build errors** — Run `docker compose build --no-cache` to clear stale layers.
 
-**No audio from local files**
-Browser autoplay policies require a user gesture before audio can play. Click the ▶ button on deck A once to unlock playback for the session.
-
-**System stats show N/A**
-The `/api/system/stats` endpoint requires the server to be running. Stats are not available in static file mode.
+**No audio from local files** — Click ▶ on deck A once to unlock browser autoplay.
 
 ---
 
 <div align="center">
 
-Built with Node.js · Express · Web Audio API · Last.fm · Spotify · YouTube (via Invidious) · Anthropic / OpenAI
+Built with Node.js · Express · Web Audio API · Last.fm · Spotify · Invidious · Piped · DAB · LRCLIB · Anthropic / OpenAI
 
 *Point it at a song. Walk away. Come back to a perfect mix.*
 
