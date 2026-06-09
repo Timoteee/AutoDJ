@@ -590,3 +590,13 @@ autodj-v4/
 - Updated SOURCE_KEYS to remove 'hifi'
 - Updated startup log message (removed HiFi count)
 - Updated `hasAI` config check to include OpenRouter
+
+### MeTube Retry + Failure Handling
+- **Audio content validation** — new `isValidAudioFile()` checks file headers for MP3 (ID3/MPEG sync), Ogg (OggS), FLAC (fLaC), WAV (RIFF), MP4 (ftyp), and WebM (EBML). Rejects HTML error pages masked as audio files.
+- **Failed-IDs tracking** — new `failedIds` Set with 30-minute cooldown. Video IDs that fail validation are remembered so they aren't downloaded again until the cooldown expires.
+- **MeTube dead file cleanup** — when a downloaded file is too small (<3000 bytes) or fails audio validation, it's deleted and the videoId is marked as failed. The caller falls through to Invidious/Piped stream URLs.
+- **Alternative ID fallback** — the download endpoint now accepts an `altIds` array. When the primary videoId is a known failure, it checks the cache for alternative IDs before giving up.
+- **Stream download validation** — Invidious and Piped stream downloads are also validated with `isValidAudioFile()`. Failed streams are discarded, marked, and the server returns a descriptive error.
+- **MeTube /add error detection** — checks MeTube's add response body for error fields (200 OK with error content).
+- **Lowered MeTube size threshold** — from 50KB to 15KB minimum for polling stability (handles short audio files better).
+- **Shorter MeTube timeout** — from 200s to 120s max polling wait.

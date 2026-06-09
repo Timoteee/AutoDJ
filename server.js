@@ -563,13 +563,19 @@ async function metubeAddAndWaitFile(videoId) {
     log('Cache', `MeTube /add HTTP ${ar.status}`, tx.slice(0, 160));
     return null;
   }
-  const deadline = Date.now() + 200000;
+  // Check for error in the response body (MeTube may return 200 with error field)
+  const addBody = await ar.json().catch(() => ({}));
+  if (addBody.error) {
+    log('Cache', `MeTube /add returned error for ${videoId}: ${addBody.error}`);
+    return null;
+  }
+  const deadline = Date.now() + 120000; // 2 min max wait (down from 3.3 min)
   while (Date.now() < deadline) {
     const candidates = [];
     walkMetubeCandidates(METUBE_DOWNLOADS_DIR, prefix, started - 5000, candidates);
     candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
     const pick = candidates[0];
-      if (pick && pick.size > 50000) {
+      if (pick && pick.size > 15000) {
       let last = pick.size;
       let stable = 0;
       for (let i = 0; i < 4; i++) {
@@ -682,22 +688,71 @@ async function tryMetubeDownload(videoId, title, artist) {
         else return null;
       }
       const sz = fs.statSync(fp).size;
-      if (sz > 1000) {
-        audioCache.push({ id: videoId, filepath: fp, title: title || videoId, artist: artist || '', downloadedAt: Date.now(), playedAt: null, size: sz, source: 'metube' });
-        log('Cache', `MeTube OK: ${title} (${(sz / 1048576).toFixed(1)}MB)`);
-        return { ok: true, url: `/api/cache/stream/${encodeURIComponent(videoId)}`, title: title || videoId, source: 'metube', size: sz };
+      // SMALL FILE CHECK + AUDIO VALIDATION
+      if (sz < 3000) {
+        fs.unlinkSync(fp);
+        log('Cache', `MeTube too small: ${title} (${sz}B) — marking failed`);
+        markDownloadFailed(videoId);
+        return null;
       }
+      if (!isValidAudioFile(fp)) {
+        fs.unlinkSync(fp);
+        log('Cache', `MeTube invalid: ${title} (${sz}B) — likely locked/placeholder — marking failed`);
+        markDownloadFailed(videoId);
+        return null;
+      }
+      audioCache.push({ id: videoId, filepath: fp, title: title || videoId, artist: artist || '', downloadedAt: Date.now(), playedAt: null, size: sz, source: 'metube' });
+      log('Cache', `MeTube OK: ${title} (${(sz / 1048576).toFixed(1)}MB)`);
+      return { ok: true, url: `/api/cache/stream/${encodeURIComponent(videoId)}`, title: title || videoId, source: 'metube', size: sz };
     }
-  } catch (e) { log('Cache', `MeTube ${videoId}: ${e.message}`); }
+  } catch (e) { log('Cache', `MeTube ${videoId}: ${e.message}`); markDownloadFailed(videoId); }
   return null;
 }
 
 // Download dedup set — prevent concurrent downloads of the same videoId
 const downloadingIds = new Set();
 
+// Track permanently-failed videoIds so we don't waste time retrying.
+const failedIds = new Set();
+const FAILED_RETRY_MS = 30 * 60 * 1000; // 30 min cooldown before retry
+
+/** Check if a downloaded file contains valid audio (not HTML/error placeholder). */
+function isValidAudioFile(filepath) {
+  try {
+    const fd = fs.openSync(filepath, 'r');
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+    // MP3: ID3 tag or FF FB/FE FF (MPEG sync)
+    if (buf.slice(0, 3).toString() === 'ID3') return true;
+    if (buf[0] === 0xFF && (buf[1] & 0xE0) === 0xE0) return true;
+    // Ogg/Opus: OggS header
+    if (buf.slice(0, 4).toString() === 'OggS') return true;
+    // FLAC: fLaC
+    if (buf.slice(0, 4).toString() === 'fLaC') return true;
+    // WAV: RIFF
+    if (buf.slice(0, 4).toString() === 'RIFF') return true;
+    // MP4/M4A: ftyp box
+    if (buf.slice(4, 8).toString() === 'ftyp') return true;
+    // WebM: EBML header
+    if (buf.slice(0, 4).toString() === '\x1aE\xdf\xa3') return true;
+    // If the first 200 bytes look like HTML, it's an error page
+    const text = buf.slice(0, 200).toString('utf8').toLowerCase();
+    if (/^\s*</.test(text) && /<(!doctype|html|head|body)/i.test(text)) return false;
+    return false;
+  } catch { return false; }
+}
+
+/** Mark a download as failed so we skip it for FAILED_RETRY_MS. */
+function markDownloadFailed(videoId) {
+  failedIds.add(videoId);
+  setTimeout(() => failedIds.delete(videoId), FAILED_RETRY_MS);
+  log('Cache', `Marked ${videoId} as failed (retry in ${FAILED_RETRY_MS / 1000}s)`);
+}
+
 // Download + cache a track for reliable playback
 app.post('/api/cache/download', rateLimit(20), async (req, res) => {
-  const{videoId,title,artist,_source,_instance}=req.body;
+  const{videoId,title,artist,_source,_instance,altIds}=req.body;
   if(!videoId) return res.status(400).json({error:'Missing track ID'});
 
   // Dedup: reject if already downloading
@@ -719,6 +774,23 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
   const existing=audioCache.find(e=>e.id===videoId);
   if(existing?.filepath&&fs.existsSync(existing.filepath)) return res.json({ok:true,cached:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:existing.title,source:'cache'});
   if(existing) audioCache=audioCache.filter(e=>e.id!==videoId);
+
+  // Skip videoIds recently marked as failed
+  if (failedIds.has(videoId)) {
+    log('Cache', `Skipping ${videoId} — recently failed (retry in ~30m)`);
+    // Try alternative IDs if provided
+    if (Array.isArray(altIds) && altIds.length > 0) {
+      for (const altId of altIds) {
+        if (altId === videoId) continue;
+        if (failedIds.has(altId)) continue;
+        const existingAlt = audioCache.find(e => e.id === altId);
+        if (existingAlt?.filepath && fs.existsSync(existingAlt.filepath)) {
+          downloadingIds.delete(videoId);
+          return res.json({ok:true,cached:true,alt:true,url:`/api/cache/stream/${encodeURIComponent(altId)}`,title:existingAlt.title,source:'cache',altVideoId:altId});
+        }
+      }
+    }
+  }
 
   downloadingIds.add(videoId);
   log('Cache', `Downloading: ${title || videoId} (src=${_source || 'auto'}, id=${videoId})`);
@@ -803,6 +875,13 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
       await pipeline(Readable.fromWeb(ar.body),fs.createWriteStream(fp));
       const sz=fs.statSync(fp).size;
       if(sz<1000){fs.unlinkSync(fp); downloadingIds.delete(videoId); return res.status(502).json({error:`File too small (${sz}B)`});}
+      // Validate audio content for YouTube-sourced files
+      if ((src === 'invidious' || src === 'piped') && !isValidAudioFile(fp)) {
+        fs.unlinkSync(fp);
+        markDownloadFailed(videoId);
+        downloadingIds.delete(videoId);
+        return res.status(502).json({error:'Downloaded file is not valid audio (blocked/placeholder)',failed:true,videoId});
+      }
       audioCache.push({id:videoId,filepath:fp,title:title||videoId,artist:artist||'',downloadedAt:Date.now(),playedAt:null,size:sz,source:src});
       cleanTempAfterDownloads();
       log('Cache', `OK: ${title} (${(sz/1048576).toFixed(1)}MB via ${src})`);
@@ -879,7 +958,6 @@ app.get('/api/test/sources', async (req, res) => {
   const tests=[
     ...SOURCES.dab.map(u=>({url:u,type:'dab',testUrl:`${u}/search?q=test&type=track&limit=1`})),
     ...(config.jamendoClientId ? [{ url: 'https://api.jamendo.com/v3.1', type: 'jamendo', testUrl: `https://api.jamendo.com/v3.1/tracks/?client_id=${encodeURIComponent(config.jamendoClientId)}&format=json&limit=1&search=test` }] : []),
-    ...SOURCES.hifi.slice(0,4).map(u=>({url:u,type:'hifi',testUrl:`${u}/search/?query=test&type=track&limit=1`})),
     ...SOURCES.piped.map(u=>({url:u,type:'piped',testUrl:`${u}/search?q=test&filter=videos`})),
     ...invidiousInstances().map(u=>({url:u,type:'invidious',testUrl:`${u}/api/v1/search?q=test&type=video`})),
   ];
