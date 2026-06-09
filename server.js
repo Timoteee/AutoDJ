@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const cors = require('cors');
+const compression = require('compression');
 const { pipeline } = require('stream/promises');
 const { Readable } = require('stream');
 const multer = require('multer');
@@ -24,25 +25,39 @@ function log(tag, ...args) {
 
 const MAX_REASONABLE_TRACK_SEC = 6 * 3600;
 /** Normalize a possibly-millisecond duration to seconds, clamped to MAX_REASONABLE_TRACK_SEC. */
-function normalizeTrackDurationSeconds(duration, durationMs) {
-  let sec = 0;
-  if (durationMs != null && Number.isFinite(Number(durationMs)) && Number(durationMs) > 0) {
-    sec = Number(durationMs) / 1000;
-  } else if (duration != null && Number.isFinite(Number(duration))) {
-    let d = Number(duration);
-    if (d < 5) d = 0;
-    else if (d > 120 && d < 1e12) d /= 1000;
-    if (d < 10) d = 0;
-    sec = d;
+/** Parse various duration formats to seconds. Handles MM:SS, HH:MM:SS, ms, and raw seconds. */
+function parseDurationToSeconds(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  // MM:SS or HH:MM:SS format
+  const colonMatch = s.match(/^(\d+):([0-5]?\d)(?::([0-5]?\d))?$/);
+  if (colonMatch) {
+    const h = colonMatch[3] !== undefined ? parseInt(colonMatch[1]) : 0;
+    const m = colonMatch[3] !== undefined ? parseInt(colonMatch[2]) : parseInt(colonMatch[1]);
+    const sec = colonMatch[3] !== undefined ? parseInt(colonMatch[3]) : parseInt(colonMatch[2]);
+    return h * 3600 + m * 60 + sec;
   }
-  if (!Number.isFinite(sec) || sec < 1) return 0;
-  return Math.min(Math.round(sec), MAX_REASONABLE_TRACK_SEC);
+  const n = Number(s);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n < 10) return null;          // below 10s is invalid
+  if (n > 100000 && n < 1e12) return Math.round(n / 1000);  // likely milliseconds
+  if (n > 36000) return null;        // >10h is bogus
+  return Math.round(n);
+}
+
+function normalizeTrackDurationSeconds(duration, durationMs) {
+  let sec = null;
+  if (durationMs != null) sec = parseDurationToSeconds(durationMs);
+  if (sec == null && duration != null) sec = parseDurationToSeconds(duration);
+  if (sec == null || sec < 1) return 0;
+  return Math.min(sec, MAX_REASONABLE_TRACK_SEC);
 }
 
 const METUBE_BASE = (process.env.METUBE_URL || '').replace(/\/+$/, '');
 const METUBE_DOWNLOADS_DIR = process.env.METUBE_DOWNLOADS_DIR || '';
 
 app.use(cors());
+app.use(compression({ threshold: 512, level: 6 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(__dirname));
 
@@ -120,6 +135,9 @@ let config = {
   opencodeKey: process.env.OPENCODE_API_KEY || '',
   opencodeBaseUrl: process.env.OPENCODE_BASE_URL || '',
   opencodeModel: 'opencode-model',
+  openrouterKey: process.env.OPENROUTER_API_KEY || '',
+  openrouterBaseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  openrouterModel: 'openrouter/auto',
   aiProvider: 'anthropic',
   musicDirs: process.env.MUSIC_DIR ? [process.env.MUSIC_DIR] : [path.join(__dirname, 'music')],
   messages: ["🎵 Vibes are immaculate tonight","🔊 AutoDJ is live","🎧 Peak vibes engaged","💿 Hand-selected by algorithms","🕺 You should be dancing right now","🎶 This song is better loud","🌊 Riding the wave"],
@@ -270,23 +288,14 @@ function musicHeaders(more = {}) {
 }
 
 // ─── Music Sources (live-tested May 2026; rotate via getHealthy) ──────────
+/** Live-tested instances (June 2026). Run scripts/probe-sources.mjs to re-verify. */
 const SOURCES = {
   dab: ['https://dabmusic.xyz/api', 'https://dab.yeet.su/api'],
-  hifi: ['https://wolf.qqdl.site','https://maus.qqdl.site','https://katze.qqdl.site','https://hund.qqdl.site','https://vogel.qqdl.site','https://triton.squid.wtf','https://tidal-api.binimum.org','https://tidal.kinoplus.online'],
-  piped: [
-    'https://api.piped.private.coffee',
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.adminforge.de',
-    'https://api.piped.yt',
-    'https://pipedapi.leptons.xyz',
-    'https://piped-api.privacy.com.de',
-  ],
+  piped: ['https://api.piped.private.coffee'],
   invidious: [
     'https://inv.thepixora.com',
     'https://yt.chocolatemoo53.com',
-    'https://yewtu.be',
-    'https://inv.nadeko.net',
-    'https://invidious.nerdvpn.de',
+    'https://invidious.flokinet.to',
   ],
 };
 /** User-configured Invidious base URL is tried first (e.g. self-hosted or redirector you trust). */
@@ -297,7 +306,7 @@ function invidiousInstances() {
 }
 
 // Source ordering helpers
-const SOURCE_KEYS = ['metube', 'invidious', 'piped', 'dab', 'hifi', 'jamendo', 'squid'];
+const SOURCE_KEYS = ['metube', 'invidious', 'piped', 'dab', 'jamendo', 'squid'];
 
 function sourcePriority() {
   if (Array.isArray(config.sourcePriority) && config.sourcePriority.length > 0) {
@@ -324,10 +333,14 @@ app.get('/api/config', (req, res) => res.json({
   openaiKey: config.openaiKey ? '●●●set●●●' : '', anthropicKey: config.anthropicKey ? '●●●set●●●' : '', opencodeKey: config.opencodeKey ? '●●●set●●●' : '',
   opencodeBaseUrl: config.opencodeBaseUrl || '',
   opencodeModel: config.opencodeModel || 'opencode-model',
+  openrouterKey: config.openrouterKey ? '●●●set●●●' : '',
+  openrouterBaseUrl: config.openrouterBaseUrl || 'https://openrouter.ai/api/v1',
+  openrouterModel: config.openrouterModel || 'openrouter/auto',
+  hasOpenrouter: !!config.openrouterKey,
   aiProvider: config.aiProvider, musicDirs: config.musicDirs, messages: config.messages,
   invidiousRedirector: config.invidiousRedirector || '',
   squidProxies: Array.isArray(config.squidProxies) ? config.squidProxies : [],
-  hasLastfm: !!config.lastfmKey, hasJamendo: !!config.jamendoClientId, hasSpotify: !!(config.spotifyClientId && config.spotifyClientSecret), hasAI: !!(config.anthropicKey || config.openaiKey || config.opencodeKey),
+  hasLastfm: !!config.lastfmKey, hasJamendo: !!config.jamendoClientId, hasSpotify: !!(config.spotifyClientId && config.spotifyClientSecret), hasAI: !!(config.anthropicKey || config.openaiKey || config.opencodeKey || config.openrouterKey),
   hasMetube: !!(METUBE_BASE && METUBE_DOWNLOADS_DIR), hasSquid: !!(Array.isArray(config.squidProxies) && config.squidProxies.length),
   metubeFirst: config.metubeFirst !== false,
   preDownloadCount: config.preDownloadCount || 5,
@@ -351,6 +364,9 @@ app.post('/api/config', (req, res) => {
   if (b.opencodeKey && !b.opencodeKey.includes('●')) config.opencodeKey = b.opencodeKey;
   if (b.opencodeBaseUrl !== undefined) config.opencodeBaseUrl = String(b.opencodeBaseUrl || '').trim();
   if (b.opencodeModel !== undefined) config.opencodeModel = String(b.opencodeModel || 'opencode-model').trim();
+  if (b.openrouterKey && !b.openrouterKey.includes('●')) config.openrouterKey = b.openrouterKey;
+  if (b.openrouterBaseUrl !== undefined) config.openrouterBaseUrl = String(b.openrouterBaseUrl || 'https://openrouter.ai/api/v1').trim();
+  if (b.openrouterModel !== undefined) config.openrouterModel = String(b.openrouterModel || 'openrouter/auto').trim();
   if (b.aiProvider) config.aiProvider = b.aiProvider;
   if (b.musicDirs) config.musicDirs = b.musicDirs;
   if (b.messages) { config.messages = b.messages; sharedState.messages = b.messages; }
@@ -441,6 +457,15 @@ app.post('/api/ai/recommend', rateLimit(20), async (req, res) => {
       if(!r.ok){const errBody=await r.text().catch(()=>''); throw new Error(`OpenCode HTTP ${r.status}: ${errBody.slice(0,200)}`);}
       const d=await r.json();
       if(!d.choices?.[0]?.message?.content) throw new Error('OpenCode: empty response');
+      res.json(JSON.parse((d.choices[0].message.content||'[]').replace(/```json|```/g,'').trim()));
+    }
+    else if(config.aiProvider==='openrouter'&&config.openrouterKey){
+      const base=(config.openrouterBaseUrl||'https://openrouter.ai/api/v1').replace(/\/+$/,'');
+      const model=config.openrouterModel||'openrouter/auto';
+      const r=await fetch(`${base}/chat/completions`,{method:'POST',headers:{'Authorization':`Bearer ${config.openrouterKey}`,'Content-Type':'application/json','HTTP-Referer':'https://github.com/Timoteee/AutoDJ','X-Title':'AutoDJ'},body:JSON.stringify({model,messages:[{role:'user',content:prompt}]})});
+      if(!r.ok){const errBody=await r.text().catch(()=>''); throw new Error(`OpenRouter HTTP ${r.status}: ${errBody.slice(0,200)}`);}
+      const d=await r.json();
+      if(!d.choices?.[0]?.message?.content) throw new Error('OpenRouter: empty response');
       res.json(JSON.parse((d.choices[0].message.content||'[]').replace(/```json|```/g,'').trim()));
     }
     else res.status(400).json({error:'No AI configured'});
@@ -1317,9 +1342,22 @@ app.get('/', (req, res) => res.redirect('/dj'));
 app.get('/dj', (req, res) => res.sendFile(path.join(__dirname, 'dj.html')));
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'display.html')));
 
-app.listen(PORT, () => {
-  console.log(`\n🎧 AutoDJ v4.1 MVP — http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  console.log(`\n🎧 AutoDJ v5.0.0 — http://localhost:${PORT}`);
   console.log(`   DJ Console  → /dj`);
   console.log(`   Now Playing → /display`);
-  console.log(`   Sources: DAB(${SOURCES.dab.length}) Jamendo(${config.jamendoClientId ? 'on' : 'off'}) HiFi(${SOURCES.hifi.length}) Piped(${SOURCES.piped.length}) Invidious(${invidiousInstances().length}) Metube(${METUBE_BASE ? 'on' : 'off'})\n`);
+  console.log(`   Sources: DAB(${SOURCES.dab.length}) Jamendo(${config.jamendoClientId ? 'on' : 'off'}) Piped(${SOURCES.piped.length}) Invidious(${invidiousInstances().length}) Metube(${METUBE_BASE ? 'on' : 'off'})\n`);
 });
+
+// Graceful shutdown — close HTTP server, flush SSE, release resources
+function shutdown(signal) {
+  log('System', `Received ${signal}, shutting down gracefully...`);
+  broadcastCommand('shutdown');
+  const wait = new Promise(resolve => server.close(() => resolve()));
+  // Force exit after 5s regardless
+  setTimeout(() => { log('System', 'Forced exit after timeout'); process.exit(0); }, 5000);
+  wait.then(() => { log('System', 'Server closed'); process.exit(0); });
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGHUP', () => shutdown('SIGHUP'));

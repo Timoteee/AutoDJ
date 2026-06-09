@@ -1,4 +1,6 @@
-# AutoDJ v4.1 — Project Handoff Document
+# AutoDJ v5.0.0 — Project Handoff Document
+
+> **v5.0.0 rework (June 2026):** Dead sources pruned (HiFi removed, Piped/Invidious culled to working only), duration parsing hardened, OpenRouter AI provider added, compression middleware, graceful shutdown, version bumped. See changelog at bottom.
 
 > **For anyone picking this up cold.** Read this fully before touching code.
 
@@ -552,4 +554,39 @@ autodj-v4/
 
 ---
 
-*Last updated: May 2026. AutoDJ v4.2 MVP (sources + display + stats + Jamendo).*
+*Last updated: June 2026. AutoDJ v5.0.0 (source prune + duration fix + OpenRouter + compression).*
+
+---
+
+## v5.0.0 Changelog (June 2026)
+
+### Source Health
+- **Removed dead HiFi sources** — all 8 HiFi instances were returning 502/ENOTFOUND
+- **Culled dead Piped instances** — kept only `api.piped.private.coffee` (verified working)
+- **Culled dead Invidious instances** — removed yewtu.be (403), inv.nadeko.net (403), invidious.nerdvpn.de (401); added invidious.flokinet.to (verified working)
+- **DAB** kept but noted as Cloudflare-blocked (both instances 403)
+
+### Duration Fix
+- **Rewrote `normalizeTrackDurationSeconds`** — split into `parseDurationToSeconds` + validator
+- Now handles **HH:MM:SS** and **MM:SS** colon-separated formats (fixes "1000:10" bug)
+- Better millisecond detection (threshold `>100000 && <1e12`)
+- Caps bogus values >10 hours to zero
+
+### AI Provider: OpenRouter
+- Added **OpenRouter** as a fourth AI provider (`openrouter` option in `/api/ai/recommend`)
+- Config fields: `openrouterKey`, `openrouterBaseUrl`, `openrouterModel`
+- Settings UI updated in dj.html (provider dropdown + API key/base URL/model fields)
+- Config load/save wired in dj.js
+
+### Infrastructure
+- Added `compression` middleware (gzip static assets, threshold 512 bytes)
+- Added **graceful shutdown** (SIGTERM/SIGINT/SIGHUP handlers)
+- Updated `.env.example` with OpenRouter vars
+- Bumped version to **5.0.0** in package.json and server.js startup message
+- Updated description to remove dead HiFi references
+- Removed "HiFi" from source priority drag area in Settings UI
+
+### Backend
+- Updated SOURCE_KEYS to remove 'hifi'
+- Updated startup log message (removed HiFi count)
+- Updated `hasAI` config check to include OpenRouter
