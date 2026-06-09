@@ -145,7 +145,7 @@ body::before {
 .tab.active { color: var(--accent); border-color: var(--border); border-bottom: 1px solid var(--bg); background: var(--surface); }
 
 .tab-content { display: none; }
-.tab-content.active { display: block; }
+.tab-content.active { display: block; overflow-y: auto; flex: 1; min-height: 0; }
 
 /* ─── Panels / Cards ─────────────────────────── */
 .panel {

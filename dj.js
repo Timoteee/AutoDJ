@@ -1030,16 +1030,17 @@ function renderMixUpNext() {
   const nextTrack = slice[0];
   let nextCardHtml = '';
   if (nextTrack) {
-    nextCardHtml = `
-      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;margin:0 0 10px;background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius-md)">
-        <div style="font-size:9px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;white-space:nowrap;flex-shrink:0">NEXT UP</div>
-        <div style="flex:1;min-width:0;overflow:hidden">
-          <div style="color:var(--bright);font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(nextTrack.title || '—')}</div>
-          <div style="color:var(--text);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(nextTrack.artist || '—')}</div>
-        </div>
-        <button type="button" class="btn accent" style="padding:4px 10px;font-size:9px;flex-shrink:0" onclick="playQueueTrack(${start})">▶ Play Now</button>
-        <button type="button" class="btn" style="padding:4px 8px;font-size:9px;flex-shrink:0" onclick="cueQueueTrack('b',${start})">Cue B</button>
-      </div>`;
+  nextCardHtml = `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;margin:0 0 10px;background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius-md)">
+      ${nextTrack.artwork || nextTrack.image ? `<img src="${escHtml(nextTrack.artwork || nextTrack.image)}" style="width:44px;height:44px;border-radius:4px;object-fit:cover;flex-shrink:0" alt="">` : '<div style="width:44px;height:44px;border-radius:4px;background:var(--surface2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--muted)">♪</div>'}
+      <div style="font-size:9px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;white-space:nowrap;flex-shrink:0">NEXT UP</div>
+      <div style="flex:1;min-width:0;overflow:hidden">
+        <div style="color:var(--bright);font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(nextTrack.title || '—')}</div>
+        <div style="color:var(--text);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(nextTrack.artist || '—')}</div>
+      </div>
+      <button type="button" class="btn accent" style="padding:4px 10px;font-size:9px;flex-shrink:0" onclick="playQueueTrack(${start})">▶ Play Now</button>
+      <button type="button" class="btn" style="padding:4px 8px;font-size:9px;flex-shrink:0" onclick="cueQueueTrack('b',${start})">Cue B</button>
+    </div>`;
   }
 
   box.innerHTML = nextCardHtml + `
@@ -1922,8 +1923,12 @@ function renderSourcePriority(priority) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(s) {
   if (!s || isNaN(s) || s < 0) return '0:00';
-  const clamped = Math.min(Math.round(s), 21600);
-  return `${Math.floor(clamped/60)}:${Math.floor(clamped%60).toString().padStart(2,'0')}`;
+  const sec = Math.round(s);
+  if (sec <= 0) return '0:00';
+  const m = Math.floor(sec / 60);
+  const secs = sec % 60;
+  if (m >= 60) return `${Math.floor(m/60)}:${(m%60).toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
+  return `${m}:${secs.toString().padStart(2,'0')}`;
 }
 function setStatus(msg) {
   const el = document.getElementById('status');

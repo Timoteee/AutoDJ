@@ -86,6 +86,7 @@ body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 .current-date { font-size: 10px; color: var(--muted); letter-spacing: 2px; margin-top: 4px; }
 .xfade-indicator { font-size: 10px; color: var(--accent2); letter-spacing: 2px; text-transform: uppercase; animation: blink 0.5s infinite; display: none; margin-top: 4px; }
 .xfade-indicator.visible { display: block; }
+.listener-info { font-size: 10px; color: var(--muted); letter-spacing: 1px; margin-top: 2px; }
 .theme-toggle {
   background: transparent; border: 1px solid var(--border); color: var(--muted);
   font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 2px;
@@ -241,6 +242,7 @@ body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
     <div style="text-align:right">
       <div class="current-time" id="clock">00:00:00</div>
       <div class="current-date" id="date-display"></div>
+      <div class="listener-info" id="listener-info"></div>
       <div class="xfade-indicator" id="xfade-ind">⇄ CROSSFADING</div>
       <!-- Audio listen button — requires user gesture to unlock -->
       <button class="audio-btn visible" id="audio-listen-btn" onclick="toggleAudio()">🔇 Enable Audio</button>
@@ -537,7 +539,25 @@ function applyState(data) {
     setText('np-title', np.title || '—');
     setText('np-artist', np.artist || '—');
     setText('np-album', np.album || '');
+    // Update listener count from SSE
+    if (data.listenerCount !== undefined) {
+      document.getElementById('listener-info').textContent = `${data.listenerCount} listener${data.listenerCount === 1 ? '' : 's'}`;
+    }
     fetchLyrics(np.artist, np.title, np.duration, np.youtubeId);
+
+    // Artist background (subtle gradient from artwork)
+    const bgEl = document.querySelector('.bg-art-fade') || (() => {
+      const el = document.createElement('div');
+      el.className = 'bg-art-fade';
+      el.style.cssText = 'position:fixed;inset:0;z-index:0;transition:background 1s ease;pointer-events:none';
+      document.querySelector('.bg-orbs')?.after(el);
+      return el;
+    })();
+    if (np.artwork && np.artwork !== 'undefined') {
+      bgEl.style.background = `radial-gradient(ellipse at center, rgba(0,0,0,0.3), rgba(0,0,0,0.7)), url(${np.artwork}) center/cover`;
+    } else {
+      bgEl.style.background = '';
+    }
 
     // Artwork
     const artImg = document.getElementById('art-img');
@@ -701,13 +721,21 @@ setInterval(() => {
 // ─── Fallback poll ────────────────────────────────────────────────────────────
 setInterval(async () => {
   try { applyState(await (await fetch('/api/nowplaying')).json()); } catch(e) {}
+  try {
+    const lr = await (await fetch('/api/listeners')).json();
+    document.getElementById('listener-info').textContent = `${lr.count} listener${lr.count === 1 ? '' : 's'}`;
+  } catch(e) {}
 }, 8000);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(s) {
   if (!s || isNaN(s) || s < 0) return '0:00';
-  const clamped = Math.min(Math.round(s), 21600);
-  return `${Math.floor(clamped/60)}:${Math.floor(clamped%60).toString().padStart(2,'0')}`;
+  const sec = Math.round(s);
+  if (sec <= 0) return '0:00';
+  const m = Math.floor(sec / 60);
+  const secs = sec % 60;
+  if (m >= 60) return `${Math.floor(m/60)}:${(m%60).toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
+  return `${m}:${secs.toString().padStart(2,'0')}`;
 }
 function setText(id, val) { const e = document.getElementById(id); if (e) e.textContent = val; }
 
@@ -736,6 +764,9 @@ function parseLrcLines(syncedText) {
   return out;
 }
 function updateLrcHighlight(elapsed) {
+  // Use relayAudio currentTime for best sync when available
+  const syncTime = (audioEnabled && relayAudio && relayAudio.readyState >= 2 && !isNaN(relayAudio.currentTime))
+    ? relayAudio.currentTime : elapsed;
   const lines = document.querySelectorAll('#lyrics-content .lrc-line');
   if (!lines.length) return;
   let active = -1;
@@ -743,7 +774,7 @@ function updateLrcHighlight(elapsed) {
   for (let i = 0; i < lines.length; i++) {
     const t0 = parseFloat(lines[i].dataset.t);
     const t1 = i + 1 < lines.length ? parseFloat(lines[i + 1].dataset.t) : Infinity;
-    if (elapsed >= t0 - 0.3 && elapsed < t1) { active = i; nextT = t1; break; }
+    if (syncTime >= t0 - 0.3 && syncTime < t1) { active = i; nextT = t1; break; }
   }
   lines.forEach((el, i) => {
     if (i === active) {

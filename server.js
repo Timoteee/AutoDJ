@@ -23,7 +23,7 @@ function log(tag, ...args) {
   if (logRing.length > MAX_LOG_ENTRIES) logRing.splice(0, logRing.length - MAX_LOG_ENTRIES);
 }
 
-const MAX_REASONABLE_TRACK_SEC = 6 * 3600;
+const MAX_REASONABLE_TRACK_SEC = 600; // 10 min max for a music track
 /** Normalize a possibly-millisecond duration to seconds, clamped to MAX_REASONABLE_TRACK_SEC. */
 /** Parse various duration formats to seconds. Handles MM:SS, HH:MM:SS, ms, and raw seconds. */
 function parseDurationToSeconds(raw) {
@@ -159,6 +159,21 @@ let config = {
 };
 if (fs.existsSync(CONFIG_FILE)) { try { Object.assign(config, JSON.parse(fs.readFileSync(CONFIG_FILE,'utf8'))); } catch(e) { log('Config', `WARNING: Failed to parse config.json — ${e.message}. Using defaults.`); } }
 if (!Array.isArray(config.squidProxies)) config.squidProxies = [];
+// Auto-set default RSS feed from geolocation if none configured
+if (!config.rssFeedUrl) {
+  (async () => {
+    try {
+      const ip = ''; // server's own IP
+      const geo = await fetch(`http://ip-api.com/json/?fields=status,countryCode,city`, { signal: AbortSignal.timeout(4000) }).then(r => r.json()).catch(() => ({}));
+      if (geo.status === 'success') {
+        const cc = (geo.countryCode || 'US').toLowerCase();
+        config.rssFeedUrl = `https://news.google.com/rss?hl=${cc === 'us' ? 'en-US' : `en-${cc.toUpperCase()}`}&gl=${cc.toUpperCase()}&ceid=${cc.toUpperCase()}:en`;
+        sharedState.config.rssFeedUrl = config.rssFeedUrl;
+        log('Config', `Auto-set RSS feed: ${config.rssFeedUrl}`);
+      }
+    } catch(e) { log('Config', `Geo RSS auto-set failed: ${e.message}`); }
+  })();
+}
 function saveConfig() { fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2)); }
 
 /** Safe on-disk filename for cache entries (preserves logical id in audioCache[].id). */
@@ -177,8 +192,8 @@ let sharedState = {
 };
 const sseClients = new Map();
 let sseIdCounter = 0;
-function broadcastState() { const d = JSON.stringify(sharedState); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
-function broadcastCommand(cmd, extra = {}) { const d = JSON.stringify({ ...sharedState, command: cmd, ...extra }); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastState() { const b = { ...sharedState, listenerCount: sseClients.size }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastCommand(cmd, extra = {}) { const b = { ...sharedState, listenerCount: sseClients.size, command: cmd, ...extra }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 
 let playbackTimer = null;
 function clearPlaybackTimer() { if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; } }
@@ -224,13 +239,35 @@ async function advanceTrack() {
   sharedState.nextUp = sharedState.queue[sharedState.trackIndex + 1] || null;
   sharedState.isPlaying = true;
 
-  // Build stream URL
+  // Build stream URL — prefer cache, fall back to source stream
   let streamUrl = '';
   if (track.type === 'local' || track.type === 'temp') {
     streamUrl = track.url || '';
   } else if (track.youtubeId) {
     const cached = audioCache.find(e => e.id === track.youtubeId);
-    if (cached?.filepath) streamUrl = `/api/cache/stream/${encodeURIComponent(track.youtubeId)}`;
+    if (cached?.filepath) {
+      streamUrl = `/api/cache/stream/${encodeURIComponent(track.youtubeId)}`;
+    }
+  }
+  // When no cache yet, trigger immediate download and temporarily fetch a stream URL
+  if (!streamUrl && track.youtubeId && (track._source === 'invidious' || track._source === 'piped')) {
+    try {
+      const host = `http://127.0.0.1:${PORT}`;
+      // Trigger cache download in background (won't block playback)
+      fetch(`${host}/api/cache/download`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: track.youtubeId, title: track.title, artist: track.artist, _source: track._source || '', _instance: track._instance || '' })
+      }).catch(() => {});
+      // Meanwhile, fetch a temporary stream URL from video info
+      const viRes = await fetch(`${host}/api/piped/streams?videoId=${encodeURIComponent(track.youtubeId)}`, { signal: AbortSignal.timeout(8000) });
+      if (viRes.ok) {
+        const vi = await viRes.json();
+        if (vi.audioStreams?.length) {
+          streamUrl = vi.audioStreams[0].url;
+          log('Playback', `Stream fallback: ${track.youtubeId}`);
+        }
+      }
+    } catch (e) { log('Playback', `Stream fallback failed: ${e.message}`); }
   }
 
   log('Playback', `▶ ${track.title} (track ${sharedState.trackIndex + 1}/${sharedState.queue.length})`);
@@ -242,7 +279,7 @@ async function advanceTrack() {
   if (sseClients.size === 0) {
     const dur = (track.duration && Number.isFinite(track.duration) && track.duration > 0) ? track.duration : 0;
     if (dur > 5) {
-      const fadeSec = 8;
+      const fadeSec = Math.min(config.crossfadeSeconds || 3, 8);
       const advIn = Math.max(1, dur - fadeSec) * 1000;
       playbackTimer = setTimeout(async () => {
         await preCacheNextTrack();
@@ -1130,6 +1167,25 @@ app.get('/api/rss', async (req, res) => {
   }
 });
 
+// ─── Geolocate ─────────────────────────────────────────────────────────────────
+app.get('/api/geolocate', async (req, res) => {
+  try {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
+    // Try ip-api.com (free tier, no key needed)
+    const geo = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,countryCode,city,regionName,lat,lon,org,isp,query`, { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => ({}));
+    if (geo.status === 'success') {
+      res.json({
+        ip: geo.query, city: geo.city, region: geo.regionName, country: geo.country, countryCode: geo.countryCode,
+        lat: geo.lat, lon: geo.lon, org: geo.org, isp: geo.isp
+      });
+    } else {
+      res.json({ ip, error: 'geolocation failed' });
+    }
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 // ─── Song Verification ──────────────────────────────────────────────────────────
 const LYRICS_SIMILARITY_THRESHOLD = 0.7;
 
@@ -1234,8 +1290,17 @@ function loadQueueFromDisk() {
   try {
     if (fs.existsSync(QUEUE_FILE)) {
       const raw = JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf8'));
-      if (Array.isArray(raw)) return { queue: raw, trackIndex: -1 }; // legacy format
-      if (Array.isArray(raw.queue)) return { queue: raw.queue, trackIndex: typeof raw.trackIndex === 'number' ? raw.trackIndex : -1 };
+      // Legacy format: queue was a flat array
+      if (Array.isArray(raw)) {
+        raw.forEach(t => { if (t.duration && Number.isFinite(t.duration) && t.duration > MAX_REASONABLE_TRACK_SEC) t.duration = MAX_REASONABLE_TRACK_SEC; });
+        return { queue: raw, trackIndex: -1 };
+      }
+      if (Array.isArray(raw.queue)) {
+        raw.queue.forEach(t => {
+          if (t.duration && Number.isFinite(t.duration) && t.duration > MAX_REASONABLE_TRACK_SEC) t.duration = MAX_REASONABLE_TRACK_SEC;
+        });
+        return { queue: raw.queue, trackIndex: typeof raw.trackIndex === 'number' ? raw.trackIndex : -1 };
+      }
     }
   } catch (e) { log('Queue', 'Load error: ' + e.message); }
   return { queue: [], trackIndex: -1 };
@@ -1251,6 +1316,8 @@ app.post('/api/queue', (req, res) => {
   const { queue, trackIndex } = req.body;
   if (Array.isArray(queue)) {
     let safe = queue.map(t => {
+      // Normalize duration on save — cap to 600s
+      if (t.duration && Number.isFinite(t.duration) && t.duration > 600) t.duration = Math.min(t.duration, MAX_REASONABLE_TRACK_SEC);
       if (t.type === 'local') return { ...t, filepath: undefined };
       return t;
     });
@@ -1419,6 +1486,7 @@ app.post('/api/nowplaying/clear', (req, res) => {
 app.get('/', (req, res) => res.redirect('/dj'));
 app.get('/dj', (req, res) => res.sendFile(path.join(__dirname, 'dj.html')));
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'display.html')));
+app.get('/display/nano', (req, res) => res.sendFile(path.join(__dirname, 'nano.html')));
 
 const server = app.listen(PORT, () => {
   console.log(`\n🎧 AutoDJ v5.0.0 — http://localhost:${PORT}`);
