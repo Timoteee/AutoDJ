@@ -16,46 +16,48 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
 :root {
-  /* Spotify-inspired dark theme (default) */
-  --bg: #121212;
-  --surface: #181818;
-  --surface2: #282828;
-  --surface3: #333333;
-  --border: #404040;
-  --accent: #1db954;
-  --accent-hover: #1ed760;
-  --accent2: #e74c3c;
-  --accent3: #8b5cf6;
-  --green: #1db954;
+  /* Warm club/venue aesthetic — charcoal + amber */
+  --bg: #0c0c14;
+  --surface: #14141f;
+  --surface2: #1c1c2e;
+  --surface3: #24243a;
+  --border: rgba(217,119,6,0.15);
+  --accent: #d97706;
+  --accent-hover: #f59e0b;
+  --accent2: #f59e0b;
+  --accent3: #a855f7;
+  --green: #10b981;
   --yellow: #f59e0b;
-  --text: #e0e0e0;
-  --bright: #ffffff;
-  --muted: #727272;
-  --glow-g: rgba(29,185,84,0.2);
-  --glow-r: rgba(231,76,60,0.2);
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --shadow: 0 2px 12px rgba(0,0,0,0.4);
+  --text: #d4d4de;
+  --bright: #f0f0fa;
+  --muted: #8a8a9a;
+  --glow-g: rgba(16,185,129,0.15);
+  --glow-r: rgba(239,68,68,0.15);
+  --glow-a: rgba(217,119,6,0.2);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow: 0 2px 16px rgba(0,0,0,0.5);
   --transition: 200ms ease;
 }
 [data-theme="light"] {
-  --bg: #ffffff;
-  --surface: #f6f6f6;
-  --surface2: #e8e8e8;
-  --surface3: #d9d9d9;
-  --border: #c0c0c0;
-  --accent: #1db954;
-  --accent-hover: #169c46;
-  --accent2: #e74c3c;
+  --bg: #f8f6f0;
+  --surface: #eeebe4;
+  --surface2: #e0ddd4;
+  --surface3: #d4d1c8;
+  --border: rgba(217,119,6,0.2);
+  --accent: #b76506;
+  --accent-hover: #d97706;
+  --accent2: #d97706;
   --accent3: #7c3aed;
-  --green: #1db954;
+  --green: #059669;
   --yellow: #d97706;
-  --text: #333333;
-  --bright: #191919;
-  --muted: #a0a0a0;
-  --glow-g: rgba(29,185,84,0.12);
-  --glow-r: rgba(231,76,60,0.12);
+  --text: #2d2a24;
+  --bright: #1a1814;
+  --muted: #8a8578;
+  --glow-g: rgba(5,150,105,0.1);
+  --glow-r: rgba(239,68,68,0.08);
+  --glow-a: rgba(217,119,6,0.12);
   --shadow: 0 2px 12px rgba(0,0,0,0.08);
 }
 
@@ -67,14 +69,17 @@ body {
   font-family: 'Share Tech Mono', monospace;
   display: flex; flex-direction: column;
   height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Subtle radial glow bg */
-*, *::before, *::after { transition: background-color var(--transition), color var(--transition), border-color var(--transition), box-shadow var(--transition); }
+/* Background depth: radial glow + subtle grid */
 body::before {
   content: '';
   position: fixed; inset: 0;
-  background: radial-gradient(ellipse at 20% 50%, var(--glow-g) 0%, transparent 60%);
+  background:
+    radial-gradient(ellipse at 20% 40%, var(--glow-a) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,0.015) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,0.015) 40px);
   pointer-events: none; z-index: 0;
 }
 
@@ -82,22 +87,24 @@ body::before {
 .topbar {
   display: flex; align-items: center; gap: 16px;
   padding: 8px 16px;
-  background: var(--surface);
+  background: rgba(12,12,20,0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   z-index: 10; flex-shrink: 0;
 }
 
-.logo { font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: 900; color: var(--accent); letter-spacing: 3px; text-shadow: 0 0 20px var(--glow-g); }
-.logo span { color: var(--accent2); }
+.logo { font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: 900; background: linear-gradient(135deg, var(--accent2), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 3px; }
+.logo span { -webkit-text-fill-color: var(--accent2); }
 
 .nav-btns { display: flex; gap: 6px; margin-left: auto; }
-.nav-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; padding: 6px 14px; cursor: pointer; border-radius: 2px; text-decoration: none; transition: all 0.2s; }
-.nav-btn:hover { border-color: var(--accent); color: var(--accent); }
-.nav-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(29,185,84,0.07); }
+.nav-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; padding: 6px 14px; cursor: pointer; border-radius: 4px; text-decoration: none; transition: all 0.2s; }
+.nav-btn:hover { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 12px var(--glow-a); }
+.nav-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(217,119,6,0.08); }
 
 .status-ticker {
   font-size: 10px; color: var(--accent); letter-spacing: 1px;
-  background: rgba(29,185,84,0.06); border: 1px solid rgba(29,185,84,0.15);
+  background: rgba(217,119,6,0.06); border: 1px solid rgba(217,119,6,0.15);
   padding: 4px 12px; border-radius: var(--radius-sm); max-width: 400px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -145,7 +152,9 @@ body::before {
 .tab.active { color: var(--accent); border-color: var(--border); border-bottom: 1px solid var(--bg); background: var(--surface); }
 
 .tab-content { display: none; }
-.tab-content.active { display: block; }
+.tab-content.active { display: block; flex: 1; min-height: 0; }
+/* Tab scroll: queue, logs, settings need it — controlled by individual panel-body */
+.tab-content[data-scroll] { overflow-y: auto; }
 
 /* ─── Panels / Cards ─────────────────────────── */
 .panel {
@@ -709,7 +718,7 @@ input[type="number"] { width: 70px; }
   </div>
 
   <!-- QUEUE TAB -->
-  <div id="tab-queue" class="tab-content">
+  <div id="tab-queue" class="tab-content" data-scroll>
     <div class="queue-grid">
       <div class="panel">
         <div class="panel-header">
@@ -800,8 +809,8 @@ input[type="number"] { width: 70px; }
   </div>
 
   <!-- DISCOVER TAB -->
-  <div id="tab-discover" class="tab-content">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+  <div id="tab-discover" class="tab-content" data-scroll>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:10px">
       <div class="panel">
         <div class="panel-header"><span class="panel-title">Last.fm Discovery</span></div>
         <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
@@ -832,7 +841,7 @@ input[type="number"] { width: 70px; }
             </select>
           </div>
           <button class="btn" id="spotify-search-btn" style="border-color:#1db954;color:#1db954" onclick="spotifySearch()">🎵 Spotify Search</button>
-          <div id="spotify-results"></div>
+          <div id="spotify-results" style="max-height:300px;overflow-y:auto"></div>
         </div>
       </div>
       <div class="panel" style="grid-column:1/-1">
@@ -849,7 +858,7 @@ input[type="number"] { width: 70px; }
   </div>
 
   <!-- LOGS TAB -->
-  <div id="tab-logs" class="tab-content">
+  <div id="tab-logs" class="tab-content" data-scroll>
     <div class="panel">
       <div class="panel-header">
         <span class="panel-title">Server Logs</span>
@@ -875,7 +884,7 @@ input[type="number"] { width: 70px; }
   </div>
 
   <!-- SETTINGS TAB -->
-  <div id="tab-settings" class="tab-content">
+  <div id="tab-settings" class="tab-content" data-scroll>
     <div class="settings-grid">
       <div class="panel">
         <div class="panel-header"><span class="panel-title">API Keys</span></div>

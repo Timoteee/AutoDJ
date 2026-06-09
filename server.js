@@ -23,7 +23,7 @@ function log(tag, ...args) {
   if (logRing.length > MAX_LOG_ENTRIES) logRing.splice(0, logRing.length - MAX_LOG_ENTRIES);
 }
 
-const MAX_REASONABLE_TRACK_SEC = 6 * 3600;
+const MAX_REASONABLE_TRACK_SEC = 600; // 10 min max for a music track
 /** Normalize a possibly-millisecond duration to seconds, clamped to MAX_REASONABLE_TRACK_SEC. */
 /** Parse various duration formats to seconds. Handles MM:SS, HH:MM:SS, ms, and raw seconds. */
 function parseDurationToSeconds(raw) {
@@ -159,6 +159,21 @@ let config = {
 };
 if (fs.existsSync(CONFIG_FILE)) { try { Object.assign(config, JSON.parse(fs.readFileSync(CONFIG_FILE,'utf8'))); } catch(e) { log('Config', `WARNING: Failed to parse config.json — ${e.message}. Using defaults.`); } }
 if (!Array.isArray(config.squidProxies)) config.squidProxies = [];
+// Auto-set default RSS feed from geolocation if none configured
+if (!config.rssFeedUrl) {
+  (async () => {
+    try {
+      const ip = ''; // server's own IP
+      const geo = await fetch(`http://ip-api.com/json/?fields=status,countryCode,city`, { signal: AbortSignal.timeout(4000) }).then(r => r.json()).catch(() => ({}));
+      if (geo.status === 'success') {
+        const cc = (geo.countryCode || 'US').toLowerCase();
+        config.rssFeedUrl = `https://news.google.com/rss?hl=${cc === 'us' ? 'en-US' : `en-${cc.toUpperCase()}`}&gl=${cc.toUpperCase()}&ceid=${cc.toUpperCase()}:en`;
+        sharedState.config.rssFeedUrl = config.rssFeedUrl;
+        log('Config', `Auto-set RSS feed: ${config.rssFeedUrl}`);
+      }
+    } catch(e) { log('Config', `Geo RSS auto-set failed: ${e.message}`); }
+  })();
+}
 function saveConfig() { fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2)); }
 
 /** Safe on-disk filename for cache entries (preserves logical id in audioCache[].id). */
@@ -177,8 +192,8 @@ let sharedState = {
 };
 const sseClients = new Map();
 let sseIdCounter = 0;
-function broadcastState() { const d = JSON.stringify(sharedState); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
-function broadcastCommand(cmd, extra = {}) { const d = JSON.stringify({ ...sharedState, command: cmd, ...extra }); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastState() { const b = { ...sharedState, listenerCount: sseClients.size }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastCommand(cmd, extra = {}) { const b = { ...sharedState, listenerCount: sseClients.size, command: cmd, ...extra }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 
 let playbackTimer = null;
 function clearPlaybackTimer() { if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; } }
@@ -224,13 +239,35 @@ async function advanceTrack() {
   sharedState.nextUp = sharedState.queue[sharedState.trackIndex + 1] || null;
   sharedState.isPlaying = true;
 
-  // Build stream URL
+  // Build stream URL — prefer cache, fall back to source stream
   let streamUrl = '';
   if (track.type === 'local' || track.type === 'temp') {
     streamUrl = track.url || '';
   } else if (track.youtubeId) {
     const cached = audioCache.find(e => e.id === track.youtubeId);
-    if (cached?.filepath) streamUrl = `/api/cache/stream/${encodeURIComponent(track.youtubeId)}`;
+    if (cached?.filepath) {
+      streamUrl = `/api/cache/stream/${encodeURIComponent(track.youtubeId)}`;
+    }
+  }
+  // When no cache yet, trigger immediate download and temporarily fetch a stream URL
+  if (!streamUrl && track.youtubeId && (track._source === 'invidious' || track._source === 'piped')) {
+    try {
+      const host = `http://127.0.0.1:${PORT}`;
+      // Trigger cache download in background (won't block playback)
+      fetch(`${host}/api/cache/download`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: track.youtubeId, title: track.title, artist: track.artist, _source: track._source || '', _instance: track._instance || '' })
+      }).catch(() => {});
+      // Meanwhile, fetch a temporary stream URL from video info
+      const viRes = await fetch(`${host}/api/piped/streams?videoId=${encodeURIComponent(track.youtubeId)}`, { signal: AbortSignal.timeout(8000) });
+      if (viRes.ok) {
+        const vi = await viRes.json();
+        if (vi.audioStreams?.length) {
+          streamUrl = vi.audioStreams[0].url;
+          log('Playback', `Stream fallback: ${track.youtubeId}`);
+        }
+      }
+    } catch (e) { log('Playback', `Stream fallback failed: ${e.message}`); }
   }
 
   log('Playback', `▶ ${track.title} (track ${sharedState.trackIndex + 1}/${sharedState.queue.length})`);
@@ -242,7 +279,7 @@ async function advanceTrack() {
   if (sseClients.size === 0) {
     const dur = (track.duration && Number.isFinite(track.duration) && track.duration > 0) ? track.duration : 0;
     if (dur > 5) {
-      const fadeSec = 8;
+      const fadeSec = Math.min(config.crossfadeSeconds || 3, 8);
       const advIn = Math.max(1, dur - fadeSec) * 1000;
       playbackTimer = setTimeout(async () => {
         await preCacheNextTrack();
@@ -612,8 +649,7 @@ const SEARCH_HANDLERS = {
   invidious: async (q) => { for (const inst of getHealthy(invidiousInstances())) { try { const s=Date.now(), r=await fetch(`${inst}/api/v1/search?q=${encodeURIComponent(q)}&type=video`,{signal:AbortSignal.timeout(9000),headers:musicHeaders()}); if(!r.ok){markInst(inst,false);continue;} const d=await r.json(); markInst(inst,true,Date.now()-s); if(Array.isArray(d)&&d.length>0){ const vids = d.filter(i => (i.type === 'video' || i.lengthSeconds) && (i.videoId || i.video_id)); const rows = (vids.length ? vids : d).slice(0, 8); if(rows.length>0){log('Search', `Invidious ${inst}: ${rows.length}`); return rows.slice(0,5).map(i=>({videoId:i.videoId||i.video_id||'',title:i.title||i.videoId||'Unknown',author:i.author||i.authorName||i.uploaderName||i.authorId||'Unknown',lengthSeconds:normalizeTrackDurationSeconds(i.lengthSeconds, null),_source:'invidious'}));}} } catch(e){markInst(inst,false);} } return null; },
   piped: async (q) => { for (const inst of getHealthy(SOURCES.piped)) { try { const r=await fetch(`${inst}/search?q=${encodeURIComponent(q)}&filter=videos`,{signal:AbortSignal.timeout(9000),headers:musicHeaders()}); if(!r.ok){markInst(inst,false);continue;} const d=await r.json(); markInst(inst,true); const raw = d.items || []; const items = raw.filter(i => { const ty = (i.type || '').toLowerCase(); return ty === 'stream' || ty === 'video' || (!!i.url && (ty === '' || ty === 'scheduledstream')); }).slice(0, 8); const mapped = items.map(i => { let vid = i.videoId || ''; if (!vid && i.url) { const m = String(i.url).match(/[?&]v=([^&]+)/); if (m) vid = m[1]; else if (String(i.url).startsWith('/watch?v=')) vid = i.url.replace('/watch?v=', '').split('&')[0]; } return { ...i, _vid: vid }; }).filter(i => i._vid); if (mapped.length > 0) { log('Search', `Piped ${inst}: ${mapped.length}`); return mapped.slice(0, 5).map(i => ({ videoId: i._vid, title: i.title || 'Unknown', author: i.uploaderName || i.uploader || i.author || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(i.duration, null), _source: 'piped' })); } } catch(e){markInst(inst,false);} } return null; },
   dab: async (q) => { for (const inst of getHealthy(SOURCES.dab)) { for (const qp of ['q', 'query']) { try { const s = Date.now(); const r = await fetch(`${inst}/search?${qp}=${encodeURIComponent(q)}&type=track&limit=5`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() }); if (!r.ok) continue; const ct = r.headers.get('content-type') || ''; if (!ct.includes('json')) continue; const d = await r.json(); const tracks = d.tracks || d.results || (Array.isArray(d) ? d : []); if (tracks.length > 0) { markInst(inst, true, Date.now() - s); const mapped = tracks.slice(0, 5).map(t => ({ videoId: t.id || t.trackId || '', title: t.title || t.name || 'Unknown', author: (typeof t.artist === 'object' ? t.artist?.name : t.artist) || t.artistName || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(t.duration, t.duration_ms || t.durationMs), artwork: (typeof t.album === 'object' ? t.album?.cover : null) || t.albumCover || t.cover || '', _source: 'dab', _instance: inst })); log('Search', `DAB ${inst} (${qp}=): ${tracks.length}`); return mapped; } markInst(inst, true, Date.now() - s); } catch (e) { markInst(inst, false); } } } return null; },
-  jamendo: async (q) => { if (config.jamendoClientId) { try { const r = await fetch(`https://api.jamendo.com/v3.1/tracks/?client_id=${encodeURIComponent(config.jamendoClientId)}&format=json&limit=8&search=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() }); if (r.ok) { const d = await r.json(); const results = d.results || []; if (results.length > 0) { log('Search', `Jamendo: ${results.length}`); return results.slice(0, 5).map(t => ({ videoId: `jamendo:${t.id}`, title: t.name || 'Unknown', author: t.artist_name || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(parseFloat(t.duration), null) || 0, artwork: t.image || t.album_image || '', _source: 'jamendo', _instance: 'https://api.jamendo.com/v3.1' })); } } } catch(e) {} } return null; },
-  hifi: async (q) => { for (const inst of getHealthy(SOURCES.hifi)) { try { const s = Date.now(); const r = await fetch(`${inst}/search?q=${encodeURIComponent(q)}&type=track&limit=5`, { signal: AbortSignal.timeout(10000), headers: musicHeaders() }); if (!r.ok) { markInst(inst, false); continue; } const d = await r.json(); markInst(inst, true, Date.now() - s); const tracks=d.tracks||d.items||d.data?.tracks||(Array.isArray(d)?d:[]); if(tracks.length>0){log('Search', `HiFi ${inst}: ${tracks.length}`); return tracks.slice(0,5).map(t=>({videoId:t.id||t.trackId||t.track_id||'',title:t.title||t.name||'Unknown',author:(typeof t.artist==='object'?t.artist?.name:t.artist)||t.artists?.[0]?.name||t.artistName||'Unknown',lengthSeconds:normalizeTrackDurationSeconds(t.duration, t.duration_ms||t.durationMs),_source:'hifi',_instance:inst}));} } catch(e){markInst(inst,false);} } return null; }
+  jamendo: async (q) => { if (config.jamendoClientId) { try { const r = await fetch(`https://api.jamendo.com/v3.1/tracks/?client_id=${encodeURIComponent(config.jamendoClientId)}&format=json&limit=8&search=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() }); if (r.ok) { const d = await r.json(); const results = d.results || []; if (results.length > 0) { log('Search', `Jamendo: ${results.length}`); return results.slice(0, 5).map(t => ({ videoId: `jamendo:${t.id}`, title: t.name || 'Unknown', author: t.artist_name || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(parseFloat(t.duration), null) || 0, artwork: t.image || t.album_image || '', _source: 'jamendo', _instance: 'https://api.jamendo.com/v3.1' })); } } } catch(e) {} } return null; }
 };
 
 /** Filter out YouTube -Topic channels from search results */
@@ -832,11 +868,6 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
           if(ct.includes('json')){const d=await r.json(); streamUrl=d.streamUrl||d.url; src='dab';}
         }
       } catch(e){log('Cache', `DAB ${_instance}: ${e.message}`);}
-    }
-
-    // HiFi direct download
-    if(!streamUrl&&_source==='hifi'&&_instance) {
-      try { const r=await fetch(`${_instance}/track/?id=${encodeURIComponent(videoId)}&quality=LOSSLESS`,{signal:AbortSignal.timeout(10000),headers:musicHeaders()}); if(r.ok){const d=await r.json(); streamUrl=d.url||d.download_url; src='hifi';} } catch(e){}
     }
 
     // Jamendo (namespaced id jamendo:TRACKID)
@@ -1130,6 +1161,25 @@ app.get('/api/rss', async (req, res) => {
   }
 });
 
+// ─── Geolocate ─────────────────────────────────────────────────────────────────
+app.get('/api/geolocate', async (req, res) => {
+  try {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
+    // Try ip-api.com (free tier, no key needed)
+    const geo = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,countryCode,city,regionName,lat,lon,org,isp,query`, { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => ({}));
+    if (geo.status === 'success') {
+      res.json({
+        ip: geo.query, city: geo.city, region: geo.regionName, country: geo.country, countryCode: geo.countryCode,
+        lat: geo.lat, lon: geo.lon, org: geo.org, isp: geo.isp
+      });
+    } else {
+      res.json({ ip, error: 'geolocation failed' });
+    }
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 // ─── Song Verification ──────────────────────────────────────────────────────────
 const LYRICS_SIMILARITY_THRESHOLD = 0.7;
 
@@ -1234,8 +1284,17 @@ function loadQueueFromDisk() {
   try {
     if (fs.existsSync(QUEUE_FILE)) {
       const raw = JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf8'));
-      if (Array.isArray(raw)) return { queue: raw, trackIndex: -1 }; // legacy format
-      if (Array.isArray(raw.queue)) return { queue: raw.queue, trackIndex: typeof raw.trackIndex === 'number' ? raw.trackIndex : -1 };
+      // Legacy format: queue was a flat array
+      if (Array.isArray(raw)) {
+        raw.forEach(t => { if (t.duration && Number.isFinite(t.duration) && t.duration > MAX_REASONABLE_TRACK_SEC) t.duration = MAX_REASONABLE_TRACK_SEC; });
+        return { queue: raw, trackIndex: -1 };
+      }
+      if (Array.isArray(raw.queue)) {
+        raw.queue.forEach(t => {
+          if (t.duration && Number.isFinite(t.duration) && t.duration > MAX_REASONABLE_TRACK_SEC) t.duration = MAX_REASONABLE_TRACK_SEC;
+        });
+        return { queue: raw.queue, trackIndex: typeof raw.trackIndex === 'number' ? raw.trackIndex : -1 };
+      }
     }
   } catch (e) { log('Queue', 'Load error: ' + e.message); }
   return { queue: [], trackIndex: -1 };
@@ -1244,6 +1303,14 @@ function loadQueueFromDisk() {
 const loaded = loadQueueFromDisk();
 sharedState.queue = loaded.queue;
 sharedState.trackIndex = loaded.trackIndex;
+// Auto-start if queue has tracks (resume from where we left off)
+if (sharedState.queue.length > 0) {
+  setImmediate(async () => {
+    log('Playback', `Auto-starting from disk queue (${sharedState.queue.length} tracks, index=${sharedState.trackIndex})`);
+    const result = await startPlayback();
+    if (result.error) log('Playback', `Auto-start failed: ${result.error}`);
+  });
+}
 
 app.get('/api/queue', (req, res) => res.json({ queue: sharedState.queue, trackIndex: sharedState.trackIndex }));
 
@@ -1251,6 +1318,8 @@ app.post('/api/queue', (req, res) => {
   const { queue, trackIndex } = req.body;
   if (Array.isArray(queue)) {
     let safe = queue.map(t => {
+      // Normalize duration on save — cap to 600s
+      if (t.duration && Number.isFinite(t.duration) && t.duration > 600) t.duration = Math.min(t.duration, MAX_REASONABLE_TRACK_SEC);
       if (t.type === 'local') return { ...t, filepath: undefined };
       return t;
     });
@@ -1261,6 +1330,13 @@ app.post('/api/queue', (req, res) => {
     if (typeof trackIndex === 'number') sharedState.trackIndex = trackIndex;
     saveQueueToDisk(safe);
     broadcastState();
+    // Auto-start if session is idle and we have tracks
+    if (!sharedState.sessionActive && safe.length > 0) {
+      setImmediate(async () => {
+        log('Playback', 'Auto-starting from queue update');
+        await startPlayback();
+      });
+    }
     res.json({ ok: true, count: safe.length });
   } else {
     res.status(400).json({ error: 'Invalid queue' });
@@ -1419,6 +1495,7 @@ app.post('/api/nowplaying/clear', (req, res) => {
 app.get('/', (req, res) => res.redirect('/dj'));
 app.get('/dj', (req, res) => res.sendFile(path.join(__dirname, 'dj.html')));
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'display.html')));
+app.get('/display/nano', (req, res) => res.sendFile(path.join(__dirname, 'nano.html')));
 
 const server = app.listen(PORT, () => {
   console.log(`\n🎧 AutoDJ v5.0.0 — http://localhost:${PORT}`);
