@@ -391,7 +391,31 @@ function seekRelayToBaseline() {
 }
 
 relayAudio.addEventListener('ended', () => {
+  // Only advance if we're actually near the end of the song (85%+)
+  // Otherwise the stream likely failed mid-track — don't skip ahead
+  const np = state.nowPlaying;
+  if (np && np.duration > 0) {
+    const sinceUpdate = (Date.now() - baseTime) / 1000;
+    const interpolatedElapsed = baseElapsed + sinceUpdate;
+    if (interpolatedElapsed < np.duration * 0.85) {
+      console.warn('[AutoDJ][relay] ended event at ' + fmt(interpolatedElapsed) + ' — stream failed mid-track, re-seeking');
+      relayNeedsSeek = true;
+      seekRelayToBaseline();
+      if (state.isPlaying) relayAudio.play().catch(() => {});
+      return;
+    }
+  }
   fetch('/api/playback/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'ended' }) }).catch(() => {});
+});
+relayAudio.addEventListener('error', () => {
+  console.warn('[AutoDJ][relay] stream error — will retry');
+  // Trigger a seek reload to try again
+  if (state.isPlaying && currentStreamUrl) {
+    setTimeout(() => {
+      relayAudio.load();
+      relayAudio.play().catch(() => {});
+    }, 2000);
+  }
 });
 relayAudio.addEventListener('loadedmetadata', () => {
   if (audioEnabled && state.isPlaying) seekRelayToBaseline();

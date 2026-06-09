@@ -95,50 +95,90 @@ body { display: flex; align-items: center; justify-content: center; }
 <script>
 let ns = { title: '—', artist: '—', album: '', artwork: '', elapsed: 0, duration: 0, isPlaying: false, youtubeId: null };
 let lrcLines = [];
+// Elapsed interpolation
+let nanoBaseElapsed = 0, nanoBaseTime = 0, nanoPrevTrack = '';
 
 function fmt(s) { if(!s||isNaN(s)||s<0)return'0:00'; const sec=Math.round(s); if(sec<=0)return'0:00'; const m=Math.floor(sec/60), ss=sec%60; return m>=60?`${Math.floor(m/60)}:${(m%60).toString().padStart(2,'0')}:${ss.toString().padStart(2,'0')}`:`${m}:${ss.toString().padStart(2,'0')}`; }
 
 // SSE
-const evt = new EventSource('/api/sse');
+const evt = new EventSource('/api/nowplaying/stream');
 evt.onmessage = e => {
   try {
     const d = JSON.parse(e.data);
     const np = d.nowPlaying || {};
+    const trackId = np.youtubeId || np.title || '';
+    const isNewTrack = trackId && trackId !== nanoPrevTrack;
+
+    if (isNewTrack) {
+      nanoPrevTrack = trackId;
+      nanoBaseElapsed = np.elapsed || 0;
+      nanoBaseTime = Date.now();
+      ns.artwork = ''; // force artwork refresh
+      fetchLyrics(np.artist, np.title, np.duration);
+    } else if (np.elapsed !== undefined) {
+      nanoBaseElapsed = np.elapsed;
+      nanoBaseTime = Date.now();
+    }
+
+    // Update metadata
     ns.title = np.title || '—';
     ns.artist = np.artist || '—';
     ns.album = np.album || '';
-    ns.artwork = np.artwork || '';
     ns.elapsed = np.elapsed || 0;
     ns.duration = np.duration || 0;
     ns.youtubeId = np.youtubeId || null;
+
     document.getElementById('nano-title').textContent = ns.title;
     document.getElementById('nano-artist').textContent = ns.artist;
     document.getElementById('nano-album').textContent = ns.album;
-    if (ns.artwork) {
-      document.getElementById('nano-art-img').src = ns.artwork;
-      document.getElementById('nano-art-img').style.display = 'block';
-      document.getElementById('nano-art-placeholder').style.display = 'none';
-      document.getElementById('nano-bg').style.backgroundImage = `url(${ns.artwork})`;
-    } else {
-      document.getElementById('nano-art-img').style.display = 'none';
-      document.getElementById('nano-art-placeholder').style.display = 'flex';
-      document.getElementById('nano-bg').style.backgroundImage = '';
+
+    // Artwork with crossfade
+    const artEl = document.getElementById('nano-art-img');
+    const phEl = document.getElementById('nano-art-placeholder');
+    const bgEl = document.getElementById('nano-bg');
+    if (np.artwork && np.artwork !== ns.artwork) {
+      ns.artwork = np.artwork;
+      artEl.src = np.artwork;
+      artEl.style.display = 'block';
+      artEl.style.opacity = '0';
+      setTimeout(() => artEl.style.opacity = '1', 20);
+      phEl.style.display = 'none';
+      if (bgEl) bgEl.style.backgroundImage = `url(${np.artwork})`;
+    } else if (!np.artwork) {
+      artEl.style.display = 'none';
+      phEl.style.display = 'flex';
+      if (bgEl) bgEl.style.backgroundImage = '';
     }
-    if (d.listenerCount !== undefined) document.getElementById('nano-listener-count').textContent = d.listenerCount + (d.listenerCount === 1 ? ' listener' : ' listeners');
-    if (d.command === 'play') { ns.isPlaying = true; document.querySelector('.wheel-play').textContent = '▶'; }
-    if (d.command === 'pause') { ns.isPlaying = false; document.querySelector('.wheel-play').textContent = '‖'; }
-    fetchLyrics(ns.artist, ns.title, ns.duration);
+
+    if (d.listenerCount !== undefined) {
+      document.getElementById('nano-listener-count').textContent = d.listenerCount + (d.listenerCount === 1 ? ' listener' : ' listeners');
+    }
+    ns.isPlaying = d.isPlaying === true;
+    const playBtn = document.querySelector('.wheel-play');
+    if (playBtn) playBtn.textContent = ns.isPlaying ? '▶' : '‖';
   } catch(e) {}
 };
 
-// Elapsed interpolation
+// Progress bar + lyrics updater (every 250ms for smooth animation)
 setInterval(() => {
-  if (ns.duration <= 0) return;
-  const pct = Math.min(99, (ns.elapsed / (ns.duration || 1)) * 100);
-  document.getElementById('nano-prog').style.width = pct + '%';
-  document.getElementById('nano-elapsed').textContent = fmt(ns.elapsed);
-  document.getElementById('nano-remaining').textContent = '-' + fmt(ns.duration - ns.elapsed);
-}, 1000);
+  const drift = (Date.now() - nanoBaseTime) / 1000;
+  const elapsed = Math.min(nanoBaseElapsed + drift, ns.duration || 99999);
+  if (ns.duration > 0) {
+    const pct = Math.min(100, (elapsed / ns.duration) * 100);
+    document.getElementById('nano-prog').style.width = pct + '%';
+    document.getElementById('nano-elapsed').textContent = fmt(Math.max(0, elapsed));
+    document.getElementById('nano-remaining').textContent = '-' + fmt(Math.max(0, ns.duration - elapsed));
+  }
+  // Synced lyrics
+  if (lrcLines.length) {
+    let line = '';
+    for (let i = lrcLines.length - 1; i >= 0; i--) {
+      if (lrcLines[i].time <= elapsed) { line = lrcLines[i].text; break; }
+    }
+    const lyrEl = document.getElementById('nano-lyrics');
+    if (lyrEl && lyrEl.textContent !== line) lyrEl.textContent = line || '';
+  }
+}, 250);
 
 // Clock
 setInterval(() => {
@@ -146,39 +186,38 @@ setInterval(() => {
   document.getElementById('nano-clock').textContent = d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
 }, 10000);
 
-// Lyrics
+// Lyrics fetch (only on track change)
 async function fetchLyrics(artist, title, duration) {
   if (!title) return;
   try {
     const r = await fetch(`/api/lyrics?artist=${encodeURIComponent(artist||'')}&title=${encodeURIComponent(title)}&duration=${duration||0}`);
-    if (!r.ok) { document.getElementById('nano-lyrics').textContent = ''; return; }
+    if (!r.ok) { document.getElementById('nano-lyrics').textContent = ''; lrcLines = []; return; }
     const d = await r.json();
     if (d.synced && d.synced.length) {
       lrcLines = d.synced;
-      updateLyrics(0);
     } else if (d.plain) {
-      document.getElementById('nano-lyrics').textContent = d.plain.split('\n')[0] || '';
+      document.getElementById('nano-lyrics').textContent = d.plain.split('\\n')[0] || '';
+      lrcLines = [];
     } else {
       document.getElementById('nano-lyrics').textContent = '';
+      lrcLines = [];
     }
-  } catch(e) {}
-}
-
-function updateLyrics(elapsed) {
-  if (!lrcLines.length) return;
-  let line = '';
-  for (let i = lrcLines.length - 1; i >= 0; i--) {
-    if (lrcLines[i].time <= elapsed) { line = lrcLines[i].text; break; }
-  }
-  document.getElementById('nano-lyrics').textContent = line || '';
+  } catch(e) { lrcLines = []; }
 }
 
 // Actions
 function togglePlayPause() {
   fetch('/api/playback/' + (ns.isPlaying ? 'pause' : 'resume'), { method: 'POST' }).catch(()=>{});
 }
-function nextTrack() { fetch('/api/queue/next', { method: 'POST' }).catch(()=>{}); }
-function prevTrack() { fetch('/api/queue/prev', { method: 'POST' }).catch(()=>{}); }
+function nextTrack() { fetch('/api/playback/next', { method: 'POST' }).catch(()=>{}); }
+function prevTrack() { fetch('/api/playback/prev', { method: 'POST' }).catch(()=>{}); }
+
+// Keyboard support
+document.addEventListener('keydown', e => {
+  if (e.key === ' ') { e.preventDefault(); togglePlayPause(); }
+  if (e.key === 'ArrowRight') { nextTrack(); }
+  if (e.key === 'ArrowLeft') { prevTrack(); }
+});
 </script>
 </body>
 </html>
