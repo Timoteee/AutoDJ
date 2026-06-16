@@ -1,7 +1,7 @@
 {
   "name": "autodj",
-  "version": "5.0.0",
-  "description": "AutoDJ — Web DJ console with AI queuing, crossfading, lyrics display, Invidious/Piped/DAB/Jamendo support",
+  "version": "6.0.0",
+  "description": "AutoDJ v6 — Web DJ console with AI queuing, crossfading, lyrics display, Invidious/Piped/DAB/Jamendo/Spotify support, Signal & Flow design",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -24,6 +24,9 @@ function log(tag, ...args) {
 }
 
 const MAX_REASONABLE_TRACK_SEC = 600; // 10 min max for a music track
+const DOWNLOAD_TIMEOUT_MS = 90000; // 90s default download timeout
+const METUBE_WAIT_TIMEOUT_MS = 120000; // 2 min MeTube wait
+const FAILED_RETRY_MS = 30 * 60 * 1000; // 30 min cooldown before retry
 /** Normalize a possibly-millisecond duration to seconds, clamped to MAX_REASONABLE_TRACK_SEC. */
 /** Parse various duration formats to seconds. Handles MM:SS, HH:MM:SS, ms, and raw seconds. */
 function parseDurationToSeconds(raw) {
@@ -125,40 +128,81 @@ function cleanCache() {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const CONFIG_FILE = path.join(__dirname, 'config.json');
-let config = {
-  lastfmKey: process.env.LASTFM_API_KEY || '',
-  jamendoClientId: process.env.JAMENDO_CLIENT_ID || '',
-  spotifyClientId: process.env.SPOTIFY_CLIENT_ID || '',
-  spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
-  openaiKey: process.env.OPENAI_API_KEY || '',
-  anthropicKey: process.env.ANTHROPIC_API_KEY || '',
-  opencodeKey: process.env.OPENCODE_API_KEY || '',
-  opencodeBaseUrl: process.env.OPENCODE_BASE_URL || '',
-  opencodeModel: 'opencode-model',
-  openrouterKey: process.env.OPENROUTER_API_KEY || '',
-  openrouterBaseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-  openrouterModel: 'openrouter/auto',
-  aiProvider: 'anthropic',
-  musicDirs: process.env.MUSIC_DIR ? [process.env.MUSIC_DIR] : [path.join(__dirname, 'music')],
-  messages: ["🎵 Vibes are immaculate tonight","🔊 AutoDJ is live","🎧 Peak vibes engaged","💿 Hand-selected by algorithms","🕺 You should be dancing right now","🎶 This song is better loud","🌊 Riding the wave"],
-  /** Optional: [{ name, searchUrlTemplate, streamUrlTemplate }] — operators must configure URLs they are entitled to use. */
-  squidProxies: [],
-  invidiousRedirector: '',
-  metubeFirst: true,
-  preDownloadCount: 5,
-  maxConcurrentDownloads: 3,
-  maxTrackMinutes: 0,
-  fadeAtPercent: 80,
-  sourcePriority: [],
-  tempFileRetentionHours: 1,
-  rssFeedUrl: '',
-  marqueeMode: 'rss',
-  filterTopicChannels: true,
-  sessionDuration: 0,
-  queueLimit: 0
-};
-if (fs.existsSync(CONFIG_FILE)) { try { Object.assign(config, JSON.parse(fs.readFileSync(CONFIG_FILE,'utf8'))); } catch(e) { log('Config', `WARNING: Failed to parse config.json — ${e.message}. Using defaults.`); } }
-if (!Array.isArray(config.squidProxies)) config.squidProxies = [];
+const CONFIG_BACKUP_FILE = path.join(__dirname, 'config.backup.json');
+
+function loadConfig() {
+  const defaults = {
+    lastfmKey: process.env.LASTFM_API_KEY || '',
+    jamendoClientId: process.env.JAMENDO_CLIENT_ID || '',
+    spotifyClientId: process.env.SPOTIFY_CLIENT_ID || '',
+    spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
+    openaiKey: process.env.OPENAI_API_KEY || '',
+    anthropicKey: process.env.ANTHROPIC_API_KEY || '',
+    opencodeKey: process.env.OPENCODE_API_KEY || '',
+    opencodeBaseUrl: process.env.OPENCODE_BASE_URL || '',
+    opencodeModel: 'opencode-model',
+    openrouterKey: process.env.OPENROUTER_API_KEY || '',
+    openrouterBaseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+    openrouterModel: 'openrouter/auto',
+    aiProvider: 'anthropic',
+    musicDirs: process.env.MUSIC_DIR ? [process.env.MUSIC_DIR] : [path.join(__dirname, 'music')],
+    messages: ["🎵 Vibes are immaculate tonight","🔊 AutoDJ is live","🎧 Peak vibes engaged","💿 Hand-selected by algorithms","🕺 You should be dancing right now","🎶 This song is better loud","🌊 Riding the wave"],
+    /** Optional: [{ name, searchUrlTemplate, streamUrlTemplate }] — operators must configure URLs they are entitled to use. */
+    squidProxies: [],
+    invidiousRedirector: '',
+    metubeFirst: true,
+    preDownloadCount: 5,
+    maxConcurrentDownloads: 3,
+    maxTrackMinutes: 0,
+    fadeAtPercent: 80,
+    crossfadeSeconds: 3,
+    sourcePriority: [],
+    tempFileRetentionHours: 1,
+    rssFeedUrl: '',
+    marqueeMode: 'rss',
+    filterTopicChannels: true,
+    sessionDuration: 0,
+    queueLimit: 0
+  };
+  // Try primary file first
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      // Atomic: only assign if parse succeeds — never partially modify
+      Object.assign(defaults, parsed);
+      log('Config', 'Loaded config.json');
+    } catch (e) {
+      log('Config', `WARNING: Failed to parse config.json — ${e.message}. Trying backup...`);
+      // Try backup file
+      if (fs.existsSync(CONFIG_BACKUP_FILE)) {
+        try {
+          const raw = fs.readFileSync(CONFIG_BACKUP_FILE, 'utf8');
+          const parsed = JSON.parse(raw);
+          Object.assign(defaults, parsed);
+          log('Config', 'Recovered from config.backup.json');
+        } catch (e2) {
+          log('Config', `Backup also corrupt: ${e2.message}. Using defaults.`);
+        }
+      } else {
+        log('Config', 'No backup found. Using defaults.');
+      }
+    }
+  } else if (fs.existsSync(CONFIG_BACKUP_FILE)) {
+    try {
+      const raw = fs.readFileSync(CONFIG_BACKUP_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      Object.assign(defaults, parsed);
+      log('Config', 'Loaded from config.backup.json (primary missing)');
+    } catch (e) {
+      log('Config', `Backup parse failed: ${e.message}. Using defaults.`);
+    }
+  }
+  if (!Array.isArray(defaults.squidProxies)) defaults.squidProxies = [];
+  return defaults;
+}
+let config = loadConfig();
+
 // Auto-set default RSS feed from geolocation if none configured
 if (!config.rssFeedUrl) {
   (async () => {
@@ -174,7 +218,17 @@ if (!config.rssFeedUrl) {
     } catch(e) { log('Config', `Geo RSS auto-set failed: ${e.message}`); }
   })();
 }
-function saveConfig() { fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2)); }
+function saveConfig() {
+  // Write to backup first, then atomically rename primary
+  const tmp = CONFIG_FILE + '.tmp';
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(config, null, 2));
+    fs.writeFileSync(CONFIG_BACKUP_FILE, JSON.stringify(config, null, 2));
+    fs.renameSync(tmp, CONFIG_FILE);
+  } catch (e) {
+    log('Config', `Save error: ${e.message}`);
+  }
+}
 
 /** Safe on-disk filename for cache entries (preserves logical id in audioCache[].id). */
 function safeCacheBasename(id) { return String(id).replace(/[^a-zA-Z0-9._-]/g, '_'); }
@@ -279,7 +333,7 @@ async function advanceTrack() {
   if (sseClients.size === 0) {
     const dur = (track.duration && Number.isFinite(track.duration) && track.duration > 0) ? track.duration : 0;
     if (dur > 5) {
-      const fadeSec = Math.min(config.crossfadeSeconds || 3, 8);
+      const fadeSec = Math.min(Math.max(1, config.crossfadeSeconds || 3), 10);
       const advIn = Math.max(1, dur - fadeSec) * 1000;
       playbackTimer = setTimeout(async () => {
         await preCacheNextTrack();
@@ -384,13 +438,14 @@ app.get('/api/config', (req, res) => res.json({
   maxConcurrentDownloads: config.maxConcurrentDownloads || 3,
   maxTrackMinutes: config.maxTrackMinutes || 0,
   fadeAtPercent: config.fadeAtPercent || 80,
+  crossfadeSeconds: Math.max(1, config.crossfadeSeconds || 3),
   sourcePriority: Array.isArray(config.sourcePriority) ? config.sourcePriority : [],
   tempFileRetentionHours: config.tempFileRetentionHours || 1,
   rssFeedUrl: config.rssFeedUrl || '',
   marqueeMode: config.marqueeMode || 'rss',
   filterTopicChannels: config.filterTopicChannels !== false
 }));
-app.post('/api/config', (req, res) => {
+app.post('/api/config', rateLimit(20), (req, res) => {
   const b = req.body;
   if (b.lastfmKey && !b.lastfmKey.includes('●')) config.lastfmKey = b.lastfmKey;
   if (b.jamendoClientId !== undefined && !String(b.jamendoClientId).includes('●')) config.jamendoClientId = String(b.jamendoClientId).trim();
@@ -419,6 +474,7 @@ app.post('/api/config', (req, res) => {
   if (b.maxConcurrentDownloads !== undefined) config.maxConcurrentDownloads = Math.max(1, Math.min(10, parseInt(b.maxConcurrentDownloads) || 3));
   if (b.maxTrackMinutes !== undefined) config.maxTrackMinutes = Math.max(0, parseInt(b.maxTrackMinutes) || 0);
   if (b.fadeAtPercent !== undefined) config.fadeAtPercent = Math.max(10, Math.min(100, parseInt(b.fadeAtPercent) || 80));
+  if (b.crossfadeSeconds !== undefined) config.crossfadeSeconds = Math.max(1, Math.min(10, parseInt(b.crossfadeSeconds) || 3));
   if (b.sourcePriority !== undefined && Array.isArray(b.sourcePriority)) config.sourcePriority = b.sourcePriority;
   if (b.tempFileRetentionHours !== undefined) config.tempFileRetentionHours = Math.max(1, parseInt(b.tempFileRetentionHours) || 1);
   if (b.rssFeedUrl !== undefined) { config.rssFeedUrl = String(b.rssFeedUrl || '').trim(); sharedState.config.rssFeedUrl = config.rssFeedUrl; }
@@ -606,7 +662,7 @@ async function metubeAddAndWaitFile(videoId) {
     log('Cache', `MeTube /add returned error for ${videoId}: ${addBody.error}`);
     return null;
   }
-  const deadline = Date.now() + 120000; // 2 min max wait (down from 3.3 min)
+  const deadline = Date.now() + METUBE_WAIT_TIMEOUT_MS; // configured max wait
   while (Date.now() < deadline) {
     const candidates = [];
     walkMetubeCandidates(METUBE_DOWNLOADS_DIR, prefix, started - 5000, candidates);
@@ -683,6 +739,101 @@ app.get('/api/youtube/search', rateLimit(30), async (req, res) => {
   return res.json([]);
 });
 
+// ─── Discovery / Trending ─────────────────────────────────────────────────────
+app.get('/api/discovery/trending', rateLimit(10), async (req, res) => {
+  try {
+    // Aggregated trending from available sources
+    const results = [];
+    // Try Jamendo trending first
+    if (config.jamendoClientId) {
+      try {
+        const r = await fetch(`https://api.jamendo.com/v3.1/tracks/?client_id=${encodeURIComponent(config.jamendoClientId)}&format=json&limit=8&order=popularity_week&include=musicinfo`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() });
+        if (r.ok) {
+          const d = await r.json();
+          const tracks = (d.results || []).slice(0, 5).map(t => ({
+            videoId: `jamendo:${t.id}`,
+            title: t.name || 'Unknown',
+            artist: t.artist_name || 'Unknown',
+            duration: normalizeTrackDurationSeconds(parseFloat(t.duration), null) || 0,
+            artwork: t.image || t.album_image || '',
+            _source: 'jamendo',
+            genre: (t.musicinfo?.tags || []).slice(0, 3)
+          }));
+          results.push(...tracks);
+        }
+      } catch (e) { log('Discovery', `Jamendo trending: ${e.message}`); }
+    }
+    res.json({ tracks: results.slice(0, 10), source: 'trending' });
+  } catch (e) {
+    res.status(500).json({ error: e.message, tracks: [] });
+  }
+});
+
+app.get('/api/discovery/seeds', (req, res) => {
+  // Return seed genres/artists from config for discovery UI
+  const seeds = {
+    genres: [],
+    artists: [],
+    tags: []
+  };
+  // Extract from sourcePriority or any configured seed data
+  if (Array.isArray(config.sourcePriority)) {
+    seeds.genres.push(...config.sourcePriority.filter(s => !['metube','invidious','piped','dab','jamendo','squid'].includes(s)));
+  }
+  // Return available genres from config or defaults
+  res.json({ seeds, defaultGenres: ['electronic','rock','jazz','classical','hip-hop','ambient','pop','folk','blues','reggae','metal','country','latin','rnb','punk','soul','funk','indie','alternative','dance'] });
+});
+
+app.get('/api/discovery/recommendations', rateLimit(15), async (req, res) => {
+  const { seed, genre, mood, count } = req.query;
+  const limit = Math.min(parseInt(count) || 8, 20);
+  // Try AI-powered recommendation if available
+  const hasAI = !!(config.anthropicKey || config.openaiKey || config.opencodeKey || config.openrouterKey);
+  if (hasAI && (seed || genre)) {
+    const prompt = `You are a music recommendation engine. Recommend ${limit} songs based on: ${seed || genre}${mood ? `, mood: ${mood}` : ''}.
+Respond ONLY with a JSON array: [{"title":string,"artist":string,"genre":string,"reason":string}]`;
+    try {
+      if (config.aiProvider === 'anthropic' && config.anthropicKey) {
+        const r = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'x-api-key': config.anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+          body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, messages: [{ role: 'user', content: prompt }] })
+        });
+        const d = await r.json();
+        const text = (d.content?.[0]?.text || '[]').replace(/```json|```/g, '').trim();
+        try { const recommendations = JSON.parse(text); return res.json({ recommendations, source: 'ai' }); } catch (_) {}
+      }
+      // Fallback to openrouter or other providers
+      if (config.aiProvider === 'openrouter' && config.openrouterKey) {
+        const base = (config.openrouterBaseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+        const r = await fetch(`${base}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${config.openrouterKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://github.com/Timoteee/AutoDJ', 'X-Title': 'AutoDJ' },
+          body: JSON.stringify({ model: config.openrouterModel || 'openrouter/auto', messages: [{ role: 'user', content: prompt }] })
+        });
+        const d = await r.json();
+        const text = (d.choices?.[0]?.message?.content || '[]').replace(/```json|```/g, '').trim();
+        try { const recommendations = JSON.parse(text); return res.json({ recommendations, source: 'ai' }); } catch (_) {}
+      }
+    } catch (e) { log('Discovery', `AI recommendation error: ${e.message}`); }
+  }
+  // Fallback: search for seed term across sources
+  if (seed) {
+    try {
+      const order = sourcePriority().filter(s => s !== 'metube' && s !== 'squid');
+      for (const key of order) {
+        if (SEARCH_HANDLERS[key]) {
+          const result = await SEARCH_HANDLERS[key](seed);
+          if (result && result.length > 0) {
+            return res.json({ recommendations: result.slice(0, limit), source: key });
+          }
+        }
+      }
+    } catch (e) { log('Discovery', `Search fallback error: ${e.message}`); }
+  }
+  res.json({ recommendations: [], source: 'none' });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  STREAM RESOLUTION + DOWNLOAD CACHE
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -750,7 +901,6 @@ const downloadingIds = new Set();
 
 // Track permanently-failed videoIds so we don't waste time retrying.
 const failedIds = new Set();
-const FAILED_RETRY_MS = 30 * 60 * 1000; // 30 min cooldown before retry
 
 /** Check if a downloaded file contains valid audio (not HTML/error placeholder). */
 function isValidAudioFile(filepath) {
@@ -897,7 +1047,7 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
 
     // Download using pipeline (safe, no memory leaks)
     log('Cache', `Fetching from ${src}: ${streamUrl.slice(0, 80)}...`);
-    const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(),90000);
+    const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(), DOWNLOAD_TIMEOUT_MS);
     try {
       const ar=await fetch(streamUrl,{signal:ctrl.signal,headers:musicHeaders()}); clearTimeout(to);
       if(!ar.ok){await ar.body?.cancel(); downloadingIds.delete(videoId); return res.status(502).json({error:`HTTP ${ar.status}`});}
@@ -1275,28 +1425,44 @@ app.delete('/api/webrtc', webrtcAuth, (req, res) => {
 
 // ─── Persistent Queue ──────────────────────────────────────────────────────────
 const QUEUE_FILE = path.join(__dirname, 'queue.json');
+const QUEUE_BACKUP_FILE = path.join(__dirname, 'queue.backup.json');
 function saveQueueToDisk(queue) {
   try {
-    fs.writeFileSync(QUEUE_FILE, JSON.stringify({ queue, trackIndex: sharedState.trackIndex }, null, 2));
+    const data = JSON.stringify({ queue, trackIndex: sharedState.trackIndex }, null, 2);
+    // Write to backup first, then primary
+    fs.writeFileSync(QUEUE_BACKUP_FILE, data);
+    fs.writeFileSync(QUEUE_FILE, data);
   } catch (e) { log('Queue', 'Save error: ' + e.message); }
 }
 function loadQueueFromDisk() {
-  try {
-    if (fs.existsSync(QUEUE_FILE)) {
-      const raw = JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf8'));
-      // Legacy format: queue was a flat array
-      if (Array.isArray(raw)) {
-        raw.forEach(t => { if (t.duration && Number.isFinite(t.duration) && t.duration > MAX_REASONABLE_TRACK_SEC) t.duration = MAX_REASONABLE_TRACK_SEC; });
-        return { queue: raw, trackIndex: -1 };
+  const tryLoad = (filepath) => {
+    try {
+      if (fs.existsSync(filepath)) {
+        const raw = fs.readFileSync(filepath, 'utf8');
+        const parsed = JSON.parse(raw);
+        // Legacy format: queue was a flat array
+        if (Array.isArray(parsed)) {
+          parsed.forEach(t => { if (t.duration && Number.isFinite(t.duration) && t.duration > MAX_REASONABLE_TRACK_SEC) t.duration = MAX_REASONABLE_TRACK_SEC; });
+          return { queue: parsed, trackIndex: -1 };
+        }
+        if (Array.isArray(parsed.queue)) {
+          parsed.queue.forEach(t => {
+            if (t.duration && Number.isFinite(t.duration) && t.duration > MAX_REASONABLE_TRACK_SEC) t.duration = MAX_REASONABLE_TRACK_SEC;
+          });
+          return { queue: parsed.queue, trackIndex: typeof parsed.trackIndex === 'number' ? parsed.trackIndex : -1 };
+        }
       }
-      if (Array.isArray(raw.queue)) {
-        raw.queue.forEach(t => {
-          if (t.duration && Number.isFinite(t.duration) && t.duration > MAX_REASONABLE_TRACK_SEC) t.duration = MAX_REASONABLE_TRACK_SEC;
-        });
-        return { queue: raw.queue, trackIndex: typeof raw.trackIndex === 'number' ? raw.trackIndex : -1 };
-      }
-    }
-  } catch (e) { log('Queue', 'Load error: ' + e.message); }
+    } catch (e) { log('Queue', `Load error from ${filepath}: ${e.message}`); }
+    return null;
+  };
+  // Try primary first, fall back to backup
+  const primary = tryLoad(QUEUE_FILE);
+  if (primary) return primary;
+  const backup = tryLoad(QUEUE_BACKUP_FILE);
+  if (backup) {
+    log('Queue', 'Recovered from backup queue file');
+    return backup;
+  }
   return { queue: [], trackIndex: -1 };
 }
 // Initialize sharedState from disk on startup
@@ -1314,7 +1480,7 @@ if (sharedState.queue.length > 0) {
 
 app.get('/api/queue', (req, res) => res.json({ queue: sharedState.queue, trackIndex: sharedState.trackIndex }));
 
-app.post('/api/queue', (req, res) => {
+app.post('/api/queue', rateLimit(30), (req, res) => {
   const { queue, trackIndex } = req.body;
   if (Array.isArray(queue)) {
     let safe = queue.map(t => {
@@ -1343,7 +1509,28 @@ app.post('/api/queue', (req, res) => {
   }
 });
 
-app.post('/api/queue/remove/:index', (req, res) => {
+app.post('/api/queue/reorder', rateLimit(30), (req, res) => {
+  const { from, to } = req.body;
+  if (typeof from !== 'number' || typeof to !== 'number') return res.status(400).json({ error: 'Invalid from/to indices' });
+  const q = sharedState.queue;
+  if (from < 0 || from >= q.length || to < 0 || to >= q.length) return res.status(400).json({ error: 'Index out of bounds' });
+  if (from === to) return res.json({ ok: true });
+  const [moved] = q.splice(from, 1);
+  q.splice(to, 0, moved);
+  // Adjust trackIndex if needed
+  if (from === sharedState.trackIndex) {
+    sharedState.trackIndex = to;
+  } else if (from < sharedState.trackIndex && to >= sharedState.trackIndex) {
+    sharedState.trackIndex--;
+  } else if (from > sharedState.trackIndex && to <= sharedState.trackIndex) {
+    sharedState.trackIndex++;
+  }
+  saveQueueToDisk(q);
+  broadcastState();
+  log('Queue', `Reordered: idx ${from} → ${to} (${moved.title})`);
+  res.json({ ok: true });
+});
+app.post('/api/queue/remove/:index', rateLimit(30), (req, res) => {
   const idx = parseInt(req.params.index, 10);
   if (isNaN(idx) || idx < 0 || idx >= sharedState.queue.length) return res.status(400).json({ error: 'Invalid index' });
   const removed = sharedState.queue.splice(idx, 1)[0];
@@ -1354,7 +1541,7 @@ app.post('/api/queue/remove/:index', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/queue/clear', (req, res) => {
+app.post('/api/queue/clear', rateLimit(15), (req, res) => {
   stopPlayback();
   sharedState.queue = [];
   sharedState.playedIds = [];
@@ -1365,15 +1552,15 @@ app.post('/api/queue/clear', (req, res) => {
 });
 
 // ─── Playback Control ─────────────────────────────────────────────────────────
-app.post('/api/playback/start', async (req, res) => {
+app.post('/api/playback/start', rateLimit(20), async (req, res) => {
   const result = await startPlayback();
   res.json(result);
 });
-app.post('/api/playback/stop', (req, res) => {
+app.post('/api/playback/stop', rateLimit(20), (req, res) => {
   stopPlayback();
   res.json({ ok: true });
 });
-app.post('/api/playback/next', async (req, res) => {
+app.post('/api/playback/next', rateLimit(30), async (req, res) => {
   clearPlaybackTimer();
   const { trackIndex } = req.body || {};
   if (typeof trackIndex === 'number' && trackIndex >= 0 && trackIndex < sharedState.queue.length) {
@@ -1404,7 +1591,7 @@ app.post('/api/playback/next', async (req, res) => {
   }
   res.json({ ok: true });
 });
-app.post('/api/playback/event', async (req, res) => {
+app.post('/api/playback/event', rateLimit(30), async (req, res) => {
   const { type } = req.body || {};
   if (type === 'ended') {
     clearPlaybackTimer();
@@ -1419,13 +1606,132 @@ function prunePlayedIds() {
     sharedState.playedIds = sharedState.playedIds.slice(-MAX_PLAYED_IDS);
   }
 }
-app.post('/api/playback/played', (req, res) => {
+app.post('/api/playback/played', rateLimit(30), (req, res) => {
   const { videoId } = req.body || {};
   if (videoId && !sharedState.playedIds.includes(videoId)) {
     sharedState.playedIds.push(videoId);
     prunePlayedIds();
   }
   res.json({ ok: true, playedCount: sharedState.playedIds.length });
+});
+
+// ─── Track Info ──────────────────────────────────────────────────────────────────
+app.post('/api/playback/trackinfo', async (req, res) => {
+  const { videoId, youtubeId, title, artist } = req.body || {};
+  const id = videoId || youtubeId;
+  if (!id) return res.status(400).json({ error: 'Missing track ID' });
+  let info = { title: title || '', artist: artist || '', duration: 0, artwork: '', album: '', tags: [], source: '', cached: false };
+  // Check cache
+  const cached = audioCache.find(e => e.id === id);
+  if (cached) {
+    info.cached = true;
+    info.source = cached.source || '';
+    info.duration = 0; // We don't store duration in cache, fetch externally
+  }
+  // Try to get detailed info from Piped/Invidious for YouTube IDs
+  if (!String(id).startsWith('jamendo:') && !String(id).startsWith('squid:') && /^[\w-]{11}$/.test(String(id))) {
+    for (const inst of getHealthy(invidiousInstances())) {
+      try {
+        const r = await fetch(`${inst}/api/v1/videos/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() });
+        if (r.ok) {
+          const d = await r.json();
+          info.title = d.title || info.title;
+          info.artist = d.author || info.artist;
+          info.duration = normalizeTrackDurationSeconds(d.lengthSeconds, null) || 0;
+          info.artwork = (d.videoThumbnails || [])[0]?.url || '';
+          info.tags = Array.isArray(d.keywords) ? d.keywords.slice(0, 10) : [];
+          info.source = 'invidious';
+          break;
+        }
+        markInst(inst, false);
+      } catch (e) { markInst(inst, false); }
+    }
+    if (!info.source) {
+      for (const inst of getHealthy(SOURCES.piped)) {
+        try {
+          const r = await fetch(`${inst}/streams/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() });
+          if (r.ok) {
+            const d = await r.json();
+            info.title = d.title || info.title;
+            info.artist = d.uploader || info.artist;
+            info.duration = normalizeTrackDurationSeconds(d.duration, null) || 0;
+            info.artwork = d.thumbnailUrl || '';
+            info.source = 'piped';
+            break;
+          }
+          markInst(inst, false);
+        } catch (e) { markInst(inst, false); }
+      }
+    }
+  }
+  res.json(info);
+});
+
+// ─── Skip Track ──────────────────────────────────────────────────────────────────
+app.post('/api/playback/skip', rateLimit(20), async (req, res) => {
+  if (!sharedState.isPlaying || !sharedState.sessionActive) {
+    return res.status(400).json({ error: 'Not currently playing' });
+  }
+  clearPlaybackTimer();
+  await preCacheNextTrack();
+  await advanceTrack();
+  res.json({ ok: true, nowPlaying: sharedState.nowPlaying });
+});
+
+// ─── System Status (full dashboard) ───────────────────────────────────────────────
+app.get('/api/status', (req, res) => {
+  const mem = process.memoryUsage();
+  const uptime = process.uptime();
+  const hours = Math.floor(uptime / 3600);
+  const minutes = Math.floor((uptime % 3600) / 60);
+  res.json({
+    version: '6.0.0',
+    uptime: `${hours}h ${minutes}m`,
+    uptimeSeconds: uptime,
+    memory: {
+      rss: mem.rss,
+      heapTotal: mem.heapTotal,
+      heapUsed: mem.heapUsed,
+      external: mem.external
+    },
+    session: {
+      active: sharedState.sessionActive,
+      mode: sharedState.playerMode,
+      started: sharedState.sessionStart,
+      elapsed: sharedState.sessionStart ? Date.now() - sharedState.sessionStart : 0
+    },
+    queue: {
+      length: sharedState.queue.length,
+      trackIndex: sharedState.trackIndex,
+      nowPlaying: sharedState.nowPlaying,
+      nextUp: sharedState.nextUp
+    },
+    sources: {
+      dab: SOURCES.dab.length,
+      jamendo: !!config.jamendoClientId,
+      piped: SOURCES.piped.length,
+      invidious: invidiousInstances().length,
+      metube: !!(METUBE_BASE && METUBE_DOWNLOADS_DIR),
+      squid: Array.isArray(config.squidProxies) ? config.squidProxies.length : 0
+    },
+    listeners: sseClients.size,
+    cache: {
+      files: audioCache.length,
+      downloading: downloadingIds.size,
+      failed: failedIds.size
+    },
+    config: {
+      crossfadeSeconds: config.crossfadeSeconds || 3,
+      preDownloadCount: config.preDownloadCount || 5,
+      maxConcurrentDownloads: config.maxConcurrentDownloads || 3,
+      fadeAtPercent: config.fadeAtPercent || 80,
+      sessionDuration: config.sessionDuration || 0,
+      queueLimit: config.queueLimit || 0,
+      aiProvider: config.aiProvider || 'none',
+      hasAI: !!(config.anthropicKey || config.openaiKey || config.opencodeKey || config.openrouterKey)
+    },
+    serverTime: Date.now()
+  });
 });
 
 // ─── SSE / Now Playing ────────────────────────────────────────────────────────
@@ -1497,8 +1803,15 @@ app.get('/dj', (req, res) => res.sendFile(path.join(__dirname, 'dj.html')));
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'display.html')));
 app.get('/display/nano', (req, res) => res.sendFile(path.join(__dirname, 'nano.html')));
 
+// ─── Error Middleware ────────────────────────────────────────────────────────────
+app.use((err, req, res, _next) => {
+  log('System', `Unhandled error: ${err.message}${IS_DEV ? `\n${err.stack}` : ''}`);
+  if (res.headersSent) return;
+  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+});
+
 const server = app.listen(PORT, () => {
-  console.log(`\n🎧 AutoDJ v5.0.0 — http://localhost:${PORT}`);
+  console.log(`\n🎧 AutoDJ v6.0.0 — http://localhost:${PORT}`);
   console.log(`   DJ Console  → /dj`);
   console.log(`   Now Playing → /display`);
   console.log(`   Sources: DAB(${SOURCES.dab.length}) Jamendo(${config.jamendoClientId ? 'on' : 'off'}) Piped(${SOURCES.piped.length}) Invidious(${invidiousInstances().length}) Metube(${METUBE_BASE ? 'on' : 'off'})\n`);
