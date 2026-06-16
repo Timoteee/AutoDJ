@@ -8,7 +8,7 @@
  ▀  ▀  ▀▀▀  ▀▀▀  ▀█▄▀▪▀▀▀▀▀• .▀  ▀
 ```
 
-**v5.0.0** — Self-hosted, always-on DJ that finds, downloads, and mixes music automatically.
+**v6.0.0** — "Signal & Flow" Redesign — Fully responsive SPA, reworked backend, configurable crossfade, new Discovery engine, complete design overhaul.
 
 [![Node](https://img.shields.io/badge/node-22%2B-brightgreen?style=flat-square&logo=node.js)](https://nodejs.org)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker)](https://docker.com)
@@ -26,8 +26,8 @@ Open the **DJ Console** to control the mix. Put the **Now Playing** display on a
 
 | Page | URL | What it does |
 |------|-----|--------------|
-| DJ Console | `/dj` | Decks A/B, queue, search, settings, crossfader |
-| Now Playing | `/display` | Full-screen display with artwork, lyrics, relay audio |
+| DJ Console | `/dj` | 4-page SPA: Decks A/B (Console), Queue, Discovery, System Settings — Signal & Flow design |
+| Now Playing | `/display` | Full-screen display with artwork, 24-band VU meter, synced lyrics, RSS marquee, relay audio |
 
 ---
 
@@ -72,11 +72,23 @@ AutoDJ searches six sources in priority order. Each track is downloaded to a loc
 
 ## Features
 
+### Signal & Flow Design System
+Complete visual overhaul with `#ffb3ac` (signal red) and `#a6e6ff` (electric blue) accents, dark layered surfaces (`#0e0e0e` → `#353534`), and responsive 12-column grid. Inter for body, JetBrains Mono for labels, Space Grotesk for headlines.
+
 ### Two Virtual Decks
-Real-time waveform, BPM display, VU meters, cue points, crossfader. Smart Fade Analysis scans the waveform to find the quietest point before each transition. Active deck glows red.
+Real-time waveform, BPM display with tap button, VU meters, cue points, reverse, loop, crossfader. Smart Fade Analysis scans the waveform to find the quietest point before each transition. Deck A glows signal red, Deck B glows flow blue.
+
+### Configurable Crossfade
+Crossfade duration adjustable from 1-10 seconds in Settings, or via the FADE (S) spinbutton on Console. Smart Fade mode detects optimal fade points automatically.
+
+### 4-Page Single Page App
+- **Console** — Dual decks with transport controls, crossfader, BPM tap, session timer, system stats dashboard
+- **Queue** — Track list with drag-reorder, search/add, file/folder upload, shuffle, AI refill, mode selector (Local First / Online First / Shuffle Mix / Local Only / Online Only)
+- **Discovery** — Search across all sources, Mood Engine (CHILL/ENERGY/DEEP presets), AI Recommendation panel
+- **Settings** — API credentials, playback config, source priority drag-reorder, RSS feed, display messages, live log viewer
 
 ### Queue Engine
-Drag to reorder. Source badges show where each track came from. Queue persists across page reloads. Unified search hits every source at once. Queue limit caps total tracks.
+Drag to reorder. Source badges show where each track came from. Queue persists across page reloads with backup file for crash safety. Unified search hits every source at once. Queue limit caps total tracks. New `POST /api/queue/reorder` endpoint for server-side reordering.
 
 ### Persistent Playback
 The display page is a dedicated audio player. Close the DJ console — playback keeps going. The server auto-advances: `advanceTrack()`, `preCacheNextTrack()`, playback timer, SSE broadcasts. Queue and track index survive server restarts.
@@ -179,6 +191,7 @@ PORT=3000
 | POST | `/api/config` | Update config |
 | GET | `/api/youtube/search?q=` | Unified search across all sources |
 | GET | `/api/system/stats` | CPU / RAM / disk / temp / session / queue |
+| GET | `/api/status` | Full system status (version, memory, session, queue, sources, cache) |
 | POST | `/api/cache/download` | Download track to local cache (supports `altIds` for fallback) |
 | GET | `/api/cache/stream/:id` | Stream cached audio (range requests) |
 | GET | `/api/lyrics?title=&artist=` | Get synced lyrics from LRCLIB |
@@ -186,8 +199,20 @@ PORT=3000
 | POST | `/api/playback/start` | Start auto-advance engine |
 | POST | `/api/playback/stop` | Stop playback |
 | POST | `/api/playback/next` | Advance to next track |
+| POST | `/api/playback/skip` | Skip current track |
+| POST | `/api/playback/trackinfo` | Get detailed track metadata |
+| POST | `/api/queue/reorder` | Reorder queue items `{from, to}` |
+| POST | `/api/queue/remove/:index` | Remove track at index |
+| POST | `/api/queue/clear` | Clear queue |
+| GET | `/api/discovery/seeds` | Seed genres/artists from config |
+| GET | `/api/discovery/trending` | Trending tracks from Jamendo |
+| GET | `/api/discovery/recommendations?seed=` | AI-powered recommendations |
 | GET | `/api/local/scan` | Scan music directories |
 | POST | `/api/ai/recommend` | AI-powered recommendations (supports Anthropic, OpenAI, OpenCode, OpenRouter) |
+| GET | `/api/test/sources` | Test all music source reachability |
+| GET | `/api/listeners` | Connected listener stats |
+| GET | `/api/logs` | Server log ring buffer |
+| GET | `/api/rss` | RSS feed for marquee |
 
 ---
 
@@ -196,9 +221,8 @@ PORT=3000
 ```
 ├── server.js          Express backend (routes, sources, cache, auto-advance, SSE)
 ├── engine.js          Browser audio engine (WebAudio, crossfade, waveform, WebRTC)
-├── dj.js              DJ console UI (queue, decks, settings, theme, playback)
-├── dj.html            DJ console HTML + CSS
-├── display.html       Now-playing display (relay audio, lyrics, marquee, WebRTC)
+├── dj.html            4-page SPA (Console, Queue, Discovery, Settings) — inline JS + TailwindCSS
+├── display.html       Now-playing display (VU meter, lyrics, marquee, album art, WebRTC)
 ├── sw.js              Service worker (app shell caching)
 ├── manifest.json      PWA manifest
 ├── css/shared.css     Shared baseline styles
