@@ -27,7 +27,7 @@ tailwind.config = {
       colors: {
         signal: { DEFAULT: '#ffb3ac', light: '#ffcdc8', dark: '#e6938c' },
         flow:   { DEFAULT: '#a6e6ff', light: '#c4eeff', dark: '#7bc0d9' },
-        surface: { DEFAULT: '#131313', light: '#1a1a1a', lighter: '#222222', card: '#0e0e0e', border: '#2a2a2a', hover: '#353534' },
+        surface: { DEFAULT: '#131313', light: '#1a1a1a', lighter: '#222222', card: '#0e0e0e', border: 'var(--border-color)', hover: '#353534' },
         amber:   { dj: '#d97706' },
       },
       fontFamily: {
@@ -51,40 +51,105 @@ tailwind.config = {
 </script>
 
 <style>
+/* ─── CSS Custom Properties (Light mode default) ── */
+:root {
+  --bg-page: #ffffff;
+  --bg-surface: #f5f5f5;
+  --bg-card: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: #eaeaea;
+  --text-primary: #1a1a1a;
+  --text-secondary: #555555;
+  --text-muted: #888888;
+  --border-color: #d4d4d4;
+  --border-light: #e0e0e0;
+  --signal: #ff6b5e;
+  --signal-dim: rgba(255,107,94,0.12);
+  --signal-border: rgba(255,107,94,0.25);
+  --flow: #4fc3f7;
+  --flow-dim: rgba(79,195,247,0.12);
+  --scrollbar-thumb: #c0c0c0;
+  --scrollbar-hover: #a0a0a0;
+  --deck-bg: #f0f0f0;
+  --deck-border: #d0d0d0;
+  --badge-bg: #e8e8e8;
+  --glow-red: rgba(255,107,94,0.08);
+  --glow-blue: rgba(79,195,247,0.06);
+  --flow-border: rgba(79,195,247,0.4);
+  --overlay-bg: rgba(255,255,255,0.85);
+  --danger: #ef4444;
+  --danger-dim: rgba(239,68,68,0.1);
+  --success: #34d399;
+  --success-dim: rgba(52,211,153,0.1);
+  --amber-dj: #d97706;
+  --warning: #fbbf24;
+}
+:root.dark {
+  --bg-page: #131313;
+  --bg-surface: #0e0e0e;
+  --bg-card: #0e0e0e;
+  --bg-elevated: #1a1a1a;
+  --bg-hover: #353534;
+  --text-primary: #e0e0e0;
+  --text-secondary: #999999;
+  --text-muted: #666666;
+  --border-color: #2a2a2a;
+  --border-light: #333333;
+  --signal: #ffb3ac;
+  --signal-dim: rgba(255,179,172,0.08);
+  --signal-border: rgba(255,179,172,0.2);
+  --flow: #a6e6ff;
+  --flow-dim: rgba(166,230,255,0.08);
+  --scrollbar-thumb: #2a2a2a;
+  --scrollbar-hover: #353534;
+  --deck-bg: #0e0e0e;
+  --deck-border: #2a2a2a;
+  --badge-bg: #2a2a2a;
+  --glow-red: rgba(255,179,172,0.06);
+  --glow-blue: rgba(166,230,255,0.04);
+  --flow-border: rgba(166,230,255,0.4);
+  --overlay-bg: rgba(19,19,19,0.85);
+  --danger: #ef4444;
+  --danger-dim: rgba(239,68,68,0.1);
+  --success: #34d399;
+  --success-dim: rgba(52,211,153,0.1);
+  --amber-dj: #d97706;
+  --warning: #fbbf24;
+}
+
 /* ─── Base ──────────────────────────────────────── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; overflow: hidden; }
 body {
   font-family: 'Inter', system-ui, sans-serif;
-  background: #131313;
-  color: #e0e0e0;
+  background: var(--bg-page);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-.dark body { background: #131313; }
 
 /* Background depth */
 .bg-grid {
   background-image:
-    radial-gradient(ellipse at 20% 30%, rgba(255,179,172,0.06) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 70%, rgba(166,230,255,0.04) 0%, transparent 60%),
-    repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,0.015) 40px),
-    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,0.015) 40px);
+    radial-gradient(ellipse at 20% 30%, var(--glow-red) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 70%, var(--glow-blue) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent, transparent 39px, var(--grid-line, rgba(255,255,255,0.015)) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, var(--grid-line, rgba(255,255,255,0.015)) 40px);
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #353534; }
-* { scrollbar-width: thin; scrollbar-color: #2a2a2a transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
+* { scrollbar-width: thin; scrollbar-color: var(--border-color) transparent; }
 
 /* ─── Sidebar ──────────────────────────────────── */
 .sidebar-link {
   display: flex; align-items: center; gap: 0.75rem;
   padding: 0.625rem 1rem;
   border-radius: 0.375rem;
-  color: #888;
+  color: var(--text-muted);
   font-size: 0.8125rem;
   font-weight: 500;
   transition: all 150ms ease;
@@ -92,41 +157,41 @@ body {
   border: 1px solid transparent;
 }
 .sidebar-link:hover {
-  background: rgba(255,255,255,0.04);
-  color: #ccc;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 .sidebar-link.active {
-  background: rgba(255,179,172,0.08);
-  border-color: rgba(255,179,172,0.2);
-  color: #ffb3ac;
+  background: var(--signal-dim);
+  border-color: var(--signal-border);
+  color: var(--signal);
 }
 .sidebar-link .icon { width: 1.25rem; height: 1.25rem; flex-shrink: 0; }
 
 /* ─── Panels ────────────────────────────────────── */
 .panel {
-  background: #0e0e0e;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 0.5rem;
 }
 .panel-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #2a2a2a;
+  border-bottom: 1px solid var(--border-color);
 }
-.panel-title { font-size: 0.6875rem; letter-spacing: 0.05em; text-transform: uppercase; color: #666; font-weight: 600; }
+.panel-title { font-size: 0.6875rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
 .panel-body { padding: 1rem; }
 
 /* ─── Deck ──────────────────────────────────────── */
 .deck {
-  background: #0e0e0e;
-  border: 1px solid #2a2a2a;
+  background: var(--deck-bg);
+  border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   padding: 1rem;
   transition: border-color 0.3s, box-shadow 0.3s;
   position: relative;
 }
-.deck.live-a { border-color: rgba(255,179,172,0.4); box-shadow: 0 0 24px rgba(255,179,172,0.06); }
-.deck.live-b { border-color: rgba(166,230,255,0.4); box-shadow: 0 0 24px rgba(166,230,255,0.06); }
+.deck.live-a { border-color: var(--signal-border); box-shadow: 0 0 24px var(--glow-red); }
+.deck.live-b { border-color: var(--flow-border, rgba(166,230,255,0.4)); box-shadow: 0 0 24px var(--glow-blue); }
 .deck-label {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.625rem;
@@ -134,20 +199,20 @@ body {
   text-transform: uppercase;
   margin-bottom: 0.75rem;
 }
-.deck-a-color { color: #ffb3ac; }
-.deck-b-color { color: #a6e6ff; }
+.deck-a-color { color: var(--signal); }
+.deck-b-color { color: var(--flow); }
 .live-dot {
   display: inline-block;
   width: 6px; height: 6px; border-radius: 50%;
   margin-right: 6px;
   animation: pulse-dot 1.5s ease-in-out infinite;
 }
-.live-dot.a { background: #ffb3ac; }
-.live-dot.b { background: #a6e6ff; }
+.live-dot.a { background: var(--signal); }
+.live-dot.b { background: var(--flow); }
 @keyframes pulse-dot { 0%,100%{opacity:1}50%{opacity:0.4} }
 
 /* Waveform canvas */
-.wave-canvas { width: 100%; height: 52px; border-radius: 0.25rem; background: #0a0a0a; border: 1px solid #1e1e1e; cursor: pointer; }
+.wave-canvas { width: 100%; height: 52px; border-radius: 0.25rem; background: var(--deck-bg); border: 1px solid var(--border-color); cursor: pointer; }
 
 /* VU meters */
 .vu-strip { display: flex; gap: 3px; height: 28px; align-items: flex-end; margin-bottom: 0.5rem; }
@@ -156,39 +221,39 @@ body {
 /* Transport buttons */
 .transport-group { display: flex; gap: 4px; flex-wrap: wrap; }
 .btn-transport {
-  background: #1a1a1a; border: 1px solid #2a2a2a;
-  color: #aaa; font-family: 'JetBrains Mono', monospace;
+  background: var(--bg-elevated); border: 1px solid var(--border-color);
+  color: var(--text-secondary); font-family: 'JetBrains Mono', monospace;
   font-size: 0.625rem; letter-spacing: 0.05em;
   padding: 0.375rem 0.625rem;
   cursor: pointer; border-radius: 0.25rem;
   transition: all 120ms ease;
   white-space: nowrap;
 }
-.btn-transport:hover { border-color: #ffb3ac; color: #ffb3ac; background: rgba(255,179,172,0.06); }
-.btn-transport.flow:hover { border-color: #a6e6ff; color: #a6e6ff; background: rgba(166,230,255,0.06); }
-.btn-transport.active { background: #ffb3ac; color: #131313; border-color: #ffb3ac; }
-.btn-transport.active.flow { background: #a6e6ff; color: #131313; border-color: #a6e6ff; }
+.btn-transport:hover { border-color: var(--signal); color: var(--signal); background: var(--signal-dim); }
+.btn-transport.flow:hover { border-color: var(--flow); color: var(--flow); background: var(--flow-dim); }
+.btn-transport.active { background: var(--signal); color: var(--bg-page); border-color: var(--signal); }
+.btn-transport.active.flow { background: var(--flow); color: var(--bg-page); border-color: var(--flow); }
 
 /* Progress bar */
-.progress-track { position: relative; height: 4px; background: #1e1e1e; border-radius: 2px; cursor: pointer; margin: 0.375rem 0; }
+.progress-track { position: relative; height: 4px; background: var(--border-color); border-radius: 2px; cursor: pointer; margin: 0.375rem 0; }
 .progress-fill { height: 100%; border-radius: 2px; transition: width 0.3s linear; }
-.progress-fill.a { background: #ffb3ac; }
-.progress-fill.b { background: #a6e6ff; }
-.cue-marker { position: absolute; top: -3px; width: 2px; height: 10px; background: #d97706; border-radius: 1px; }
+.progress-fill.a { background: var(--signal); }
+.progress-fill.b { background: var(--flow); }
+.cue-marker { position: absolute; top: -3px; width: 2px; height: 10px; background: var(--amber-dj, #d97706); border-radius: 1px; }
 
 /* ─── Crossfader ───────────────────────────────── */
 input[type=range].xfader {
   -webkit-appearance: none; appearance: none;
   width: 100%; height: 4px;
-  background: linear-gradient(to right, #ffb3ac, #555, #a6e6ff);
+  background: linear-gradient(to right, var(--signal), var(--text-secondary), var(--flow));
   border-radius: 2px; outline: none; cursor: pointer;
 }
 input[type=range].xfader::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 18px; height: 18px;
-  background: #fff; border-radius: 50%;
-  border: 2px solid #131313;
-  box-shadow: 0 0 8px rgba(255,255,255,0.2);
+  background: var(--text-primary); border-radius: 50%;
+  border: 2px solid var(--bg-page);
+  box-shadow: 0 0 8px var(--glow-blue);
   cursor: pointer;
 }
 
@@ -198,38 +263,38 @@ input[type=range].xfader::-webkit-slider-thumb {
   font-size: 0.6875rem; letter-spacing: 0.05em;
   padding: 0.5rem 1rem; cursor: pointer;
   border-radius: 0.375rem;
-  border: 1px solid #2a2a2a;
-  background: transparent; color: #ccc;
+  border: 1px solid var(--border-color);
+  background: transparent; color: var(--text-primary);
   transition: all 150ms ease;
   text-transform: uppercase;
   display: inline-flex; align-items: center; gap: 0.375rem;
 }
-.btn:hover { border-color: #ffb3ac; color: #ffb3ac; }
-.btn-signal { border-color: #ffb3ac; color: #ffb3ac; }
-.btn-signal:hover { background: rgba(255,179,172,0.1); }
-.btn-flow { border-color: #a6e6ff; color: #a6e6ff; }
-.btn-flow:hover { background: rgba(166,230,255,0.1); }
-.btn-danger { border-color: #ef4444; color: #ef4444; }
-.btn-danger:hover { background: rgba(239,68,68,0.1); }
-.btn-success { border-color: #34d399; color: #34d399; }
-.btn-success:hover { background: rgba(52,211,153,0.1); }
+.btn:hover { border-color: var(--signal); color: var(--signal); }
+.btn-signal { border-color: var(--signal); color: var(--signal); }
+.btn-signal:hover { background: var(--signal-dim); }
+.btn-flow { border-color: var(--flow); color: var(--flow); }
+.btn-flow:hover { background: var(--flow-dim); }
+.btn-danger { border-color: var(--danger, #ef4444); color: var(--danger, #ef4444); }
+.btn-danger:hover { background: var(--danger-dim, rgba(239,68,68,0.1)); }
+.btn-success { border-color: var(--success, #34d399); color: var(--success, #34d399); }
+.btn-success:hover { background: var(--success-dim, rgba(52,211,153,0.1)); }
 .btn-sm { padding: 0.25rem 0.625rem; font-size: 0.625rem; }
 .btn-xs { padding: 0.125rem 0.5rem; font-size: 0.5625rem; }
 .btn:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
 
 /* ─── Form fields ───────────────────────────────── */
 .field { display: flex; flex-direction: column; gap: 0.375rem; }
-.field label { font-size: 0.6875rem; letter-spacing: 0.05em; text-transform: uppercase; color: #666; font-weight: 500; }
+.field label { font-size: 0.6875rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); font-weight: 500; }
 .field input, .field select, .field textarea {
-  background: #1a1a1a; border: 1px solid #2a2a2a;
-  color: #e0e0e0; font-family: 'JetBrains Mono', monospace;
+  background: var(--bg-elevated); border: 1px solid var(--border-color);
+  color: var(--text-primary); font-family: 'JetBrains Mono', monospace;
   font-size: 0.75rem; padding: 0.5rem 0.75rem;
   border-radius: 0.25rem; outline: none;
   transition: border-color 150ms ease;
 }
-.field input:focus, .field select:focus, .field textarea:focus { border-color: #ffb3ac; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--signal); }
 .field textarea { resize: vertical; min-height: 60px; }
-.field-hint { font-size: 0.6875rem; color: #555; margin-top: 0.125rem; }
+.field-hint { font-size: 0.6875rem; color: var(--text-secondary); margin-top: 0.125rem; }
 
 /* ─── Queue items ───────────────────────────────── */
 .qitem {
@@ -238,32 +303,32 @@ input[type=range].xfader::-webkit-slider-thumb {
   gap: 0.5rem; align-items: center;
   padding: 0.5rem 0.75rem;
   font-size: 0.75rem;
-  border-bottom: 1px solid #1e1e1e;
+  border-bottom: 1px solid var(--border-color);
   transition: background 0.15s;
 }
 .qitem:last-child { border-bottom: none; }
-.qitem:hover { background: rgba(255,255,255,0.02); }
-.qitem.playing { background: rgba(255,179,172,0.06); border-left: 2px solid #ffb3ac; }
-.qitem.next { background: rgba(166,230,255,0.04); border-left: 2px solid #a6e6ff; }
+.qitem:hover { background: var(--bg-hover); }
+.qitem.playing { background: var(--signal-dim); border-left: 2px solid var(--signal); }
+.qitem.next { background: var(--flow-dim); border-left: 2px solid var(--flow); }
 .qitem.past { opacity: 0.3; }
-.q-num { color: #555; text-align: right; font-size: 0.6875rem; font-family: 'JetBrains Mono', monospace; }
-.q-src { font-size: 0.5625rem; letter-spacing: 0.05em; text-transform: uppercase; color: #666; }
+.q-num { color: var(--text-secondary); text-align: right; font-size: 0.6875rem; font-family: 'JetBrains Mono', monospace; }
+.q-src { font-size: 0.5625rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
 .q-badge { font-size: 0.5625rem; padding: 0.125rem 0.375rem; border-radius: 0.1875rem; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
-.badge-playing { background: rgba(255,179,172,0.15); color: #ffb3ac; }
-.badge-next { background: rgba(166,230,255,0.12); color: #a6e6ff; }
-.badge-pending { background: rgba(255,255,255,0.05); color: #888; }
+.badge-playing { background: var(--signal-dim); color: var(--signal); }
+.badge-next { background: var(--flow-dim); color: var(--flow); }
+.badge-pending { background: var(--badge-bg); color: var(--text-muted); }
 
 /* ─── Stats cards ───────────────────────────────── */
 .stat-card {
-  background: #0e0e0e;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
 }
-.stat-label { font-size: 0.625rem; letter-spacing: 0.1em; text-transform: uppercase; color: #555; margin-bottom: 0.25rem; font-weight: 500; }
+.stat-label { font-size: 0.625rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.25rem; font-weight: 500; }
 .stat-value { font-family: 'Space Grotesk', sans-serif; font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
-.stat-sub { font-size: 0.6875rem; color: #666; margin-top: 0.125rem; }
-.stat-bar { height: 2px; background: #1e1e1e; border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
+.stat-sub { font-size: 0.6875rem; color: var(--text-muted); margin-top: 0.125rem; }
+.stat-bar { height: 2px; background: var(--border-color); border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
 .stat-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
 
 /* ─── Section pages ────────────────────────────── */
@@ -273,14 +338,14 @@ input[type=range].xfader::-webkit-slider-thumb {
 /* ─── Album card (discovery) ────────────────────── */
 .album-card {
   position: relative; overflow: hidden;
-  background: #0e0e0e; border: 1px solid #2a2a2a;
+  background: var(--bg-card); border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   transition: border-color 0.2s;
 }
-.album-card:hover { border-color: #ffb3ac; }
+.album-card:hover { border-color: var(--signal); }
 .album-card .overlay {
   position: absolute; inset: 0;
-  background: rgba(19,19,19,0.85);
+  background: var(--overlay-bg, rgba(19,19,19,0.85));
   display: flex; align-items: center; justify-content: center; gap: 0.5rem;
   opacity: 0; transition: opacity 0.2s;
   pointer-events: none;
@@ -293,22 +358,22 @@ input[type=range].xfader::-webkit-slider-thumb {
 @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
 
 /* ─── Loading / status spinners ─────────────────── */
-.spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid #2a2a2a; border-top-color: #ffb3ac; border-radius: 50%; animation: spin 0.6s linear infinite; }
+.spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid var(--border-color); border-top-color: var(--signal); border-radius: 50%; animation: spin 0.6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ─── Tabs inside pages ─────────────────────────── */
-.sub-tab-bar { display: flex; gap: 2px; border-bottom: 1px solid #2a2a2a; margin-bottom: 0.75rem; }
+.sub-tab-bar { display: flex; gap: 2px; border-bottom: 1px solid var(--border-color); margin-bottom: 0.75rem; }
 .sub-tab {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.625rem; letter-spacing: 0.05em; text-transform: uppercase;
   padding: 0.5rem 1rem; cursor: pointer;
-  color: #666; transition: all 150ms;
+  color: var(--text-muted); transition: all 150ms;
   border: 1px solid transparent; border-bottom: none;
   background: transparent;
   border-radius: 0.25rem 0.25rem 0 0;
 }
-.sub-tab:hover { color: #aaa; }
-.sub-tab.active { color: #ffb3ac; border-color: #2a2a2a; background: #0e0e0e; }
+.sub-tab:hover { color: var(--text-primary); }
+.sub-tab.active { color: var(--signal); border-color: var(--border-color); background: var(--bg-card); }
 
 /* ─── Responsive: mobile → bottom nav ──────────── */
 @media (max-width: 768px) {
@@ -330,20 +395,20 @@ input[type=range].xfader::-webkit-slider-thumb {
 }
 </style>
 </head>
-<body class="dark bg-[#131313]">
+<body class="dark bg-[var(--bg-page)]">
 
 <!-- ─── LAYOUT: Sidebar + Main ────────────────────── -->
 <div class="flex h-screen overflow-hidden bg-grid">
 
   <!-- Sidebar (fixed, w-64) -->
-  <aside class="sidebar w-64 flex-shrink-0 bg-[#0e0e0e] border-r border-[#2a2a2a] flex flex-col z-20">
+  <aside class="sidebar w-64 flex-shrink-0 bg-[var(--bg-card)] border-r border-[var(--border-color)] flex flex-col z-20">
     <!-- Logo -->
-    <div class="h-16 flex items-center gap-2 px-5 border-b border-[#2a2a2a]">
+    <div class="h-16 flex items-center gap-2 px-5 border-b border-[var(--border-color)]">
       <svg class="w-6 h-6 text-signal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
       <span class="font-display font-bold text-lg tracking-wider">
         <span class="text-signal">AUTO</span><span class="text-flow">DJ</span>
       </span>
-      <span class="text-[0.5rem] text-[#555] ml-auto font-mono tracking-wider">v6</span>
+      <span class="text-[0.5rem] text-[var(--text-secondary)] ml-auto font-mono tracking-wider">v6</span>
     </div>
 
     <!-- Nav links -->
@@ -354,7 +419,7 @@ input[type=range].xfader::-webkit-slider-thumb {
       </a>
       <a href="#" class="sidebar-link" data-page="queue">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-        Queue <span id="q-count-sidebar" class="ml-auto text-[0.625rem] text-[#666] font-mono">0</span>
+        Queue <span id="q-count-sidebar" class="ml-auto text-[0.625rem] text-[var(--text-muted)] font-mono">0</span>
       </a>
       <a href="#" class="sidebar-link" data-page="discovery">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
@@ -371,14 +436,14 @@ input[type=range].xfader::-webkit-slider-thumb {
     </nav>
 
     <!-- Status indicators -->
-    <div class="p-3 border-t border-[#2a2a2a] space-y-1">
-      <div class="flex items-center gap-2 text-[0.625rem] font-mono text-[#555]">
-        <span class="flex items-center gap-1"><span id="ind-lastfm" class="w-1.5 h-1.5 rounded-full bg-[#555]"></span> LFM</span>
-        <span class="flex items-center gap-1"><span id="ind-jamendo" class="w-1.5 h-1.5 rounded-full bg-[#555]"></span> JM</span>
-        <span class="flex items-center gap-1"><span id="ind-spotify" class="w-1.5 h-1.5 rounded-full bg-[#555]"></span> SP</span>
-        <span class="flex items-center gap-1"><span id="ind-ai" class="w-1.5 h-1.5 rounded-full bg-[#555]"></span> AI</span>
+    <div class="p-3 border-t border-[var(--border-color)] space-y-1">
+      <div class="flex items-center gap-2 text-[0.625rem] font-mono text-[var(--text-secondary)]">
+        <span class="flex items-center gap-1"><span id="ind-lastfm" class="w-1.5 h-1.5 rounded-full bg-[var(--text-secondary)]"></span> LFM</span>
+        <span class="flex items-center gap-1"><span id="ind-jamendo" class="w-1.5 h-1.5 rounded-full bg-[var(--text-secondary)]"></span> JM</span>
+        <span class="flex items-center gap-1"><span id="ind-spotify" class="w-1.5 h-1.5 rounded-full bg-[var(--text-secondary)]"></span> SP</span>
+        <span class="flex items-center gap-1"><span id="ind-ai" class="w-1.5 h-1.5 rounded-full bg-[var(--text-secondary)]"></span> AI</span>
       </div>
-      <div class="flex items-center gap-1 text-[0.5625rem] font-mono text-[#444]">
+      <div class="flex items-center gap-1 text-[0.5625rem] font-mono text-[var(--text-muted)]">
         <span id="stat-listeners">0</span> listeners · <span id="stat-latency">—</span> lat · <span id="stat-cpu-small">—</span> cpu
       </div>
     </div>
@@ -388,16 +453,16 @@ input[type=range].xfader::-webkit-slider-thumb {
   <div class="main-area flex-1 flex flex-col min-w-0">
 
     <!-- Top Bar (h-16) -->
-    <header class="topbar h-16 flex items-center gap-3 px-4 bg-[#131313] border-b border-[#2a2a2a] flex-shrink-0 z-10">
-      <button id="menuToggle" class="md:hidden p-1.5 text-[#888] hover:text-white transition-colors" aria-label="Menu">
+    <header class="topbar h-16 flex items-center gap-3 px-4 bg-[var(--bg-page)] border-b border-[var(--border-color)] flex-shrink-0 z-10">
+      <button id="menuToggle" class="md:hidden p-1.5 text-[var(--text-muted)] hover:text-white transition-colors" aria-label="Menu">
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
       <div class="status-ticker flex-1 min-w-0">
         <div class="marquee-wrap">
-          <span id="status" class="marquee-inner text-[0.75rem] font-mono text-[#888]">Initializing Signal & Flow...</span>
+          <span id="status" class="marquee-inner text-[0.75rem] font-mono text-[var(--text-muted)]">Initializing Signal & Flow...</span>
         </div>
       </div>
-      <div class="clock-display font-mono text-[0.6875rem] text-[#555] tracking-wider" id="clock">--:--:--</div>
+      <div class="clock-display font-mono text-[0.6875rem] text-[var(--text-secondary)] tracking-wider" id="clock">--:--:--</div>
       <button id="themeToggle" class="btn btn-xs text-[0.5625rem]">LIGHT</button>
     </header>
 
@@ -410,20 +475,20 @@ input[type=range].xfader::-webkit-slider-thumb {
       <section id="page-console" class="page-section active p-4 space-y-4">
         <!-- Top status row: BPM, Fade, Timer -->
         <div class="flex flex-wrap items-center gap-3">
-          <div class="flex items-center gap-3 bg-[#0e0e0e] border border-[#2a2a2a] rounded-lg px-4 py-2">
+          <div class="flex items-center gap-3 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-4 py-2">
             <span class="font-display text-2xl font-bold text-signal" id="global-bpm">128.00</span>
-            <span class="text-[0.5rem] text-[#555] font-mono uppercase tracking-widest">BPM</span>
+            <span class="text-[0.5rem] text-[var(--text-secondary)] font-mono uppercase tracking-widest">BPM</span>
             <button class="btn btn-xs" id="tap-bpm" title="Tap BPM">TAP</button>
           </div>
           <button class="btn btn-sm btn-flow" id="smart-fade-btn">⟳ Smart Fade</button>
-          <span class="font-mono text-[0.6875rem] text-[#555]">
+          <span class="font-mono text-[0.6875rem] text-[var(--text-secondary)]">
             <span id="session-timer">00:00:00</span> <span class="text-[0.5rem]">session</span>
           </span>
           <div class="ml-auto flex gap-2">
-            <span class="text-[0.625rem] font-mono text-[#555]">A</span>
+            <span class="text-[0.625rem] font-mono text-[var(--text-secondary)]">A</span>
             <input type="range" id="crossfader" class="xfader w-24" min="0" max="1" step="0.01" value="0" oninput="onXfader(this.value)">
-            <span class="text-[0.625rem] font-mono text-[#555]">B</span>
-            <span class="text-[0.625rem] font-mono text-[#555]" id="master-peak">-∞ dB</span>
+            <span class="text-[0.625rem] font-mono text-[var(--text-secondary)]">B</span>
+            <span class="text-[0.625rem] font-mono text-[var(--text-secondary)]" id="master-peak">-∞ dB</span>
           </div>
         </div>
 
@@ -434,29 +499,29 @@ input[type=range].xfader::-webkit-slider-thumb {
             <div class="deck-label deck-a-color flex items-center gap-2">
               <span class="live-dot a" id="live-dot-a" style="display:none"></span>
               <span>⬡ Deck A</span>
-              <span class="ml-auto text-[0.5rem] text-[#555]" id="pitch-a">+0.0%</span>
+              <span class="ml-auto text-[0.5rem] text-[var(--text-secondary)]" id="pitch-a">+0.0%</span>
             </div>
             <div class="track-meta mb-3">
               <div class="flex gap-3">
                 <img id="artwork-a" class="w-11 h-11 rounded object-cover flex-shrink-0 hidden" alt="">
                 <div class="flex-1 min-w-0">
                   <div class="font-semibold text-sm text-white truncate" id="title-a">— No Track —</div>
-                  <div class="text-[0.6875rem] text-[#888] truncate" id="artist-a">Load a track to begin</div>
-                  <div class="text-[0.625rem] text-[#555] truncate" id="tags-a"></div>
+                  <div class="text-[0.6875rem] text-[var(--text-muted)] truncate" id="artist-a">Load a track to begin</div>
+                  <div class="text-[0.625rem] text-[var(--text-secondary)] truncate" id="tags-a"></div>
                 </div>
               </div>
             </div>
             <canvas class="wave-canvas" id="wave-a" height="52"></canvas>
             <div class="vu-strip" id="vu-a">
-              <div class="vu-bar text-[#34d399]"></div><div class="vu-bar text-[#34d399]"></div>
-              <div class="vu-bar text-[#34d399]"></div><div class="vu-bar text-[#fbbf24]"></div>
-              <div class="vu-bar text-[#fbbf24]"></div><div class="vu-bar text-[#ffb3ac]"></div>
+              <div class="vu-bar text-[var(--success)]"></div><div class="vu-bar text-[var(--success)]"></div>
+              <div class="vu-bar text-[var(--success)]"></div><div class="vu-bar text-[var(--warning, #fbbf24)]"></div>
+              <div class="vu-bar text-[var(--warning, #fbbf24)]"></div><div class="vu-bar text-[var(--signal)]"></div>
             </div>
             <div class="progress-track" id="prog-wrap-a" onclick="seekDeck('a', event)">
               <div class="progress-fill a" id="prog-a" style="width:0%"></div>
               <div class="cue-marker" id="cue-a" style="display:none"></div>
             </div>
-            <div class="flex justify-between text-[0.625rem] font-mono text-[#555] mb-2">
+            <div class="flex justify-between text-[0.625rem] font-mono text-[var(--text-secondary)] mb-2">
               <span id="time-a">0:00</span>
               <span id="remain-a" class="text-signal">-0:00</span>
               <span id="dur-a">0:00</span>
@@ -470,34 +535,34 @@ input[type=range].xfader::-webkit-slider-thumb {
               <button class="btn-transport flow" onclick="deckSync('a')" title="Sync BPM">≡</button>
             </div>
             <div class="flex items-center gap-2 mt-2">
-              <span class="text-[0.5rem] font-mono text-[#555] uppercase">Vol</span>
+              <span class="text-[0.5rem] font-mono text-[var(--text-secondary)] uppercase">Vol</span>
               <input type="range" id="vol-a" min="0" max="1" step="0.01" value="1" oninput="setVol('a',this.value)" class="flex-1 accent-signal h-1">
-              <span class="text-[0.625rem] font-mono text-[#555] w-8 text-right" id="vol-val-a">100%</span>
+              <span class="text-[0.625rem] font-mono text-[var(--text-secondary)] w-8 text-right" id="vol-val-a">100%</span>
             </div>
           </div>
 
           <!-- Center Mixer Column -->
-          <div class="mixer-column flex flex-col items-center gap-3 bg-[#0e0e0e] border border-[#2a2a2a] rounded-lg px-3 py-4 min-w-[120px]">
-            <div class="font-mono text-[0.5rem] tracking-widest text-[#555] uppercase">Mixer</div>
+          <div class="mixer-column flex flex-col items-center gap-3 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-4 min-w-[120px]">
+            <div class="font-mono text-[0.5rem] tracking-widest text-[var(--text-secondary)] uppercase">Mixer</div>
             <div class="text-center">
               <div class="font-display text-xl font-bold text-signal" id="bpm-display-a">—</div>
-              <div class="text-[0.5rem] text-[#555] font-mono uppercase">BPM A</div>
+              <div class="text-[0.5rem] text-[var(--text-secondary)] font-mono uppercase">BPM A</div>
             </div>
             <div class="w-full space-y-1">
-              <div class="flex justify-between text-[0.5rem] font-mono text-[#555]"><span>A</span><span>B</span></div>
+              <div class="flex justify-between text-[0.5rem] font-mono text-[var(--text-secondary)]"><span>A</span><span>B</span></div>
               <input type="range" class="xfader" id="mixer-xfader" min="0" max="1" step="0.01" value="0" oninput="document.getElementById('crossfader').value=this.value;onXfader(this.value)">
             </div>
             <div class="text-center">
               <div class="font-display text-xl font-bold text-flow" id="bpm-display-b">—</div>
-              <div class="text-[0.5rem] text-[#555] font-mono uppercase">BPM B</div>
+              <div class="text-[0.5rem] text-[var(--text-secondary)] font-mono uppercase">BPM B</div>
             </div>
             <button class="btn btn-sm btn-flow w-full" id="fade-btn" onclick="triggerCrossfade()">⇄ Crossfade</button>
             <div class="w-full field">
               <label>Fade (s)</label>
               <input type="number" id="fade-dur" value="8" min="2" max="60" class="w-full text-center">
             </div>
-            <label class="flex items-center gap-2 text-[0.625rem] text-[#888]"><input type="checkbox" id="automix" checked class="accent-signal"> Auto-Mix</label>
-            <label class="flex items-center gap-2 text-[0.625rem] text-[#888]"><input type="checkbox" id="smart-fade" checked class="accent-signal"> Smart Fade</label>
+            <label class="flex items-center gap-2 text-[0.625rem] text-[var(--text-muted)]"><input type="checkbox" id="automix" checked class="accent-signal"> Auto-Mix</label>
+            <label class="flex items-center gap-2 text-[0.625rem] text-[var(--text-muted)]"><input type="checkbox" id="smart-fade" checked class="accent-signal"> Smart Fade</label>
             <button class="btn btn-xs btn-success w-full" id="share-audio-btn" onclick="toggleWebRTC()">🔊 Share</button>
           </div>
 
@@ -506,29 +571,29 @@ input[type=range].xfader::-webkit-slider-thumb {
             <div class="deck-label deck-b-color flex items-center gap-2">
               <span class="live-dot b" id="live-dot-b" style="display:none"></span>
               <span>⬡ Deck B</span>
-              <span class="ml-auto text-[0.5rem] text-[#555]" id="pitch-b">+0.0%</span>
+              <span class="ml-auto text-[0.5rem] text-[var(--text-secondary)]" id="pitch-b">+0.0%</span>
             </div>
             <div class="track-meta mb-3">
               <div class="flex gap-3">
                 <img id="artwork-b" class="w-11 h-11 rounded object-cover flex-shrink-0 hidden" alt="">
                 <div class="flex-1 min-w-0">
                   <div class="font-semibold text-sm text-white truncate" id="title-b">— No Track —</div>
-                  <div class="text-[0.6875rem] text-[#888] truncate" id="artist-b">Cued up next</div>
-                  <div class="text-[0.625rem] text-[#555] truncate" id="tags-b"></div>
+                  <div class="text-[0.6875rem] text-[var(--text-muted)] truncate" id="artist-b">Cued up next</div>
+                  <div class="text-[0.625rem] text-[var(--text-secondary)] truncate" id="tags-b"></div>
                 </div>
               </div>
             </div>
             <canvas class="wave-canvas" id="wave-b" height="52"></canvas>
             <div class="vu-strip" id="vu-b">
-              <div class="vu-bar text-[#34d399]"></div><div class="vu-bar text-[#34d399]"></div>
-              <div class="vu-bar text-[#34d399]"></div><div class="vu-bar text-[#fbbf24]"></div>
-              <div class="vu-bar text-[#fbbf24]"></div><div class="vu-bar text-[#a6e6ff]"></div>
+              <div class="vu-bar text-[var(--success)]"></div><div class="vu-bar text-[var(--success)]"></div>
+              <div class="vu-bar text-[var(--success)]"></div><div class="vu-bar text-[var(--warning, #fbbf24)]"></div>
+              <div class="vu-bar text-[var(--warning, #fbbf24)]"></div><div class="vu-bar text-[var(--flow)]"></div>
             </div>
             <div class="progress-track" id="prog-wrap-b" onclick="seekDeck('b', event)">
               <div class="progress-fill b" id="prog-b" style="width:0%"></div>
               <div class="cue-marker" id="cue-b" style="display:none"></div>
             </div>
-            <div class="flex justify-between text-[0.625rem] font-mono text-[#555] mb-2">
+            <div class="flex justify-between text-[0.625rem] font-mono text-[var(--text-secondary)] mb-2">
               <span id="time-b">0:00</span>
               <span id="remain-b" class="text-flow">-0:00</span>
               <span id="dur-b">0:00</span>
@@ -542,9 +607,9 @@ input[type=range].xfader::-webkit-slider-thumb {
               <button class="btn-transport flow" onclick="deckSync('b')" title="Sync BPM">≡</button>
             </div>
             <div class="flex items-center gap-2 mt-2">
-              <span class="text-[0.5rem] font-mono text-[#555] uppercase">Vol</span>
+              <span class="text-[0.5rem] font-mono text-[var(--text-secondary)] uppercase">Vol</span>
               <input type="range" id="vol-b" min="0" max="1" step="0.01" value="1" oninput="setVol('b',this.value)" class="flex-1 accent-flow h-1">
-              <span class="text-[0.625rem] font-mono text-[#555] w-8 text-right" id="vol-val-b">100%</span>
+              <span class="text-[0.625rem] font-mono text-[var(--text-secondary)] w-8 text-right" id="vol-val-b">100%</span>
             </div>
           </div>
         </div>
@@ -553,7 +618,7 @@ input[type=range].xfader::-webkit-slider-thumb {
         <div class="panel">
           <div class="panel-header"><span class="panel-title">UP NEXT</span></div>
           <div class="panel-body p-3" id="console-upnext">
-            <div class="text-[0.75rem] text-[#555]">Queue empty — add tracks to see upcoming</div>
+            <div class="text-[0.75rem] text-[var(--text-secondary)]">Queue empty — add tracks to see upcoming</div>
           </div>
         </div>
 
@@ -561,8 +626,8 @@ input[type=range].xfader::-webkit-slider-thumb {
         <div class="stats-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div class="stat-card"><div class="stat-label">CPU</div><div class="stat-value text-signal" id="stat-cpu">—%</div><div class="stat-sub" id="stat-cpu-sub">— cores</div><div class="stat-bar"><div class="stat-bar-fill bg-signal" id="stat-cpu-bar" style="width:0%"></div></div></div>
           <div class="stat-card"><div class="stat-label">RAM</div><div class="stat-value text-flow" id="stat-ram">—%</div><div class="stat-sub" id="stat-ram-sub">— / —</div><div class="stat-bar"><div class="stat-bar-fill bg-flow" id="stat-ram-bar" style="width:0%"></div></div></div>
-          <div class="stat-card"><div class="stat-label">Disk</div><div class="stat-value text-[#34d399]" id="stat-disk">—%</div><div class="stat-sub" id="stat-disk-sub">— free</div><div class="stat-bar"><div class="stat-bar-fill bg-[#34d399]" id="stat-disk-bar" style="width:0%"></div></div></div>
-          <div class="stat-card"><div class="stat-label">Temp</div><div class="stat-value text-[#fbbf24]" id="stat-temp">0</div><div class="stat-sub" id="stat-temp-sub">—</div><div class="stat-bar"><div class="stat-bar-fill bg-[#fbbf24]" id="stat-temp-bar" style="width:0%"></div></div></div>
+          <div class="stat-card"><div class="stat-label">Disk</div><div class="stat-value text-[var(--success)]" id="stat-disk">—%</div><div class="stat-sub" id="stat-disk-sub">— free</div><div class="stat-bar"><div class="stat-bar-fill bg-[var(--success)]" id="stat-disk-bar" style="width:0%"></div></div></div>
+          <div class="stat-card"><div class="stat-label">Temp</div><div class="stat-value text-[var(--warning, #fbbf24)]" id="stat-temp">0</div><div class="stat-sub" id="stat-temp-sub">—</div><div class="stat-bar"><div class="stat-bar-fill bg-[var(--warning, #fbbf24)]" id="stat-temp-bar" style="width:0%"></div></div></div>
           <div class="stat-card"><div class="stat-label">Session</div><div class="stat-value text-white" id="stat-session">∞</div><div class="stat-sub" id="stat-session-sub">no limit</div></div>
           <div class="stat-card"><div class="stat-label">Queue</div><div class="stat-value text-white" id="stat-queue">0</div><div class="stat-sub" id="stat-queue-sub">tracks</div></div>
         </div>
@@ -585,7 +650,7 @@ input[type=range].xfader::-webkit-slider-thumb {
               </div>
             </div>
             <div class="queue-list max-h-[50vh] overflow-y-auto" id="queue-list">
-              <div class="p-6 text-center text-[0.75rem] text-[#555]">Queue empty — search or add files</div>
+              <div class="p-6 text-center text-[0.75rem] text-[var(--text-secondary)]">Queue empty — search or add files</div>
             </div>
           </div>
 
@@ -595,17 +660,17 @@ input[type=range].xfader::-webkit-slider-thumb {
               <div class="panel-header"><span class="panel-title">Add to Queue</span></div>
               <div class="panel-body space-y-2">
                 <div class="flex gap-2">
-                  <input type="search" id="queue-search-inp" placeholder="Artist, track…" class="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1.5 text-[0.75rem] text-white font-mono outline-none focus:border-signal">
+                  <input type="search" id="queue-search-inp" placeholder="Artist, track…" class="flex-1 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded px-2 py-1.5 text-[0.75rem] text-white font-mono outline-none focus:border-signal">
                   <button class="btn btn-sm btn-signal" onclick="unifiedQueueSearch()">Go</button>
                 </div>
                 <div id="unified-search-results" class="max-h-48 overflow-y-auto"></div>
-                <hr class="border-[#2a2a2a]">
+                <hr class="border-[var(--border-color)]">
                 <button class="btn btn-sm w-full" onclick="document.getElementById('file-input').click()">+ Add Files</button>
                 <input type="file" id="file-input" multiple accept="audio/*" style="display:none" onchange="addLocalFiles(this.files)">
                 <button class="btn btn-sm btn-success w-full" onclick="document.getElementById('folder-input').click()">+ Add Folder</button>
                 <input type="file" id="folder-input" webkitdirectory mozdirectory accept="audio/*" style="display:none" onchange="addLocalFiles(this.files)">
-                <hr class="border-[#2a2a2a]">
-                <select id="queue-mode" class="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1.5 text-[0.6875rem] font-mono text-white">
+                <hr class="border-[var(--border-color)]">
+                <select id="queue-mode" class="w-full bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded px-2 py-1.5 text-[0.6875rem] font-mono text-white">
                   <option value="local-first">Local First → Online</option>
                   <option value="online-first">Online First → Local</option>
                   <option value="shuffle-mix">Shuffle Mix</option>
@@ -620,7 +685,7 @@ input[type=range].xfader::-webkit-slider-thumb {
               <div class="panel-header"><span class="panel-title">Now Playing</span></div>
               <div class="panel-body">
                 <div class="text-sm font-semibold text-white truncate" id="np-sidebar-title">—</div>
-                <div class="text-[0.6875rem] text-[#888] truncate" id="np-sidebar-artist">—</div>
+                <div class="text-[0.6875rem] text-[var(--text-muted)] truncate" id="np-sidebar-artist">—</div>
                 <div class="text-[0.625rem] text-flow mt-1" id="np-sidebar-genre">—</div>
               </div>
             </div>
@@ -635,11 +700,11 @@ input[type=range].xfader::-webkit-slider-thumb {
         <!-- Hero Search -->
         <div class="relative mb-6">
           <div class="absolute inset-0 bg-gradient-to-r from-signal/5 to-flow/5 rounded-xl blur-2xl"></div>
-          <div class="relative bg-[#0e0e0e] border border-[#2a2a2a] rounded-xl p-6">
+          <div class="relative bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-6">
             <h2 class="font-display text-2xl font-bold text-white mb-1">Discover</h2>
-            <p class="text-[0.8125rem] text-[#888] mb-4">Search across YouTube, Spotify, and Last.fm — or let AI recommend</p>
+            <p class="text-[0.8125rem] text-[var(--text-muted)] mb-4">Search across YouTube, Spotify, and Last.fm — or let AI recommend</p>
             <div class="flex gap-2 max-w-xl">
-              <input type="search" id="discover-search" placeholder="Artist, track, or mood…" class="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-signal">
+              <input type="search" id="discover-search" placeholder="Artist, track, or mood…" class="flex-1 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-signal">
               <button class="btn btn-signal" onclick="discoverSearch()">Search</button>
               <button class="btn btn-flow" id="ai-recommend-btn" onclick="aiAnalyzeAndRecommend()">AI</button>
             </div>
@@ -665,14 +730,14 @@ input[type=range].xfader::-webkit-slider-thumb {
           <div class="panel lg:col-span-2">
             <div class="panel-header"><span class="panel-title">🤖 AI Recommendation</span></div>
             <div class="panel-body">
-              <div id="ai-result" class="text-[0.75rem] text-[#555]">AI recommendations will appear here after analysis...</div>
+              <div id="ai-result" class="text-[0.75rem] text-[var(--text-secondary)]">AI recommendations will appear here after analysis...</div>
             </div>
           </div>
         </div>
 
         <!-- Results grid -->
         <div id="discovery-results" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          <div class="col-span-full text-center text-[0.75rem] text-[#555] py-8">Search or browse to discover new tracks</div>
+          <div class="col-span-full text-center text-[0.75rem] text-[var(--text-secondary)] py-8">Search or browse to discover new tracks</div>
         </div>
       </section>
 
@@ -705,7 +770,7 @@ input[type=range].xfader::-webkit-slider-thumb {
               <div class="field"><label>OpenRouter Model</label><input type="text" id="cfg-openrouter-model" placeholder="openrouter/auto"></div>
               <button class="btn btn-signal w-full" onclick="saveConfig()">Save Keys</button>
               <button class="btn btn-sm w-full" onclick="testSources()">Test Sources</button>
-              <div id="src-test-out" class="text-[0.6875rem] text-[#555] min-h-[1.2em]"></div>
+              <div id="src-test-out" class="text-[0.6875rem] text-[var(--text-secondary)] min-h-[1.2em]"></div>
             </div>
           </div>
 
@@ -719,18 +784,18 @@ input[type=range].xfader::-webkit-slider-thumb {
               <div class="field"><label>Max Track (minutes, 0=unlimited)</label><input type="number" id="cfg-max-track" value="0" min="0" max="120"></div>
               <div class="field"><label>Session Duration (hours)</label><input type="number" id="cfg-session-duration" value="0" min="0" max="168"></div>
               <div class="field"><label>Queue Limit</label><input type="number" id="cfg-queue-limit" value="0" min="0" max="500"></div>
-              <label class="flex items-center gap-2 text-[0.75rem] text-[#888]"><input type="checkbox" id="cfg-metube-first" checked class="accent-signal"> MeTube first</label>
-              <label class="flex items-center gap-2 text-[0.75rem] text-[#888]"><input type="checkbox" id="cfg-filter-topic" checked class="accent-signal"> Filter -Topic</label>
+              <label class="flex items-center gap-2 text-[0.75rem] text-[var(--text-muted)]"><input type="checkbox" id="cfg-metube-first" checked class="accent-signal"> MeTube first</label>
+              <label class="flex items-center gap-2 text-[0.75rem] text-[var(--text-muted)]"><input type="checkbox" id="cfg-filter-topic" checked class="accent-signal"> Filter -Topic</label>
               <div class="field"><label>Music Folders</label><textarea id="cfg-dirs" rows="2" placeholder="/music"></textarea></div>
               <div class="field"><label>Invidious Redirect</label><input type="url" id="cfg-invidious-redirect" placeholder="https://..."></div>
               <div class="field"><label>Source Priority</label>
                 <div id="source-priority-list" class="space-y-1">
-                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="metube">🎬 MeTube</div>
-                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="invidious">🔍 Invidious</div>
-                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="piped">🔍 Piped</div>
-                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="dab">🎵 DAB</div>
-                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="jamendo">🎵 Jamendo</div>
-                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="squid">🦑 Squid</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="metube">🎬 MeTube</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="invidious">🔍 Invidious</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="piped">🔍 Piped</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="dab">🎵 DAB</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="jamendo">🎵 Jamendo</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="squid">🦑 Squid</div>
                 </div>
               </div>
               <button class="btn btn-signal w-full" onclick="saveConfig()">Save Settings</button>
@@ -745,7 +810,7 @@ input[type=range].xfader::-webkit-slider-thumb {
             <div class="panel-body">
               <div class="msg-list space-y-1" id="msg-list"></div>
               <div class="flex gap-2 mt-2">
-                <input type="text" id="new-msg" placeholder="Add a message for the Now Playing screen..." class="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-1.5 text-[0.75rem] text-white font-mono outline-none focus:border-signal">
+                <input type="text" id="new-msg" placeholder="Add a message for the Now Playing screen..." class="flex-1 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded px-3 py-1.5 text-[0.75rem] text-white font-mono outline-none focus:border-signal">
                 <button class="btn btn-sm btn-signal" onclick="addMessage()">Add</button>
               </div>
             </div>
@@ -756,7 +821,7 @@ input[type=range].xfader::-webkit-slider-thumb {
             <div class="panel-header">
               <span class="panel-title">📋 Logs</span>
               <div class="flex gap-2">
-                <select id="log-filter-level" onchange="fetchLogs()" class="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-[0.625rem] font-mono text-white">
+                <select id="log-filter-level" onchange="fetchLogs()" class="bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded px-2 py-1 text-[0.625rem] font-mono text-white">
                   <option value="">All</option><option value="info">Info</option><option value="warn">Warn</option><option value="error">Error</option>
                 </select>
                 <button class="btn btn-xs" onclick="fetchLogs()">Refresh</button>
@@ -765,7 +830,7 @@ input[type=range].xfader::-webkit-slider-thumb {
             </div>
             <div class="panel-body p-0">
               <div id="log-entries" class="max-h-60 overflow-y-auto text-[0.625rem] font-mono leading-relaxed p-3" style="word-break:break-all">
-                <div class="text-center text-[#555] py-4">Loading logs...</div>
+                <div class="text-center text-[var(--text-secondary)] py-4">Loading logs...</div>
               </div>
             </div>
           </div>
@@ -774,21 +839,21 @@ input[type=range].xfader::-webkit-slider-thumb {
     </main>
 
     <!-- ─── Bottom Nav (mobile) ────────────────── -->
-    <nav class="bottom-nav hidden fixed bottom-0 left-0 right-0 bg-[#0e0e0e] border-t border-[#2a2a2a] z-30">
+    <nav class="bottom-nav hidden fixed bottom-0 left-0 right-0 bg-[var(--bg-card)] border-t border-[var(--border-color)] z-30">
       <div class="flex">
-        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[#666] sidebar-link active" data-page="console">
+        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[var(--text-muted)] sidebar-link active" data-page="console">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           <span>Console</span>
         </a>
-        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[#666] sidebar-link" data-page="queue">
+        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[var(--text-muted)] sidebar-link" data-page="queue">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/></svg>
           <span>Queue</span>
         </a>
-        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[#666] sidebar-link" data-page="discovery">
+        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[var(--text-muted)] sidebar-link" data-page="discovery">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
           <span>Discover</span>
         </a>
-        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[#666] sidebar-link" data-page="settings">
+        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[var(--text-muted)] sidebar-link" data-page="settings">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           <span>Settings</span>
         </a>
@@ -1004,7 +1069,7 @@ function updateServiceIndicators() {
   const setInd = (id, on) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.style.background = on ? '#34d399' : '#555';
+    el.style.background = on ? 'var(--success)' : 'var(--text-secondary)';
   };
   setInd('ind-lastfm', DJ.hasLastfm);
   setInd('ind-jamendo', DJ.hasJamendo);
@@ -1642,7 +1707,7 @@ function renderQueue() {
   if (sideCount) sideCount.textContent = DJ.queue.length;
   if (!list) return;
   if (!DJ.queue.length) {
-    list.innerHTML = '<div class="p-6 text-center text-[0.75rem] text-[#555]">Queue empty</div>';
+    list.innerHTML = '<div class="p-6 text-center text-[0.75rem] text-[var(--text-secondary)]">Queue empty</div>';
     return;
   }
   list.innerHTML = DJ.queue.map((t, i) => {
@@ -1660,10 +1725,10 @@ function renderQueue() {
       <div class="q-src">${src}</div>
       <div class="min-w-0 overflow-hidden">
         <div class="text-[0.75rem] text-white truncate font-medium">${escHtml(t.title || '—')}</div>
-        <div class="text-[0.625rem] text-[#888] truncate">${escHtml(t.artist || '—')}${t.album ? ' · ' + escHtml(t.album) : ''}</div>
+        <div class="text-[0.625rem] text-[var(--text-muted)] truncate">${escHtml(t.artist || '—')}${t.album ? ' · ' + escHtml(t.album) : ''}</div>
       </div>
       <span class="q-badge ${badgeClass}">${badgeText}</span>
-      <div class="text-[0.625rem] font-mono text-[#555]">${t.duration ? fmt(t.duration) : '—'}</div>
+      <div class="text-[0.625rem] font-mono text-[var(--text-secondary)]">${t.duration ? fmt(t.duration) : '—'}</div>
       ${!isPast && !isPlay ? `<button class="btn btn-xs" onclick="playQueueTrack(${i})" title="Play now">▶</button>` : ''}
     </div>`;
   }).join('');
@@ -1678,16 +1743,16 @@ function renderConsoleUpNext() {
   const start = DJ.trackIndex + 1;
   const slice = DJ.queue.slice(start, start + 8);
   if (!slice.length) {
-    box.innerHTML = '<div class="text-[0.75rem] text-[#555]">Queue empty — add tracks to see upcoming</div>';
+    box.innerHTML = '<div class="text-[0.75rem] text-[var(--text-secondary)]">Queue empty — add tracks to see upcoming</div>';
     return;
   }
   box.innerHTML = slice.map((t, i) => {
     const qi = start + i;
-    return `<div class="flex items-center gap-2 py-1.5 border-b border-[#1e1e1e] last:border-0">
-      <span class="text-[0.625rem] font-mono text-[#555] w-5">${qi+1}</span>
+    return `<div class="flex items-center gap-2 py-1.5 border-b border-[var(--border-color)] last:border-0">
+      <span class="text-[0.625rem] font-mono text-[var(--text-secondary)] w-5">${qi+1}</span>
       <div class="flex-1 min-w-0">
         <div class="text-[0.6875rem] text-white truncate">${escHtml(t.title || '—')}</div>
-        <div class="text-[0.5625rem] text-[#888] truncate">${escHtml(t.artist || '—')}</div>
+        <div class="text-[0.5625rem] text-[var(--text-muted)] truncate">${escHtml(t.artist || '—')}</div>
       </div>
       <button class="btn btn-xs" onclick="cueQueueTrack('a',${qi})" title="Cue A">A</button>
       <button class="btn btn-xs" onclick="cueQueueTrack('b',${qi})" title="Cue B">B</button>
@@ -1864,12 +1929,12 @@ async function unifiedQueueSearch() {
   const box = document.getElementById('unified-search-results');
   const q = inp?.value.trim();
   if (!q || !box) return;
-  box.innerHTML = '<div class="text-[0.6875rem] text-[#555] p-2">Searching…</div>';
+  box.innerHTML = '<div class="text-[0.6875rem] text-[var(--text-secondary)] p-2">Searching…</div>';
   try {
     const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`);
     const results = await r.json();
     if (!Array.isArray(results) || !results.length) {
-      box.innerHTML = '<div class="text-[0.6875rem] text-[#555] p-2">No results</div>';
+      box.innerHTML = '<div class="text-[0.6875rem] text-[var(--text-secondary)] p-2">No results</div>';
       return;
     }
     box.innerHTML = results.map(it => {
@@ -1880,11 +1945,11 @@ async function unifiedQueueSearch() {
         artwork: it.artwork, lengthSeconds: it.lengthSeconds
       }));
       const art = it.artwork || '';
-      return `<div class="flex items-center gap-2 p-2 border-b border-[#1e1e1e] text-[0.6875rem]">
-        ${art ? `<img src="${art}" class="w-8 h-8 rounded object-cover flex-shrink-0">` : '<div class="w-8 h-8 rounded bg-[#1a1a1a] flex-shrink-0"></div>'}
+      return `<div class="flex items-center gap-2 p-2 border-b border-[var(--border-color)] text-[0.6875rem]">
+        ${art ? `<img src="${art}" class="w-8 h-8 rounded object-cover flex-shrink-0">` : '<div class="w-8 h-8 rounded bg-[var(--bg-elevated)] flex-shrink-0"></div>'}
         <div class="flex-1 min-w-0">
           <div class="text-white truncate font-medium">${escHtml(it.title || '—')}</div>
-          <div class="text-[#888] truncate">${escHtml(it.author || it.uploader || '')}</div>
+          <div class="text-[var(--text-muted)] truncate">${escHtml(it.author || it.uploader || '')}</div>
         </div>
         <button class="btn btn-xs btn-signal" data-add="${payload}">+ Queue</button>
       </div>`;
@@ -1920,15 +1985,15 @@ async function discoverSearch() {
     const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`);
     const results = await r.json();
     if (!Array.isArray(results) || !results.length) {
-      box.innerHTML = '<div class="col-span-full text-center text-[0.75rem] text-[#555] py-8">No results</div>';
+      box.innerHTML = '<div class="col-span-full text-center text-[0.75rem] text-[var(--text-secondary)] py-8">No results</div>';
       return;
     }
     box.innerHTML = results.map(it => `
       <div class="album-card">
-        ${it.artwork ? `<img src="${it.artwork}" class="w-full aspect-square object-cover" alt="">` : '<div class="w-full aspect-square bg-[#1a1a1a] flex items-center justify-center text-[#555]">♪</div>'}
+        ${it.artwork ? `<img src="${it.artwork}" class="w-full aspect-square object-cover" alt="">` : '<div class="w-full aspect-square bg-[var(--bg-elevated)] flex items-center justify-center text-[var(--text-secondary)]">♪</div>'}
         <div class="p-2">
           <div class="text-[0.6875rem] text-white truncate font-medium">${escHtml(it.title || '—')}</div>
-          <div class="text-[0.5625rem] text-[#888] truncate">${escHtml(it.author || it.uploader || '')}</div>
+          <div class="text-[0.5625rem] text-[var(--text-muted)] truncate">${escHtml(it.author || it.uploader || '')}</div>
         </div>
         <div class="overlay">
           <button class="btn btn-xs btn-signal" onclick="quickQueue('${encodeURIComponent(JSON.stringify({videoId:it.videoId,title:it.title,author:it.author||it.uploader||'',_source:it._source,_instance:it._instance,artwork:it.artwork,lengthSeconds:it.lengthSeconds}))}')">▶ Play</button>
@@ -1957,16 +2022,16 @@ function setMood(mood) {
 async function aiAnalyzeAndRecommend() {
   if (!DJ.hasAI) { setStatus('Configure an AI key in Settings first'); return; }
   const el = document.getElementById('ai-result');
-  el.innerHTML = '<span class="text-[#555]"><span class="spinner"></span> Consulting AI...</span>';
+  el.innerHTML = '<span class="text-[var(--text-secondary)]"><span class="spinner"></span> Consulting AI...</span>';
   try {
     const cur = DJ.queue[DJ.trackIndex];
     const recs = await Engine.aiRecommend(cur, DJ.history, DJ.seedTags, document.getElementById('ai-mood')?.value);
     el.innerHTML = (Array.isArray(recs) ? recs : []).map(r =>
-      `<div class="mb-2 pb-2 border-b border-[#1e1e1e] last:border-0">
+      `<div class="mb-2 pb-2 border-b border-[var(--border-color)] last:border-0">
         <div class="text-white text-[0.75rem] font-medium">${r.title} — ${r.artist}</div>
         <div class="text-flow text-[0.625rem]">${r.reason||''}</div>
         <button class="btn btn-xs btn-signal mt-1" onclick="enqueueAITrack('${r.artist.replace(/'/g,"\\'")}','${r.title.replace(/'/g,"\\'")}')">+ Queue</button>
-      </div>`).join('') || '<span class="text-[#555]">No recommendations returned</span>';
+      </div>`).join('') || '<span class="text-[var(--text-secondary)]">No recommendations returned</span>';
   } catch(e) { el.innerHTML = `<span class="text-signal">Error: ${e.message}</span>`; }
 }
 
@@ -2069,7 +2134,7 @@ async function fetchListeners() {
 function renderMessages() {
   const list = document.getElementById('msg-list');
   if (!list) return;
-  list.innerHTML = DJ.messages.map((m,i)=>`<div class="flex items-center gap-2 py-1 border-b border-[#1e1e1e] text-[0.6875rem]"><span class="flex-1">${m}</span><button class="text-[#555] hover:text-signal" onclick="removeMessage(${i})">×</button></div>`).join('');
+  list.innerHTML = DJ.messages.map((m,i)=>`<div class="flex items-center gap-2 py-1 border-b border-[var(--border-color)] text-[0.6875rem]"><span class="flex-1">${m}</span><button class="text-[var(--text-secondary)] hover:text-signal" onclick="removeMessage(${i})">×</button></div>`).join('');
 }
 function addMessage() {
   const inp = document.getElementById('new-msg');
@@ -2109,11 +2174,11 @@ async function fetchLogs() {
     const r = await fetch(`/api/logs?level=${level}`);
     const data = await r.json();
     const entries = data.entries || [];
-    if (!entries.length) { container.innerHTML = '<div class="text-center text-[#555] py-4">No log entries</div>'; return; }
+    if (!entries.length) { container.innerHTML = '<div class="text-center text-[var(--text-secondary)] py-4">No log entries</div>'; return; }
     container.innerHTML = entries.map(e => {
       const ts = new Date(e.ts).toLocaleTimeString('en-US', { hour12: false });
-      const lc = e.level === 'error' ? 'text-signal' : e.level === 'warn' ? 'text-[#fbbf24]' : 'text-[#555]';
-      return `<div class="flex gap-2 py-0.5 border-b border-[#1e1e1e]"><span class="text-[#555] flex-shrink-0">${ts}</span><span class="${lc} flex-shrink-0">[${e.tag}]</span><span class="text-[#ccc]">${escHtml(e.message)}</span></div>`;
+      const lc = e.level === 'error' ? 'text-signal' : e.level === 'warn' ? 'text-[var(--warning, #fbbf24)]' : 'text-[var(--text-secondary)]';
+      return `<div class="flex gap-2 py-0.5 border-b border-[var(--border-color)]"><span class="text-[var(--text-secondary)] flex-shrink-0">${ts}</span><span class="${lc} flex-shrink-0">[${e.tag}]</span><span class="text-[var(--text-primary)]">${escHtml(e.message)}</span></div>`;
     }).join('');
     container.scrollTop = container.scrollHeight;
   } catch(e) { container.innerHTML = `<div class="text-signal py-4">Error: ${escHtml(e.message)}</div>`; }
@@ -2121,7 +2186,7 @@ async function fetchLogs() {
 async function clearLogs() {
   await fetch('/api/logs', { method: 'DELETE' });
   const container = document.getElementById('log-entries');
-  if (container) container.innerHTML = '<div class="text-center text-[#555] py-4">Logs cleared</div>';
+  if (container) container.innerHTML = '<div class="text-center text-[var(--text-secondary)] py-4">Logs cleared</div>';
 }
 
 // ─── Test Sources ──────────────────────────────────
