@@ -299,7 +299,7 @@ input[type=range].xfader::-webkit-slider-thumb {
 /* ─── Queue items ───────────────────────────────── */
 .qitem {
   display: grid;
-  grid-template-columns: 1.5rem 3rem 1fr 4rem 3rem 1.5rem;
+  grid-template-columns: 1.5rem auto 1fr 4rem 3rem 1.5rem;
   gap: 0.5rem; align-items: center;
   padding: 0.5rem 0.75rem;
   font-size: 0.75rem;
@@ -317,6 +317,62 @@ input[type=range].xfader::-webkit-slider-thumb {
 .badge-playing { background: var(--signal-dim); color: var(--signal); }
 .badge-next { background: var(--flow-dim); color: var(--flow); }
 .badge-pending { background: var(--badge-bg); color: var(--text-muted); }
+
+/* ─── Source badges ─────────────────────────────── */
+.source-badge {
+  font-size: 0.5625rem;
+  padding: 0.0625rem 0.3125rem;
+  border-radius: 0.1875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  font-weight: 500;
+  border: 1px solid;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+.source-invidious { color: #e6938c; background: rgba(230,147,140,0.12); border-color: rgba(230,147,140,0.3); }
+.source-piped { color: #a78bfa; background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.3); }
+.source-dab { color: #5eead4; background: rgba(94,234,212,0.12); border-color: rgba(94,234,212,0.3); }
+.source-jamendo { color: #34d399; background: rgba(52,211,153,0.12); border-color: rgba(52,211,153,0.3); }
+.source-metube { color: #60a5fa; background: rgba(96,165,250,0.12); border-color: rgba(96,165,250,0.3); }
+.source-squid { color: #9ca3af; background: rgba(156,163,175,0.12); border-color: rgba(156,163,175,0.3); }
+.source-local { color: var(--signal); background: var(--signal-dim); border-color: var(--signal-border); }
+.source-cache { color: var(--flow); background: var(--flow-dim); border-color: var(--flow-border); }
+.source-default { color: var(--text-muted); background: var(--badge-bg); border-color: var(--border-color); }
+
+/* ─── Download status table ─────────────────────── */
+.dl-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+.dl-table th { text-align: left; padding: 0.5rem 0.75rem; font-size: 0.625rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border-color); }
+.dl-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border-color); }
+.dl-status { display: inline-flex; align-items: center; gap: 0.375rem; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; }
+.dl-status .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.dl-status.queued .dot { background: var(--warning, #fbbf24); }
+.dl-status.queued { color: var(--warning, #fbbf24); }
+.dl-status.downloading .dot { background: var(--flow); }
+.dl-status.downloading { color: var(--flow); }
+.dl-status.completed .dot { background: var(--success, #34d399); }
+.dl-status.completed { color: var(--success, #34d399); }
+.dl-status.failed .dot { background: var(--danger, #ef4444); }
+.dl-status.failed { color: var(--danger, #ef4444); }
+.dl-spinner { display: inline-block; width: 0.625rem; height: 0.625rem; border: 1.5px solid var(--flow); border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; }
+
+/* ─── Active download badge count ───────────────── */
+.dl-badge-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.25rem;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  border-radius: 999px;
+  background: var(--signal);
+  color: var(--bg-page);
+  line-height: 1;
+  margin-left: auto;
+}
 
 /* ─── Stats cards ───────────────────────────────── */
 .stat-card {
@@ -424,6 +480,10 @@ input[type=range].xfader::-webkit-slider-thumb {
       <a href="#" class="sidebar-link" data-page="discovery">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
         Discovery
+      </a>
+      <a href="#" class="sidebar-link" data-page="downloads">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Downloads <span id="dl-count-sidebar" class="dl-badge-count" style="display:none">0</span>
       </a>
       <a href="#" class="sidebar-link" data-page="settings">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -686,6 +746,7 @@ input[type=range].xfader::-webkit-slider-thumb {
               <div class="panel-body">
                 <div class="text-sm font-semibold text-white truncate" id="np-sidebar-title">—</div>
                 <div class="text-[0.6875rem] text-[var(--text-muted)] truncate" id="np-sidebar-artist">—</div>
+                <div class="text-[0.5625rem] text-[var(--text-secondary)] truncate mt-0.5" id="np-sidebar-source"></div>
                 <div class="text-[0.625rem] text-flow mt-1" id="np-sidebar-genre">—</div>
               </div>
             </div>
@@ -738,6 +799,23 @@ input[type=range].xfader::-webkit-slider-thumb {
         <!-- Results grid -->
         <div id="discovery-results" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           <div class="col-span-full text-center text-[0.75rem] text-[var(--text-secondary)] py-8">Search or browse to discover new tracks</div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════ -->
+      <!-- PAGE: DOWNLOADS                              -->
+      <!-- ════════════════════════════════════════════ -->
+      <section id="page-downloads" class="page-section p-4">
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">⬇ Download Status</span>
+            <button class="btn btn-xs btn-signal" id="dl-clear-btn" onclick="clearDownloads()">Clear Completed</button>
+          </div>
+          <div class="panel-body p-0">
+            <div id="dl-list">
+              <div class="text-center text-[0.75rem] text-[var(--text-secondary)] py-8">No recent downloads</div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -853,6 +931,10 @@ input[type=range].xfader::-webkit-slider-thumb {
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
           <span>Discover</span>
         </a>
+        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[var(--text-muted)] sidebar-link" data-page="downloads">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Downloads</span>
+        </a>
         <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[var(--text-muted)] sidebar-link" data-page="settings">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           <span>Settings</span>
@@ -916,6 +998,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }, 3000);
   // Init SSE for now-playing display sync
   initSSE();
+  // Init download status polling
+  await fetchDownloadStatus();
+  if (dlPollTimer) clearInterval(dlPollTimer);
+  dlPollTimer = setInterval(fetchDownloadStatus, 3000);
   setStatus('Signal acquired — ready');
   setTimeout(startRenderLoop, 300);
 });
@@ -969,6 +1055,26 @@ function initSSE() {
   if (sseSource) { sseSource.close(); }
   try {
     sseSource = new EventSource('/api/nowplaying/stream');
+    sseSource.addEventListener('state', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.nowPlaying) updateNowPlayingDisplay(data);
+        if (data.queue) { DJ.queue = data.queue; renderQueue(); }
+      } catch(err) {}
+    });
+    sseSource.addEventListener('download', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        updateDownloadStatus(data);
+      } catch(err) {}
+    });
+    sseSource.addEventListener('command', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.command === 'reload') window.location.reload();
+      } catch(err) {}
+    });
+    // Fallback for unnamed events
     sseSource.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
@@ -989,12 +1095,88 @@ function updateNowPlayingDisplay(data) {
     const t = document.getElementById('np-sidebar-title');
     const a = document.getElementById('np-sidebar-artist');
     const g = document.getElementById('np-sidebar-genre');
+    const s = document.getElementById('np-sidebar-source');
     if (t) t.textContent = np.title || '—';
     if (a) a.textContent = np.artist || '—';
     if (g) g.textContent = (np.tags && np.tags[0]) || (np.genre || '—');
+    if (s) s.innerHTML = sourceBadge(np._source || '');
   }
   if (data.listeners != null) {
     document.getElementById('stat-listeners').textContent = data.listeners;
+  }
+}
+
+// ─── Download Status ─────────────────────────────────
+let dlData = { items: [] };
+let dlPollTimer = null;
+
+async function fetchDownloadStatus() {
+  try {
+    const r = await fetch('/api/downloads/status');
+    const data = await r.json();
+    dlData = data;
+    updateDownloadStatusUI();
+  } catch(e) {}
+}
+
+function updateDownloadStatus(data) {
+  if (data && data.items) {
+    dlData = data;
+    updateDownloadStatusUI();
+  }
+}
+
+function updateDownloadStatusUI() {
+  const list = document.getElementById('dl-list');
+  const badge = document.getElementById('dl-count-sidebar');
+  if (!list) return;
+
+  // Update sidebar badge
+  const items = dlData.items || [];
+  const active = items.filter(i => i.status === 'queued' || i.status === 'downloading');
+  if (badge) {
+    if (active.length > 0) {
+      badge.textContent = active.length;
+      badge.style.display = 'inline-flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  if (!items.length) {
+    list.innerHTML = '<div class="text-center text-[0.75rem] text-[var(--text-secondary)] py-8">No recent downloads</div>';
+    return;
+  }
+
+  list.innerHTML = `<table class="dl-table">
+    <thead><tr><th>Title</th><th>Source</th><th>Status</th><th>Time</th></tr></thead>
+    <tbody>${items.map(i => {
+      const statusCls = 'dl-status ' + (i.status || '');
+      let statusHtml;
+      if (i.status === 'downloading') {
+        statusHtml = `<span class="${statusCls}"><span class="dl-spinner"></span> ${escHtml(i.status)}</span>`;
+      } else {
+        statusHtml = `<span class="${statusCls}"><span class="dot"></span> ${escHtml(i.status)}</span>`;
+      }
+      const ts = i.timestamp ? new Date(i.timestamp).toLocaleTimeString('en-US', { hour12: false }) : '—';
+      return `<tr>
+        <td class="text-white font-medium max-w-[200px] truncate">${escHtml(i.title || '—')}</td>
+        <td>${sourceBadge(i._source || '')}</td>
+        <td>${statusHtml}</td>
+        <td class="text-[var(--text-secondary)] font-mono">${ts}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+async function clearDownloads() {
+  try {
+    await fetch('/api/downloads/clear', { method: 'POST' });
+    dlData = { items: [] };
+    updateDownloadStatusUI();
+    setStatus('Completed downloads cleared');
+  } catch(e) {
+    setStatus('Failed to clear downloads');
   }
 }
 
@@ -1698,6 +1880,13 @@ function updateNowPlayingCard() {
   if (artistEl) artistEl.textContent = track.artist || '—';
 }
 
+// ─── Source badge helper ────────────────────────────
+function sourceBadge(src) {
+  if (!src) return '';
+  const cls = 'source-' + src.replace(/[^a-z0-9]/g, '');
+  return `<span class="source-badge ${cls}">${escHtml(src)}</span>`;
+}
+
 // ─── Queue ──────────────────────────────────────────
 function renderQueue() {
   const list = document.getElementById('queue-list');
@@ -1714,15 +1903,15 @@ function renderQueue() {
     const isPlay = i === DJ.trackIndex;
     const isNext = i === DJ.trackIndex + 1;
     const isPast = i < DJ.trackIndex;
-    const src = t.type === 'temp' ? 'TEMP' : t.type === 'local' ? 'LOCAL' : 'ONLINE';
     const badgeClass = isPlay ? 'badge-playing' : isNext ? 'badge-next' : 'badge-pending';
-    const badgeText = isPlay ? '▶ NOW' : isNext ? 'NEXT' : src;
+    const badgeText = isPlay ? '▶ NOW' : isNext ? 'NEXT' : '—';
+    const sb = sourceBadge(t._source || (t.type === 'local' ? 'local' : ''));
     return `<div class="qitem${isPlay?' playing':''}${isNext?' next':''}${isPast?' past':''}"
       draggable="${!isPlay}" data-idx="${i}"
       ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)"
       ondrop="onDrop(event,${i})" ondragleave="onDragLeave(event)">
       <div class="q-num">${i+1}</div>
-      <div class="q-src">${src}</div>
+      <div class="q-src">${sb}</div>
       <div class="min-w-0 overflow-hidden">
         <div class="text-[0.75rem] text-white truncate font-medium">${escHtml(t.title || '—')}</div>
         <div class="text-[0.625rem] text-[var(--text-muted)] truncate">${escHtml(t.artist || '—')}${t.album ? ' · ' + escHtml(t.album) : ''}</div>
@@ -1944,9 +2133,16 @@ async function unifiedQueueSearch() {
         uploader: it.uploader, _source: it._source, _instance: it._instance,
         artwork: it.artwork, lengthSeconds: it.lengthSeconds
       }));
-      const art = it.artwork || '';
+      let artUrl = '';
+      if (it.artwork) {
+        if (it.artwork.match(/^https?:\/\//)) {
+          artUrl = `/api/artwork/proxy?url=${encodeURIComponent(it.artwork)}`;
+        } else {
+          artUrl = `/api/artwork/proxy?videoId=${encodeURIComponent(it.artwork)}`;
+        }
+      }
       return `<div class="flex items-center gap-2 p-2 border-b border-[var(--border-color)] text-[0.6875rem]">
-        ${art ? `<img src="${art}" class="w-8 h-8 rounded object-cover flex-shrink-0">` : '<div class="w-8 h-8 rounded bg-[var(--bg-elevated)] flex-shrink-0"></div>'}
+        ${artUrl ? `<img src="${artUrl}" class="w-8 h-8 rounded object-cover flex-shrink-0" loading="lazy">` : '<div class="w-8 h-8 rounded bg-[var(--bg-elevated)] flex-shrink-0"></div>'}
         <div class="flex-1 min-w-0">
           <div class="text-white truncate font-medium">${escHtml(it.title || '—')}</div>
           <div class="text-[var(--text-muted)] truncate">${escHtml(it.author || it.uploader || '')}</div>
@@ -1988,18 +2184,33 @@ async function discoverSearch() {
       box.innerHTML = '<div class="col-span-full text-center text-[0.75rem] text-[var(--text-secondary)] py-8">No results</div>';
       return;
     }
-    box.innerHTML = results.map(it => `
-      <div class="album-card">
-        ${it.artwork ? `<img src="${it.artwork}" class="w-full aspect-square object-cover" alt="">` : '<div class="w-full aspect-square bg-[var(--bg-elevated)] flex items-center justify-center text-[var(--text-secondary)]">♪</div>'}
+    box.innerHTML = results.map(it => {
+      let artUrl = '';
+      if (it.artwork) {
+        if (it.artwork.match(/^https?:\/\//)) {
+          artUrl = `/api/artwork/proxy?url=${encodeURIComponent(it.artwork)}`;
+        } else {
+          artUrl = `/api/artwork/proxy?videoId=${encodeURIComponent(it.artwork)}`;
+        }
+      }
+      const payload = encodeURIComponent(JSON.stringify({
+        videoId: it.videoId, title: it.title,
+        author: it.author || it.uploader || '',
+        _source: it._source, _instance: it._instance,
+        artwork: it.artwork, lengthSeconds: it.lengthSeconds
+      }));
+      return `<div class="album-card">
+        ${artUrl ? `<img src="${artUrl}" class="w-full aspect-square object-cover" alt="" loading="lazy">` : '<div class="w-full aspect-square bg-[var(--bg-elevated)] flex items-center justify-center text-[var(--text-secondary)]">♪</div>'}
         <div class="p-2">
           <div class="text-[0.6875rem] text-white truncate font-medium">${escHtml(it.title || '—')}</div>
           <div class="text-[0.5625rem] text-[var(--text-muted)] truncate">${escHtml(it.author || it.uploader || '')}</div>
         </div>
         <div class="overlay">
-          <button class="btn btn-xs btn-signal" onclick="quickQueue('${encodeURIComponent(JSON.stringify({videoId:it.videoId,title:it.title,author:it.author||it.uploader||'',_source:it._source,_instance:it._instance,artwork:it.artwork,lengthSeconds:it.lengthSeconds}))}')">▶ Play</button>
-          <button class="btn btn-xs btn-flow" onclick="quickQueueB('${encodeURIComponent(JSON.stringify({videoId:it.videoId,title:it.title,author:it.author||it.uploader||'',_source:it._source,_instance:it._instance,artwork:it.artwork,lengthSeconds:it.lengthSeconds}))}')">Cue B</button>
+          <button class="btn btn-xs btn-signal" onclick="quickQueue('${payload}')">▶ Play</button>
+          <button class="btn btn-xs btn-flow" onclick="quickQueueB('${payload}')">Cue B</button>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   } catch(e) {
     box.innerHTML = `<div class="col-span-full text-center text-signal py-8">${escHtml(e.message)}</div>`;
   }
