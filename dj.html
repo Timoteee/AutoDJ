@@ -387,6 +387,20 @@ input[type=range].xfader::-webkit-slider-thumb {
 .stat-bar { height: 2px; background: var(--border-color); border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
 .stat-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
 
+/* ─── V7 Styles ──────────────────────────────────── */
+.duration-cell[data-bad="1"] { color: var(--amber-dj) !important; }
+.retry-btn { opacity: 0.6; transition: opacity 0.2s; }
+.retry-btn:hover { opacity: 1; }
+.source-badge { font-size: 0.5rem; padding: 0.125rem 0.375rem; border-radius: 9999px; }
+.source-badge.source-invidious { background: #f97316; color: #fff; }
+.source-badge.source-piped { background: #8b5cf6; color: #fff; }
+.source-badge.source-dab { background: #14b8a6; color: #fff; }
+.source-badge.source-jamendo { background: #22c55e; color: #fff; }
+.source-badge.source-metube { background: #3b82f6; color: #fff; }
+.source-badge.source-squid { background: #64748b; color: #fff; }
+.source-badge.source-local { background: var(--signal); color: #000; }
+.source-badge.source-cache { background: var(--flow); color: #000; }
+
 /* ─── Section pages ────────────────────────────── */
 .page-section { display: none; height: 100%; overflow-y: auto; }
 .page-section.active { display: block; }
@@ -489,6 +503,10 @@ input[type=range].xfader::-webkit-slider-thumb {
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
       </a>
+      <a href="#" class="sidebar-link" data-page="failed">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Failed
+      </a>
       <a href="/display" target="_blank" class="sidebar-link">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         Display ↗
@@ -533,6 +551,16 @@ input[type=range].xfader::-webkit-slider-thumb {
       <!-- PAGE: CONSOLE (Decks/Console)               -->
       <!-- ════════════════════════════════════════════ -->
       <section id="page-console" class="page-section active p-4 space-y-4">
+        <!-- V7 Status Bar -->
+        <div id="status-bar" class="flex gap-4 text-xs text-muted mb-4 flex-wrap">
+          <span id="status-sources">Sources: loading...</span>
+          <span id="status-preload">Preload: loading...</span>
+          <span id="status-retries">Retries: loading...</span>
+          <span id="status-curator">Curator: loading...</span>
+        </div>
+        <div id="preload-progress" class="h-2 bg-surface-lighter rounded-full overflow-hidden hidden mb-4">
+          <div id="preload-fill" class="h-full bg-flow transition-all duration-300" style="width: 0%"></div>
+        </div>
         <!-- Top status row: BPM, Fade, Timer -->
         <div class="flex flex-wrap items-center gap-3">
           <div class="flex items-center gap-3 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-4 py-2">
@@ -705,6 +733,8 @@ input[type=range].xfader::-webkit-slider-thumb {
               <div class="flex gap-2 flex-wrap">
                 <button class="btn btn-sm btn-signal" onclick="document.getElementById('queue-search-inp').focus()">+ Search</button>
                 <button class="btn btn-sm" onclick="shuffleQueue()">Shuffle</button>
+                <button class="btn btn-sm" onclick="dedupeQueue()">Dedupe</button>
+                <button class="btn btn-sm btn-flow" onclick="curatePlaylist()">AI Curate</button>
                 <button class="btn btn-sm btn-danger" onclick="clearQueue()">Clear</button>
                 <button class="btn btn-sm btn-danger" onclick="clearAllAndReset()">Reset</button>
               </div>
@@ -819,6 +849,25 @@ input[type=range].xfader::-webkit-slider-thumb {
         </div>
       </section>
 
+      <!-- ════════════════════════════════════════════ -->
+      <!-- PAGE: FAILED DOWNLOADS                       -->
+      <!-- ════════════════════════════════════════════ -->
+      <section id="page-failed" class="page-section p-4">
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Failed Downloads</span>
+            <button onclick="refreshFailed()" class="btn btn-sm btn-outline">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+              Refresh
+            </button>
+          </div>
+          <div class="panel-body">
+            <div id="failed-list" class="space-y-2">
+              <div class="text-center text-muted py-8">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </section>
       <!-- ════════════════════════════════════════════ -->
       <!-- PAGE: SETTINGS                               -->
       <!-- ════════════════════════════════════════════ -->
@@ -1032,6 +1081,7 @@ function showPage(name) {
   document.querySelectorAll(`.sidebar-link[data-page="${name}"]`).forEach(l => l.classList.add('active'));
   // When navigating to discovery, adjust if needed
   if (name === 'settings') { fetchLogs(); }
+  if (name === 'failed') { refreshFailed(); }
 }
 
 document.querySelectorAll('.sidebar-link[data-page]').forEach(link => {
@@ -1060,6 +1110,9 @@ function initSSE() {
         const data = JSON.parse(e.data);
         if (data.nowPlaying) updateNowPlayingDisplay(data);
         if (data.queue) { DJ.queue = data.queue; renderQueue(); }
+        // V7: Update status bar and preload
+        updateStatusBar(data);
+        updatePreloadProgress(data.preloadState);
       } catch(err) {}
     });
     sseSource.addEventListener('download', (e) => {
@@ -1906,19 +1959,20 @@ function renderQueue() {
     const badgeClass = isPlay ? 'badge-playing' : isNext ? 'badge-next' : 'badge-pending';
     const badgeText = isPlay ? '▶ NOW' : isNext ? 'NEXT' : '—';
     const sb = sourceBadge(t._source || (t.type === 'local' ? 'local' : ''));
-    return `<div class="qitem${isPlay?' playing':''}${isNext?' next':''}${isPast?' past':''}"
-      draggable="${!isPlay}" data-idx="${i}"
-      ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)"
-      ondrop="onDrop(event,${i})" ondragleave="onDragLeave(event)">
-      <div class="q-num">${i+1}</div>
-      <div class="q-src">${sb}</div>
-      <div class="min-w-0 overflow-hidden">
-        <div class="text-[0.75rem] text-white truncate font-medium">${escHtml(t.title || '—')}</div>
-        <div class="text-[0.625rem] text-[var(--text-muted)] truncate">${escHtml(t.artist || '—')}${t.album ? ' · ' + escHtml(t.album) : ''}</div>
-      </div>
-      <span class="q-badge ${badgeClass}">${badgeText}</span>
-      <div class="text-[0.625rem] font-mono text-[var(--text-secondary)]">${t.duration ? fmt(t.duration) : '—'}</div>
-      ${!isPast && !isPlay ? `<button class="btn btn-xs" onclick="playQueueTrack(${i})" title="Play now">▶</button>` : ''}
+    <div class="qitem${isPlay?' playing':''}${isNext?' next':''}${isPast?' past':''}"
+    draggable="${!isPlay}" data-idx="${i}"
+    ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)"
+    ondrop="onDrop(event,${i})" ondragleave="onDragLeave(event)">
+    <div class="q-num">${i+1}</div>
+    <div class="q-src">${sb}</div>
+    <div class="min-w-0 overflow-hidden">
+      <div class="text-[0.75rem] text-white truncate font-medium">${escHtml(t.title || '—')}</div>
+      <div class="text-[0.625rem] text-[var(--text-muted)] truncate">${escHtml(t.artist || '—')}${t.album ? ' · ' + escHtml(t.album) : ''}</div>
+    </div>
+    <span class="q-badge ${badgeClass}">${badgeText}</span>
+    <div class="text-[0.625rem] font-mono text-[var(--text-secondary)] duration-cell" data-bad="${t._badDuration?'1':'0'}">${t.duration ? fmt(t.duration) : '—'}</div>
+    ${!isPast && !isPlay ? `<button class="btn btn-xs" onclick="playQueueTrack(${i})" title="Play now">▶</button>` : ''}
+    ${t._failed ? `<button class="btn-icon btn-xs retry-btn" onclick="retryTrack(${i})" title="Retry">↻</button>` : ''}
     </div>`;
   }).join('');
   list.querySelector('.playing')?.scrollIntoView({ block:'nearest', behavior:'smooth' });
@@ -2508,6 +2562,142 @@ setInterval(() => {
 }, 1000);
 
 console.log('⟡ AutoDJ v6 — Signal & Flow Control Room initialized');
-</script>
+
+// ─── V7 Functions ────────────────────────────────────────────────────────
+function updateStatusBar(d) {
+  if (d.sourceHealth) {
+    const total = Object.values(d.sourceHealth).reduce((a,b) => a + (b.total||0), 0);
+    const healthy = Object.values(d.sourceHealth).reduce((a,b) => a + (b.healthy||0), 0);
+    const el = document.getElementById('status-sources');
+    if (el) el.textContent = `Sources: ${healthy}/${total} ok`;
+  }
+  if (d.preloadState) {
+    const s = d.preloadState;
+    const el = document.getElementById('status-preload');
+    if (el) el.textContent = `Preload: ${s.cached||0}/${s.required||0}`;
+  }
+  if (d.retryCount !== undefined) {
+    const el = document.getElementById('status-retries');
+    if (el) el.textContent = `Retries: ${d.retryCount}`;
+  }
+}
+
+function updatePreloadProgress(ps) {
+  const bar = document.getElementById('preload-progress');
+  const fill = document.getElementById('preload-fill');
+  if (!bar || !fill) return;
+  if (!ps) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  const pct = ps.status === 'ready' ? 100 : ((ps.cached||0) / Math.max(ps.required||1, 1)) * 100;
+  fill.style.width = pct + '%';
+  fill.className = 'h-full transition-all duration-300 ' +
+    (ps.status === 'ready' ? 'bg-green-500' : ps.status === 'timeout' ? 'bg-red-500' : 'bg-flow');
+}
+
+function refreshFailed() {
+  fetch('/api/downloads/retries').then(r => r.json()).then(data => {
+    const el = document.getElementById('failed-list');
+    if (!el) return;
+    if (!data.entries || data.entries.length === 0) {
+      el.innerHTML = '<div class="text-center text-muted py-8">No failed downloads</div>';
+      return;
+    }
+    el.innerHTML = data.entries.map(e => `
+      <div class="flex items-center justify-between p-2 rounded bg-surface-lighter">
+        <div>
+          <div class="font-medium">${escHtml(e.title || e.videoId)}</div>
+          <div class="text-xs text-muted">${escHtml(e.artist || '')} • ${escHtml(e.source||'?')} • Attempt ${e.attempt||0}/${e.maxAttempts||2}</div>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="retryDownload('${e.videoId}')" class="btn btn-xs">Retry</button>
+          <button onclick="clearFailed('${e.videoId}')" class="btn btn-xs btn-outline">Clear</button>
+        </div>
+      </div>
+    `).join('');
+  }).catch(() => {});
+}
+
+function retryDownload(videoId) {
+  fetch(`/api/downloads/retry/${videoId}`, {method: 'POST'}).then(() => refreshFailed());
+}
+
+function clearFailed(videoId) {
+  fetch('/api/downloads/clear/' + videoId, {method: 'POST'}).then(() => refreshFailed());
+}
+
+function dedupeQueue() {
+  fetch('/api/queue/dedupe', {method: 'POST'}).then(r => r.json()).then(data => {
+    if (!data.groups || data.groups.length === 0) {
+      alert('No duplicates found!');
+      return;
+    }
+    let msg = 'Duplicates found:\n';
+    data.groups.forEach(g => {
+      msg += '\n' + escHtml(g.original.title || g.original.videoId) + ' (' + escHtml(g.original.artist||'?') + ')\n';
+      (g.duplicates||[]).forEach(d => msg += '  - ' + escHtml(d.title || d.videoId) + '\n');
+    });
+    msg += '\nRemove all duplicates?';
+    if (confirm(msg)) {
+      fetch('/api/queue/dedupe/remove', {method: 'POST'}).then(() => renderQueue());
+    }
+  });
+}
+
+function curatePlaylist() {
+  const count = prompt('How many tracks?', '20');
+  if (!count) return;
+  setStatus('Generating playlist...');
+  fetch('/api/ai/curate-playlist', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({count: parseInt(count)})
+  }).then(r => r.json()).then(data => {
+    if (!data.tracks || data.tracks.length === 0) {
+      setStatus('No tracks generated');
+      return;
+    }
+    const preview = data.tracks.slice(0, 10).map(t => `
+      <div class="flex justify-between p-2 border-b border-surface-border">
+        <span>${escHtml(t.title || '?')} - ${escHtml(t.artist||'?')}</span>
+        <span class="text-sm text-muted">${escHtml(t.reason||'')}</span>
+      </div>
+    `).join('');
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+    modal.innerHTML = `
+      <div class="bg-surface-card rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <h3 class="text-xl mb-4">AI Curated Playlist (${data.tracks.length} tracks)</h3>
+        <div class="mb-4">${preview}</div>
+        <div class="text-sm text-muted mb-4">+ ${data.tracks.length - 10} more tracks</div>
+        <div class="flex gap-2 justify-end">
+          <button onclick="this.closest('.fixed').remove()" class="btn btn-outline">Cancel</button>
+          <button onclick="addCuratedTracks(${JSON.stringify(data.tracks).replace(/</g,'\\u003c')})" class="btn btn-flow">Add to Queue</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    setStatus('');
+  }).catch(e => setStatus('Error: ' + e.message));
+}
+
+function addCuratedTracks(tracks) {
+  fetch('/api/queue', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({tracks})
+  }).then(() => {
+    document.querySelector('.fixed.inset-0')?.remove();
+    renderQueue();
+  });
+}
+
+function retryTrack(index) {
+  const item = DJ.queue[index];
+  if (item && item.videoId) {
+    fetch(`/api/downloads/retry/${item.videoId}`, {method: 'POST'}).then(() => {
+      // Will be reflected in next render
+    });
+  }
+}
 </body>
 </html>

@@ -9,6 +9,15 @@ const { Readable } = require('stream');
 const multer = require('multer');
 const { XMLParser } = require('fast-xml-parser');
 
+// ─── V7 Modules ─────────────────────────────────────────────────────────
+const { SourcePipeline } = require('./lib/source-pipeline');
+const { sanitizeDuration, formatDuration, validateTrack } = require('./lib/duration-sanitizer');
+const { DedupFilter } = require('./lib/dedup-filter');
+const { PreloadGate } = require('./lib/preload-gate');
+const { RetryManager } = require('./lib/retry-manager');
+const { AIScout } = require('./lib/ai-scout');
+const { AICurator } = require('./lib/ai-curator');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_DEV = process.env.NODE_ENV !== 'production';
@@ -219,8 +228,20 @@ if (!config.rssFeedUrl) {
       }
     } catch(e) { log('Config', `Geo RSS auto-set failed: ${e.message}`); }
   })();
-}
-function saveConfig() {
+  }
+
+  // ─── V7 Module Instances ─────────────────────────────────────────────────
+  const sourcePipeline = new SourcePipeline(config);
+  const dedupFilter = new DedupFilter(config.dedup || {});
+  const preloadGate = new PreloadGate(config);
+  const retryManager = new RetryManager({
+    maxAttempts: config.downloadRetry?.maxAttempts || 2,
+    backoff: config.downloadRetry?.backoff || [30000, 300000],
+  });
+  const aiScout = new AIScout(config);
+  const aiCurator = new AICurator(config);
+
+  function saveConfig() {
   // Write to backup first, then atomically rename primary
   const tmp = CONFIG_FILE + '.tmp';
   try {
@@ -248,7 +269,7 @@ let sharedState = {
 };
 const sseClients = new Map();
 let sseIdCounter = 0;
-function broadcastState() { const b = { ...sharedState, listenerCount: sseClients.size }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastState() { const preloadState = (typeof preloadGate !== "undefined" && preloadGate) ? preloadGate.getState() : null; const sourceHealth = (typeof sourcePipeline !== "undefined" && sourcePipeline) ? sourcePipeline.getHealthSummary() : {}; const b = { ...sharedState, listenerCount: sseClients.size, preloadState, sourceHealth, retryCount: retryManager ? retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length : 0 }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 function broadcastCommand(cmd, extra = {}) { const b = { ...sharedState, listenerCount: sseClients.size, command: cmd, ...extra }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 function broadcastEvent(eventType, data) {
   const d = JSON.stringify(data);
@@ -362,9 +383,21 @@ async function startPlayback() {
     sharedState.trackIndex--; // counteract advanceTrack()'s ++
   }
   sharedState.sessionActive = true;
-  sharedState.sessionStart = Date.now();
-  sharedState.playerMode = sseClients.size > 0 ? 'display' : 'headless';
-  log('Playback', `Session started (${sseClients.size} listener(s), trackIndex will be ${sharedState.trackIndex + 1})`);
+    sharedState.sessionStart = Date.now();
+    sharedState.playerMode = sseClients.size > 0 ? 'display' : 'headless';
+
+    // Wait for preload if needed
+    const nextTracks = sharedState.queue.slice(sharedState.trackIndex + 1, sharedState.trackIndex + 1 + (config.preDownloadCount || 3));
+    if (nextTracks.length > 0) {
+      log('Preload', `Waiting for ${Math.min(config.preDownloadCount || 3, nextTracks.length)} tracks before playback`);
+      // Run preload in background — don't block startup entirely
+      preloadGate.waitUntilReady(nextTracks).then(status => {
+        log('Preload', `Gate status: ${status}`);
+        broadcastState();
+      }).catch(() => {});
+    }
+
+    log('Playback', `Session started (${sseClients.size} listener(s), trackIndex will be ${sharedState.trackIndex + 1})`);
   saveQueueToDisk(sharedState.queue);
   await advanceTrack();
   return { ok: true };
@@ -523,6 +556,79 @@ app.get('/api/local/stream', (req, res) => {
   if(!allowed||!fs.existsSync(fp)) return res.status(404).send('Not found');
   streamFile(fp, req, res);
 });
+
+
+// ─── V7: Source Health ────────────────────────────────────────────────────
+app.get('/api/sources/health', (req, res) => {
+  res.json(sourcePipeline.getHealthSummary());
+});
+
+// ─── V7: Queue Dedupe ────────────────────────────────────────────────────
+app.post('/api/queue/dedupe', (req, res) => {
+  const groups = dedupFilter.findDuplicates(sharedState.queue);
+  res.json({ groups });
+});
+
+app.post('/api/queue/dedupe/remove', (req, res) => {
+  const groups = dedupFilter.findDuplicates(sharedState.queue);
+  const videoIdsToRemove = new Set();
+  groups.forEach(g => g.duplicates.forEach(d => videoIdsToRemove.add(d.videoId)));
+  sharedState.queue = sharedState.queue.filter(t => !videoIdsToRemove.has(t.videoId));
+  saveQueueToDisk(sharedState.queue);
+  broadcastState();
+  res.json({ removed: videoIdsToRemove.size });
+});
+
+// ─── V7: Download Retries ────────────────────────────────────────────────
+app.get('/api/downloads/retries', (req, res) => {
+  res.json({ entries: retryManager.getEntries() });
+});
+
+app.post('/api/downloads/retry/:videoId', (req, res) => {
+  const { videoId } = req.params;
+  const ok = retryManager.retry(videoId);
+  res.json({ ok });
+});
+
+app.post('/api/downloads/clear/:videoId', (req, res) => {
+  const { videoId } = req.params;
+  retryManager.remove(videoId);
+  res.json({ ok: true });
+});
+
+// ─── V7: AI Scout Proxies ────────────────────────────────────────────────
+app.post('/api/ai/scout-proxies', async (req, res) => {
+  try {
+    const { failedSources, failedVideoIds } = req.body || {};
+    const result = await aiScout.scoutProxies(failedSources || [], failedVideoIds || []);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message, proxies: [], altInstances: [] });
+  }
+});
+
+// ─── V7: AI Curate Playlist ──────────────────────────────────────────────
+app.post('/api/ai/curate-playlist', async (req, res) => {
+  try {
+    const { count } = req.body || {};
+    const result = await aiCurator.curatePlaylist(sharedState.queue, sharedState.playedIds, count || 20);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message, tracks: [] });
+  }
+});
+
+// ─── V7: AI Update Taste Profile ─────────────────────────────────────────
+app.post('/api/ai/update-profile', (req, res) => {
+  const { history } = req.body || {};
+  const shouldSave = aiCurator.updateProfile(history || []);
+  if (shouldSave) {
+    config.aiTasteProfile = aiCurator.getProfile();
+    saveConfig();
+  }
+  res.json({ ok: true, profile: aiCurator.getProfile() });
+});
+
 
 // ─── Last.fm ──────────────────────────────────────────────────────────────────
 app.get('/api/lastfm', async (req, res) => {
@@ -1609,8 +1715,11 @@ app.get('/api/queue', (req, res) => res.json({ queue: sharedState.queue, trackIn
 app.post('/api/queue', rateLimit(30), (req, res) => {
   const { queue, trackIndex } = req.body;
   if (Array.isArray(queue)) {
-    let safe = queue.map(t => {
-      // Normalize duration on save — cap to 600s
+    // Apply dedup filtering
+    const filteredQueue = dedupFilter.filterTracks(queue, sharedState.queue);
+    const safe = filteredQueue.map(t => {
+      const validated = validateTrack(t);
+      const d = sanitizeDuration(validated.duration || t.duration);
       if (t.duration && Number.isFinite(t.duration) && t.duration > 600) t.duration = Math.min(t.duration, MAX_REASONABLE_TRACK_SEC);
       if (t.type === 'local') return { ...t, filepath: undefined };
       return t;

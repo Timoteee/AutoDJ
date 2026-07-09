@@ -8,7 +8,7 @@
  ▀  ▀  ▀▀▀  ▀▀▀  ▀█▄▀▪▀▀▀▀▀• .▀  ▀
 ```
 
-**v6.0.0** — "Signal & Flow" Redesign — Fully responsive SPA, reworked backend, configurable crossfade, new Discovery engine, complete design overhaul.
+**v7.0.0** — Source & Download System Redesign — Complete overhaul of source handling, download pipeline, preload gate, retry system, playlist deduplication, and AI curation. All v6 features preserved.
 
 [![Node](https://img.shields.io/badge/node-22%2B-brightgreen?style=flat-square&logo=node.js)](https://nodejs.org)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker)](https://docker.com)
