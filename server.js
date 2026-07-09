@@ -419,34 +419,25 @@ function musicHeaders(more = {}) {
   return { 'User-Agent': MUSIC_UA, Accept: 'application/json, */*', ...more };
 }
 
-// ─── Music Sources (live-tested May 2026; rotate via getHealthy) ──────────
-/** Live-tested instances (June 2026). Run scripts/probe-sources.mjs to re-verify. */
-const SOURCES = {
-  dab: ['https://dabmusic.xyz/api', 'https://dab.yeet.su/api'],
-  piped: ['https://api.piped.private.coffee'],
-  invidious: [
-    'https://inv.thepixora.com',
-    'https://yt.chocolatemoo53.com',
-    'https://invidious.flokinet.to',
-  ],
-};
-/** User-configured Invidious base URL is tried first (e.g. self-hosted or redirector you trust). */
-function invidiousInstances() {
-  const u = config.invidiousRedirector && String(config.invidiousRedirector).trim();
-  const extra = u ? [u] : [];
-  return [...extra, ...SOURCES.invidious];
-}
+// ─── Music Sources (V7: via SourcePipeline) ──────────────────────────
+// All source handling now goes through sourcePipeline module
+// const sourcePipeline = new SourcePipeline(config); // initialized below
 
 // Source ordering helpers
-const SOURCE_KEYS = ['metube', 'invidious', 'piped', 'dab', 'jamendo', 'squid'];
-
 function sourcePriority() {
-  if (Array.isArray(config.sourcePriority) && config.sourcePriority.length > 0) {
-    const valid = config.sourcePriority.filter(s => SOURCE_KEYS.includes(s));
-    const missing = SOURCE_KEYS.filter(s => !config.sourcePriority.includes(s));
-    return [...valid, ...missing];
-  }
-  return SOURCE_KEYS;
+  return sourcePipeline.getSourcePriority();
+}
+
+function invidiousInstances() {
+  return sourcePipeline.getHealthyInstances('invidious');
+}
+
+function getHealthy(source) {
+  return sourcePipeline.getHealthyInstances(source);
+}
+
+function markInst(url, ok, latency) {
+  sourcePipeline.markInstance(url, ok, latency);
 }
 let instanceHealth = {};
 function markInst(url, ok, lat) { instanceHealth[url] = { ok, latency: lat||0, at: Date.now() }; }
@@ -2047,7 +2038,7 @@ app.use((err, req, res, _next) => {
 });
 
 const server = app.listen(PORT, () => {
-  console.log(`\n🎧 AutoDJ v6.0.0 — http://localhost:${PORT}`);
+  console.log(`\n🎧 AutoDJ v7.0.0 — http://localhost:${PORT}`);
   console.log(`   DJ Console  → /dj`);
   console.log(`   Now Playing → /display`);
   console.log(`   Sources: DAB(${SOURCES.dab.length}) Jamendo(${config.jamendoClientId ? 'on' : 'off'}) Piped(${SOURCES.piped.length}) Invidious(${invidiousInstances().length}) Metube(${METUBE_BASE ? 'on' : 'off'})\n`);
