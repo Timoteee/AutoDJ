@@ -2041,7 +2041,8 @@ const server = app.listen(PORT, () => {
   console.log(`\n🎧 AutoDJ v7.0.0 — http://localhost:${PORT}`);
   console.log(`   DJ Console  → /dj`);
   console.log(`   Now Playing → /display`);
-  console.log(`   Sources: DAB(${SOURCES.dab.length}) Jamendo(${config.jamendoClientId ? 'on' : 'off'}) Piped(${SOURCES.piped.length}) Invidious(${invidiousInstances().length}) Metube(${METUBE_BASE ? 'on' : 'off'})\n`);
+  const summary = sourcePipeline.getHealthSummary();
+  console.log(`   Sources: DAB(${summary.dab?.total||0}) Jamendo(${config.jamendoClientId ? 'on' : 'off'}) Piped(${summary.piped?.total||0}) Invidious(${summary.invidious?.total||0}) Metube(${METUBE_BASE ? 'on' : 'off'})\n`);
 });
 
 // Graceful shutdown — close HTTP server, flush SSE, release resources
