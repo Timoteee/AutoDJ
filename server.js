@@ -236,16 +236,6 @@ if (!config.rssFeedUrl) {
   })();
   }
 
-  // ─── V7 Module Instances ─────────────────────────────────────────────────
-  const sourcePipeline = new SourcePipeline(config);
-  const dedupFilter = new DedupFilter(config.dedup || {});
-  const preloadGate = new PreloadGate(config);
-  const retryManager = new RetryManager({
-    maxAttempts: config.downloadRetry?.maxAttempts || 2,
-    backoff: config.downloadRetry?.backoff || [30000, 300000],
-  });
-  const aiScout = new AIScout(config);
-  const aiCurator = new AICurator(config);
 
   function saveConfig() {
   // Write to backup first, then atomically rename primary
@@ -273,9 +263,21 @@ let sharedState = {
   playedIds: [],
   config: { rssFeedUrl: config.rssFeedUrl || '', marqueeMode: config.marqueeMode || 'rss', filterTopicChannels: config.filterTopicChannels !== false, sessionDuration: config.sessionDuration || 0, queueLimit: config.queueLimit || 0 }
 };
+
+  // ─── V7 Module Instances ─────────────────────────────────────────────────
+  const sourcePipeline = new SourcePipeline(config);
+  const dedupFilter = new DedupFilter(config.dedup || {});
+  const preloadGate = new PreloadGate(config);
+  const retryManager = new RetryManager({
+    maxAttempts: config.downloadRetry?.maxAttempts || 2,
+    backoff: config.downloadRetry?.backoff || [30000, 300000],
+  });
+  const aiScout = new AIScout(config);
+  const aiCurator = new AICurator(config);
+
 const sseClients = new Map();
 let sseIdCounter = 0;
-function broadcastState() { const preloadState = (typeof preloadGate !== "undefined" && preloadGate) ? preloadGate.getState() : null; const sourceHealth = (typeof sourcePipeline !== "undefined" && sourcePipeline) ? sourcePipeline.getHealthSummary() : {}; const b = { ...sharedState, listenerCount: sseClients.size, preloadState, sourceHealth, retryCount: retryManager ? retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length : 0, timezone: config.timezone, use12HourClock: config.use12HourClock }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastState() { const preloadState = preloadGate.getState(); const sourceHealth = sourcePipeline.getHealthSummary(); const b = { ...sharedState, listenerCount: sseClients.size, preloadState, sourceHealth, retryCount: retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length, timezone: config.timezone, use12HourClock: config.use12HourClock }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 function broadcastCommand(cmd, extra = {}) { const b = { ...sharedState, listenerCount: sseClients.size, command: cmd, ...extra }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 function broadcastEvent(eventType, data) {
   const d = JSON.stringify(data);
