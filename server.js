@@ -173,7 +173,10 @@ function loadConfig() {
     marqueeMode: 'rss',
     filterTopicChannels: true,
     sessionDuration: 0,
-    queueLimit: 0
+    queueLimit: 0,
+    // Time display settings
+    use12HourClock: true,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
   };
   // Try primary file first
   if (fs.existsSync(CONFIG_FILE)) {
@@ -269,7 +272,7 @@ let sharedState = {
 };
 const sseClients = new Map();
 let sseIdCounter = 0;
-function broadcastState() { const preloadState = (typeof preloadGate !== "undefined" && preloadGate) ? preloadGate.getState() : null; const sourceHealth = (typeof sourcePipeline !== "undefined" && sourcePipeline) ? sourcePipeline.getHealthSummary() : {}; const b = { ...sharedState, listenerCount: sseClients.size, preloadState, sourceHealth, retryCount: retryManager ? retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length : 0 }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastState() { const preloadState = (typeof preloadGate !== "undefined" && preloadGate) ? preloadGate.getState() : null; const sourceHealth = (typeof sourcePipeline !== "undefined" && sourcePipeline) ? sourcePipeline.getHealthSummary() : {}; const b = { ...sharedState, listenerCount: sseClients.size, preloadState, sourceHealth, retryCount: retryManager ? retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length : 0, timezone: config.timezone, use12HourClock: config.use12HourClock }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 function broadcastCommand(cmd, extra = {}) { const b = { ...sharedState, listenerCount: sseClients.size, command: cmd, ...extra }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 function broadcastEvent(eventType, data) {
   const d = JSON.stringify(data);

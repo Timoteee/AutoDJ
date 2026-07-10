@@ -1095,7 +1095,10 @@ document.querySelectorAll('.sidebar-link[data-page]').forEach(link => {
 function startClock() {
   const el = document.getElementById('clock');
   if (!el) return;
-  const tick = () => { el.textContent = new Date().toLocaleTimeString('en-US', {hour12: false}); };
+  const tick = () => { 
+    const use12Hour = (window.DJ && DJ.config && DJ.config.use12HourClock) !== false;
+    el.textContent = new Date().toLocaleTimeString('en-US', {hour12: use12Hour, timeZone: DJ.config?.timezone}); 
+  };
   setInterval(tick, 1000); tick();
 }
 
@@ -1113,6 +1116,9 @@ function initSSE() {
         // V7: Update status bar and preload
         updateStatusBar(data);
         updatePreloadProgress(data.preloadState);
+        // Update config from server
+        if (data.timezone) DJ.config.timezone = data.timezone;
+        if (data.use12HourClock !== undefined) DJ.config.use12HourClock = data.use12HourClock;
       } catch(err) {}
     });
     sseSource.addEventListener('download', (e) => {
@@ -1211,7 +1217,7 @@ function updateDownloadStatusUI() {
       } else {
         statusHtml = `<span class="${statusCls}"><span class="dot"></span> ${escHtml(i.status)}</span>`;
       }
-      const ts = i.timestamp ? new Date(i.timestamp).toLocaleTimeString('en-US', { hour12: false }) : '—';
+      const ts = i.timestamp ? new Date(i.timestamp).toLocaleTimeString('en-US', { hour12: DJ.config?.use12HourClock !== false, timeZone: DJ.config?.timezone }) : '—';
       return `<tr>
         <td class="text-white font-medium max-w-[200px] truncate">${escHtml(i.title || '—')}</td>
         <td>${sourceBadge(i._source || '')}</td>
@@ -2441,7 +2447,7 @@ async function fetchLogs() {
     const entries = data.entries || [];
     if (!entries.length) { container.innerHTML = '<div class="text-center text-[var(--text-secondary)] py-4">No log entries</div>'; return; }
     container.innerHTML = entries.map(e => {
-      const ts = new Date(e.ts).toLocaleTimeString('en-US', { hour12: false });
+      const ts = new Date(e.ts).toLocaleTimeString('en-US', { hour12: DJ.config?.use12HourClock !== false, timeZone: DJ.config?.timezone });
       const lc = e.level === 'error' ? 'text-signal' : e.level === 'warn' ? 'text-[var(--warning, #fbbf24)]' : 'text-[var(--text-secondary)]';
       return `<div class="flex gap-2 py-0.5 border-b border-[var(--border-color)]"><span class="text-[var(--text-secondary)] flex-shrink-0">${ts}</span><span class="${lc} flex-shrink-0">[${e.tag}]</span><span class="text-[var(--text-primary)]">${escHtml(e.message)}</span></div>`;
     }).join('');

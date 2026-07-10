@@ -684,8 +684,9 @@ body {
 // ─── Clock ────────────────────────────────────────────────────────────────────
 function updateClock() {
   const now = new Date();
-  document.getElementById('clock').textContent = now.toLocaleTimeString('en-US',{hour12:false});
-  document.getElementById('date-display').textContent = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const use12Hour = (window.DJ && DJ.config && DJ.config.use12HourClock) !== false;
+  document.getElementById('clock').textContent = now.toLocaleTimeString('en-US',{hour12: use12Hour, timeZone: DJ.config?.timezone});
+  document.getElementById('date-display').textContent = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric', timeZone: DJ.config?.timezone});
 }
 setInterval(updateClock, 1000); updateClock();
 
@@ -798,6 +799,12 @@ connectSSE();
 function applyState(data) {
   const prevTrackId = currentTrackId;
   state = { ...state, ...data };
+  
+  // Store config for timezone/clock
+  if (!window.DJ) window.DJ = {};
+  if (!window.DJ.config) window.DJ.config = {};
+  if (data.timezone) window.DJ.config.timezone = data.timezone;
+  if (data.use12HourClock !== undefined) window.DJ.config.use12HourClock = data.use12HourClock;
 
   // Handle playback commands
   if (data.command === 'play') {
