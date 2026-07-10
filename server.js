@@ -1983,7 +1983,9 @@ app.get('/api/nowplaying/stream', (req, res) => {
   sseClients.set(id, { res, info });
   sharedState.playerMode = 'display';
   log('SSE', `Listener #${id} connected (${info.ip})`);
-  res.write(`data: ${JSON.stringify(sharedState)}\n\n`);
+  // Send initial state with V7 info to this client
+  const initialState = { ...sharedState, listenerCount: sseClients.size, preloadState: preloadGate.getState(), sourceHealth: sourcePipeline.getHealthSummary(), retryCount: retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length, timezone: config.timezone, use12HourClock: config.use12HourClock };
+  res.write(`data: ${JSON.stringify(initialState)}\n\n`);
   req.on('close', () => {
     sseClients.delete(id);
     log('SSE', `Listener #${id} disconnected`);
