@@ -1969,7 +1969,7 @@ function renderQueue() {
     const badgeClass = isPlay ? 'badge-playing' : isNext ? 'badge-next' : 'badge-pending';
     const badgeText = isPlay ? '▶ NOW' : isNext ? 'NEXT' : '—';
     const sb = sourceBadge(t._source || (t.type === 'local' ? 'local' : ''));
-    <div class="qitem${isPlay?' playing':''}${isNext?' next':''}${isPast?' past':''}"
+    return `<div class="qitem${isPlay?' playing':''}${isNext?' next':''}${isPast?' past':''}"
     draggable="${!isPlay}" data-idx="${i}"
     ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)"
     ondrop="onDrop(event,${i})" ondragleave="onDragLeave(event)">
@@ -2709,5 +2709,6 @@ function retryTrack(index) {
     });
   }
 }
+</script>
 </body>
 </html>
