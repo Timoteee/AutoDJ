@@ -213,6 +213,9 @@ function loadConfig() {
     }
   }
   if (!Array.isArray(defaults.squidProxies)) defaults.squidProxies = [];
+  // Ensure time display settings exist
+  if (defaults.use12HourClock === undefined) defaults.use12HourClock = true;
+  if (!defaults.timezone) defaults.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return defaults;
 }
 let config = loadConfig();
