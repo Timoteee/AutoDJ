@@ -7,10 +7,10 @@
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="description" content="AutoDJ v6.0.0 — Signal & Flow Control Room">
+<meta name="description" content="AutoDJ v7.0.0 — Signal & Flow Control Room">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
-<title>AutoDJ v6 — Signal & Flow</title>
+<title>AutoDJ v7 — Signal & Flow</title>
 
 <!-- Google Fonts: Inter + JetBrains Mono + Geist (via CDN substitute) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -478,7 +478,7 @@ input[type=range].xfader::-webkit-slider-thumb {
       <span class="font-display font-bold text-lg tracking-wider">
         <span class="text-signal">AUTO</span><span class="text-flow">DJ</span>
       </span>
-      <span class="text-[0.5rem] text-[var(--text-secondary)] ml-auto font-mono tracking-wider">v6</span>
+      <span class="text-[0.5rem] text-[var(--text-secondary)] ml-auto font-mono tracking-wider">v7</span>
     </div>
 
     <!-- Nav links -->
@@ -1006,7 +1006,7 @@ input[type=range].xfader::-webkit-slider-thumb {
 
 <!-- ─── APPLICATION JS ────────────────────────────── -->
 <script>
-/** AutoDJ v6 — Signal & Flow Control Room */
+/** AutoDJ v7 — Signal & Flow Control Room */
 const DJ = {
   queue: [],
   history: [],
@@ -2571,7 +2571,7 @@ setInterval(() => {
   el.textContent = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
 }, 1000);
 
-console.log('⟡ AutoDJ v6 — Signal & Flow Control Room initialized');
+console.log('⟡ AutoDJ v7 — Signal & Flow Control Room initialized');
 
 // ─── V7 Functions ────────────────────────────────────────────────────────
 function updateStatusBar(d) {
