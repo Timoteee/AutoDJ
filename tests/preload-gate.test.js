@@ -67,6 +67,22 @@ describe('PreloadGate', () => {
     expect(state.status).toBe('waiting');
   });
 
+  test('unrelated cached ids do not satisfy the requested tracks', async () => {
+    const fastGate = new PreloadGate({ preDownloadCount: 1, preloadTimeoutMs: 80 });
+    fastGate.seedCache(['other']);
+    const result = await fastGate.waitUntilReady([{ youtubeId: 'needed' }]);
+    expect(result).toBe('timeout');
+  });
+
+  test('local and temp tracks count as ready', async () => {
+    const result = await gate.waitUntilReady([
+      { type: 'local', title: 'a' },
+      { type: 'temp', title: 'b' },
+      { type: 'local', title: 'c' },
+    ]);
+    expect(result).toBe('ready');
+  });
+
   test('onCacheUpdated removes from failed set', () => {
     gate._failed.add('borked');
     gate.onCacheUpdated('borked', ['new-cache']);

@@ -154,6 +154,50 @@ describe('DedupFilter', () => {
     });
   });
 
+  describe('dedupeSnapshot', () => {
+    test('keeps distinct youtube ids and does not apply artist spacing', () => {
+      const tracks = [
+        { youtubeId: 'aaa', title: 'One', artist: 'Same' },
+        { youtubeId: 'bbb', title: 'Two', artist: 'Same' },
+        { youtubeId: 'aaa', title: 'One again', artist: 'Other' },
+      ];
+      const out = filter.dedupeSnapshot(tracks);
+      expect(out.map(t => t.youtubeId)).toEqual(['aaa', 'bbb']);
+    });
+
+    test('does not collapse tracks that have no id', () => {
+      const tracks = [
+        { title: 'Alpha Piece', artist: 'A' },
+        { title: 'Beta Piece', artist: 'B' },
+      ];
+      expect(filter.dedupeSnapshot(tracks)).toHaveLength(2);
+    });
+  });
+
+  describe('missing ids', () => {
+    test('undefined videoIds are not an exact match', () => {
+      const result = filter.isDuplicate({ title: 'Brand New', artist: 'Zed' }, [{ title: 'Older', artist: 'Quinn' }]);
+      expect(result.isDuplicate).toBe(false);
+    });
+  });
+
+  describe('findDuplicates artist window', () => {
+    test('does not flag the same artist far apart', () => {
+      const queue = [
+        { videoId: '1', title: 'Opening', artist: 'Artist A' },
+        { videoId: '2', title: 'Two', artist: 'Artist B' },
+        { videoId: '3', title: 'Three', artist: 'Artist C' },
+        { videoId: '4', title: 'Four', artist: 'Artist D' },
+        { videoId: '5', title: 'Five', artist: 'Artist E' },
+        { videoId: '6', title: 'Six', artist: 'Artist F' },
+        { videoId: '7', title: 'Later', artist: 'Artist A' },
+      ];
+      const groups = filter.findDuplicates(queue);
+      const artistGroup = groups.find(g => g.duplicates.some(d => d.videoId === '7'));
+      expect(artistGroup).toBeUndefined();
+    });
+  });
+
   describe('setHistory', () => {
     test('replaces history entirely', () => {
       filter.setHistory(['a', 'b', 'c']);

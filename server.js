@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const cors = require('cors');
 const compression = require('compression');
 const { pipeline } = require('stream/promises');
@@ -162,7 +163,12 @@ function loadConfig() {
     squidProxies: [],
     invidiousRedirector: '',
     metubeFirst: true,
-    preDownloadCount: 5,
+    preDownloadCount: 3,
+    preloadTimeoutMs: 120000,
+    downloadRetry: { maxAttempts: 2, backoff: [30000, 300000], workerPollInterval: 15000 },
+    dedup: { enabled: true, historyWindow: 200, artistSpacing: 5, titleSimilarityThreshold: 0.85 },
+    aiTasteProfile: null,
+    proxyPool: [],
     maxConcurrentDownloads: 3,
     maxTrackMinutes: 0,
     fadeAtPercent: 80,
@@ -274,10 +280,236 @@ let sharedState = {
   });
   const aiScout = new AIScout(config);
   const aiCurator = new AICurator(config);
+  if (Array.isArray(config.proxyPool) && config.proxyPool.length) sourcePipeline.setProxyPool(config.proxyPool);
+
+const RETRY_FILE = path.join(__dirname, 'downloads', 'queue.json');
+const WORKER_URL = (process.env.WORKER_URL || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+let workerAvailable = false;
+const pendingWorkerJobs = new Map();
+const downloadWindow = [];
+
+function saveRetries(entries) {
+  try {
+    fs.mkdirSync(path.dirname(RETRY_FILE), { recursive: true });
+    fs.writeFileSync(RETRY_FILE, JSON.stringify(entries || [], null, 2));
+  } catch (e) { log('Retry', `Save failed: ${e.message}`); }
+}
+retryManager.setPersistHandler(saveRetries);
+try {
+  if (fs.existsSync(RETRY_FILE)) {
+    const saved = JSON.parse(fs.readFileSync(RETRY_FILE, 'utf8'));
+    retryManager.load(saved);
+  }
+} catch (e) { log('Retry', `Load failed: ${e.message}`); }
+
+function noteDownload(ok) {
+  const now = Date.now();
+  downloadWindow.push({ ts: now, ok: !!ok });
+  const cutoff = now - 10 * 60 * 1000;
+  while (downloadWindow.length && downloadWindow[0].ts < cutoff) downloadWindow.shift();
+  const total = downloadWindow.length;
+  const failed = downloadWindow.filter(d => !d.ok).length;
+  if (aiScout.shouldAutoScout({ total, failed })) {
+    const rate = Math.round((1 - failed / Math.max(1, total)) * 100);
+    sharedState.scoutSuggestion = {
+      at: now,
+      failRate: failed / Math.max(1, total),
+      total,
+      failed,
+      message: `Download success rate dropped to ${rate}%. AI scouted the failure window. Review in Settings.`
+    };
+    log('Scout', sharedState.scoutSuggestion.message);
+  }
+}
+
+function trackIdOf(t) {
+  if (!t) return '';
+  return String(t.youtubeId || t.videoId || '').trim();
+}
+
+function normalizeQueueTrack(t) {
+  if (!t || typeof t !== 'object') return null;
+  const id = trackIdOf(t);
+  const raw = t.duration != null && t.duration !== '' ? t.duration : t.lengthSeconds;
+  const hadDuration = raw != null && raw !== '' && raw !== 0;
+  const out = { ...t };
+  if (hadDuration) {
+    const validated = validateTrack({ ...t, duration: raw });
+    out.duration = validated.duration;
+    out._badDuration = !!validated._badDuration;
+  } else {
+    out._badDuration = false;
+  }
+  if (id) {
+    if (!out.youtubeId) out.youtubeId = id;
+    if (!out.videoId) out.videoId = id;
+  }
+  if (out.type === 'local') delete out.filepath;
+  return out;
+}
+
+function presentSearchHit(hit) {
+  if (!hit) return hit;
+  const raw = hit.lengthSeconds != null ? hit.lengthSeconds : hit.duration;
+  const duration = sanitizeDuration(raw);
+  const hadDuration = raw != null && raw !== '' && raw !== 0;
+  return {
+    ...hit,
+    lengthSeconds: duration == null ? 0 : duration,
+    duration: duration == null ? 0 : duration,
+    _badDuration: hadDuration && duration == null
+  };
+}
+
+function cachedVideoIds() {
+  return audioCache.filter(e => e && e.id && e.filepath && fs.existsSync(e.filepath)).map(e => e.id);
+}
+
+function settleDownload(videoId, ok, title, artist, source) {
+  if (!videoId) return;
+  if (ok) {
+    const tracked = retryManager.getEntries().some(e => e.videoId === videoId);
+    retryManager.onDownloadSuccess(videoId);
+    preloadGate.onCacheUpdated(videoId, cachedVideoIds());
+    if (tracked) noteDownload(true);
+  } else {
+    if (!retryManager.getEntries().some(e => e.videoId === videoId)) {
+      retryManager.register(videoId, title, artist, source || 'auto');
+    }
+    retryManager.onDownloadFailed(videoId);
+    preloadGate.markFailed(videoId);
+    noteDownload(false);
+    const entry = retryManager.getEntries().find(e => e.videoId === videoId);
+    broadcastEvent('download', { videoId, title: title || '', artist: artist || '', status: entry ? entry.status : 'failed', source: source || '' });
+  }
+  broadcastState();
+}
+
+async function runRetry(entry) {
+  if (!entry || !entry.videoId) return;
+  retryManager.begin(entry.videoId);
+  broadcastEvent('download', { videoId: entry.videoId, status: 'retrying', title: entry.title, artist: entry.artist, source: entry.source });
+  try {
+    const host = `http://127.0.0.1:${PORT}`;
+    const proxy = sourcePipeline.getNextProxy();
+    await fetch(`${host}/api/cache/download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        videoId: entry.videoId,
+        title: entry.title,
+        artist: entry.artist,
+        _source: entry.source || '',
+        retry: true,
+        proxy: proxy || ''
+      })
+    });
+  } catch (e) {
+    log('Retry', `${entry.videoId}: ${e.message}`);
+    settleDownload(entry.videoId, false, entry.title, entry.artist, entry.source);
+  }
+}
+retryManager.setRetryHandler(runRetry);
+retryManager.setStatusHandler((videoId, status) => {
+  broadcastEvent('download', { videoId, status });
+  broadcastState();
+});
+
+function fileInsideCache(filepath) {
+  if (!filepath) return false;
+  const resolved = path.resolve(filepath);
+  const root = path.resolve(CACHE_DIR);
+  return resolved === root || resolved.startsWith(root + path.sep);
+}
+
+function acceptWorkerFile(videoId, title, artist, filepath, size) {
+  if (!fileInsideCache(filepath) || !fs.existsSync(filepath)) return null;
+  const sz = size || fs.statSync(filepath).size;
+  if (sz < 1000) return null;
+  audioCache = audioCache.filter(e => e.id !== videoId);
+  audioCache.push({ id: videoId, filepath, title: title || videoId, artist: artist || '', downloadedAt: Date.now(), playedAt: null, size: sz, source: 'yt-dlp' });
+  return { ok: true, url: `/api/cache/stream/${encodeURIComponent(videoId)}`, title: title || videoId, source: 'yt-dlp', size: sz };
+}
+
+async function tryWorkerDownload(videoId, title, artist) {
+  if (!workerAvailable) return null;
+  if (!/^[\w-]{11}$/.test(String(videoId))) return null;
+  const jobId = crypto.randomUUID();
+  const proxy = sourcePipeline.getNextProxy();
+  const done = new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingWorkerJobs.delete(jobId);
+      resolve(null);
+    }, DOWNLOAD_TIMEOUT_MS);
+    pendingWorkerJobs.set(jobId, (result) => {
+      clearTimeout(timer);
+      resolve(result);
+    });
+  });
+  try {
+    const r = await fetch(`${WORKER_URL}/worker/download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(8000),
+      body: JSON.stringify({
+        jobId,
+        videoId,
+        url: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+        proxy: proxy || undefined,
+        callback: `http://127.0.0.1:${PORT}/api/worker/callback`
+      })
+    });
+    if (!r.ok) {
+      pendingWorkerJobs.delete(jobId);
+      return null;
+    }
+  } catch (e) {
+    pendingWorkerJobs.delete(jobId);
+    workerAvailable = false;
+    log('Worker', `Unavailable, using in-process download (${e.message})`);
+    return null;
+  }
+  return done;
+}
+
+async function probeWorker() {
+  try {
+    const r = await fetch(`${WORKER_URL}/health`, { signal: AbortSignal.timeout(1500) });
+    workerAvailable = r.ok;
+  } catch (_) {
+    workerAvailable = false;
+  }
+  if (workerAvailable) log('Worker', `Connected ${WORKER_URL}`);
+}
+
+function rememberTaste(entry) {
+  if (!entry) return;
+  const shouldSave = aiCurator.updateProfile([entry]);
+  if (shouldSave) {
+    config.aiTasteProfile = aiCurator.getProfile();
+    saveConfig();
+  }
+}
 
 const sseClients = new Map();
 let sseIdCounter = 0;
-function broadcastState() { const preloadState = preloadGate.getState(); const sourceHealth = sourcePipeline.getHealthSummary(); const b = { ...sharedState, listenerCount: sseClients.size, preloadState, sourceHealth, retryCount: retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length, timezone: config.timezone, use12HourClock: config.use12HourClock }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastState() {
+  const report = sourcePipeline.getHealthReport();
+  const preloadState = preloadGate.getState();
+  const b = {
+    ...sharedState,
+    listenerCount: sseClients.size,
+    preloadState,
+    sourceHealth: report.sources,
+    sourceInstances: report.instances,
+    retryCount: retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length,
+    curatorStatus: sharedState.curatorStatus || 'idle',
+    timezone: config.timezone,
+    use12HourClock: config.use12HourClock
+  };
+  const d = JSON.stringify(b);
+  for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } }
+}
 function broadcastCommand(cmd, extra = {}) { const b = { ...sharedState, listenerCount: sseClients.size, command: cmd, ...extra }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 function broadcastEvent(eventType, data) {
   const d = JSON.stringify(data);
@@ -394,15 +626,30 @@ async function startPlayback() {
     sharedState.sessionStart = Date.now();
     sharedState.playerMode = sseClients.size > 0 ? 'display' : 'headless';
 
-    // Wait for preload if needed
-    const nextTracks = sharedState.queue.slice(sharedState.trackIndex + 1, sharedState.trackIndex + 1 + (config.preDownloadCount || 3));
+    const needed = config.preDownloadCount || 3;
+    const nextTracks = sharedState.queue.slice(sharedState.trackIndex + 1, sharedState.trackIndex + 1 + needed);
     if (nextTracks.length > 0) {
-      log('Preload', `Waiting for ${Math.min(config.preDownloadCount || 3, nextTracks.length)} tracks before playback`);
-      // Run preload in background — don't block startup entirely
-      preloadGate.waitUntilReady(nextTracks).then(status => {
-        log('Preload', `Gate status: ${status}`);
-        broadcastState();
-      }).catch(() => {});
+      const cachedIds = cachedVideoIds();
+      preloadGate.seedCache(cachedIds);
+      log('Preload', `Waiting for ${Math.min(needed, nextTracks.length)} tracks before playback`);
+      const gate = preloadGate.waitUntilReady(nextTracks);
+      for (const track of nextTracks) {
+        const id = trackIdOf(track);
+        if (!id || track.type === 'local' || track.type === 'temp') continue;
+        if (cachedIds.includes(id)) continue;
+        preloadGate.markDownloading(id);
+        const host = `http://127.0.0.1:${PORT}`;
+        fetch(`${host}/api/cache/download`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: id, title: track.title, artist: track.artist, _source: track._source || '', _instance: track._instance || '' })
+        }).catch(e => log('Preload', `${id}: ${e.message}`));
+      }
+      broadcastState();
+      const status = await gate;
+      if (status === 'timeout') log('Preload', 'Preload incomplete — starting anyway');
+      else log('Preload', `Gate status: ${status}`);
+      broadcastState();
     }
 
     log('Playback', `Session started (${sseClients.size} listener(s), trackIndex will be ${sharedState.trackIndex + 1})`);
@@ -441,7 +688,10 @@ function invidiousInstances() {
 }
 
 let instanceHealth = {};
-function markInst(url, ok, lat) { instanceHealth[url] = { ok, latency: lat||0, at: Date.now() }; }
+function markInst(url, ok, lat) {
+  instanceHealth[url] = { ok, latency: lat || 0, at: Date.now() };
+  sourcePipeline.markInstance(url, !!ok, lat || 0);
+}
 function getHealthy(list) {
   return [...list].sort((a,b) => {
     const ha = instanceHealth[a], hb = instanceHealth[b];
@@ -467,7 +717,10 @@ app.get('/api/config', (req, res) => res.json({
   hasLastfm: !!config.lastfmKey, hasJamendo: !!config.jamendoClientId, hasSpotify: !!(config.spotifyClientId && config.spotifyClientSecret), hasAI: !!(config.anthropicKey || config.openaiKey || config.opencodeKey || config.openrouterKey),
   hasMetube: !!(METUBE_BASE && METUBE_DOWNLOADS_DIR), hasSquid: !!(Array.isArray(config.squidProxies) && config.squidProxies.length),
   metubeFirst: config.metubeFirst !== false,
-  preDownloadCount: config.preDownloadCount || 5,
+  preDownloadCount: config.preDownloadCount || 3,
+  preloadTimeoutMs: config.preloadTimeoutMs || 120000,
+  downloadRetry: config.downloadRetry || { maxAttempts: 2, backoff: [30000, 300000] },
+  dedup: config.dedup || { enabled: true, historyWindow: 200, artistSpacing: 5, titleSimilarityThreshold: 0.85 },
   maxConcurrentDownloads: config.maxConcurrentDownloads || 3,
   maxTrackMinutes: config.maxTrackMinutes || 0,
   fadeAtPercent: config.fadeAtPercent || 80,
@@ -503,7 +756,34 @@ app.post('/api/config', rateLimit(20), (req, res) => {
     }
   }
   if (b.metubeFirst !== undefined) config.metubeFirst = !!b.metubeFirst;
-  if (b.preDownloadCount !== undefined) config.preDownloadCount = Math.max(1, Math.min(20, parseInt(b.preDownloadCount) || 5));
+  if (b.preDownloadCount !== undefined) {
+    config.preDownloadCount = Math.max(1, Math.min(20, parseInt(b.preDownloadCount) || 3));
+    preloadGate._preDownloadCount = config.preDownloadCount;
+  }
+  if (b.preloadTimeoutMs !== undefined) {
+    config.preloadTimeoutMs = Math.max(5000, Math.min(600000, parseInt(b.preloadTimeoutMs) || 120000));
+    preloadGate._preloadTimeoutMs = config.preloadTimeoutMs;
+  }
+  if (b.downloadRetry && typeof b.downloadRetry === 'object') {
+    config.downloadRetry = {
+      maxAttempts: Math.max(1, Math.min(5, parseInt(b.downloadRetry.maxAttempts) || 2)),
+      backoff: Array.isArray(b.downloadRetry.backoff) ? b.downloadRetry.backoff.map(n => Math.max(0, parseInt(n) || 0)).slice(0, 5) : [30000, 300000]
+    };
+    retryManager.maxAttempts = config.downloadRetry.maxAttempts;
+    retryManager.backoff = config.downloadRetry.backoff;
+  }
+  if (b.dedup && typeof b.dedup === 'object') {
+    config.dedup = {
+      enabled: b.dedup.enabled !== false,
+      historyWindow: Math.max(1, parseInt(b.dedup.historyWindow) || 200),
+      artistSpacing: Math.max(1, parseInt(b.dedup.artistSpacing) || 5),
+      titleSimilarityThreshold: Math.min(1, Math.max(0.5, parseFloat(b.dedup.titleSimilarityThreshold) || 0.85))
+    };
+    dedupFilter.enabled = config.dedup.enabled;
+    dedupFilter.historyWindow = config.dedup.historyWindow;
+    dedupFilter.artistSpacing = config.dedup.artistSpacing;
+    dedupFilter.titleSimilarityThreshold = config.dedup.titleSimilarityThreshold;
+  }
   if (b.maxConcurrentDownloads !== undefined) config.maxConcurrentDownloads = Math.max(1, Math.min(10, parseInt(b.maxConcurrentDownloads) || 3));
   if (b.maxTrackMinutes !== undefined) config.maxTrackMinutes = Math.max(0, parseInt(b.maxTrackMinutes) || 0);
   if (b.fadeAtPercent !== undefined) config.fadeAtPercent = Math.max(10, Math.min(100, parseInt(b.fadeAtPercent) || 80));
@@ -552,7 +832,24 @@ app.get('/api/local/stream', (req, res) => {
 
 // ─── V7: Source Health ────────────────────────────────────────────────────
 app.get('/api/sources/health', (req, res) => {
-  res.json(sourcePipeline.getHealthSummary());
+  const report = sourcePipeline.getHealthReport();
+  res.json({
+    ...report,
+    preloadState: preloadGate.getState(),
+    retryCount: retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length,
+    curatorStatus: sharedState.curatorStatus || 'idle',
+    scoutSuggestion: sharedState.scoutSuggestion || null
+  });
+});
+
+app.post('/api/sources/test', async (req, res) => {
+  try {
+    const results = await sourcePipeline.testAll();
+    broadcastState();
+    res.json({ ok: true, results, ...sourcePipeline.getHealthReport() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── V7: Queue Dedupe ────────────────────────────────────────────────────
@@ -563,12 +860,13 @@ app.post('/api/queue/dedupe', (req, res) => {
 
 app.post('/api/queue/dedupe/remove', (req, res) => {
   const groups = dedupFilter.findDuplicates(sharedState.queue);
-  const videoIdsToRemove = new Set();
-  groups.forEach(g => g.duplicates.forEach(d => videoIdsToRemove.add(d.videoId)));
-  sharedState.queue = sharedState.queue.filter(t => !videoIdsToRemove.has(t.videoId));
+  const drop = new Set();
+  groups.forEach(g => g.duplicates.forEach(d => drop.add(d)));
+  const before = sharedState.queue.length;
+  sharedState.queue = sharedState.queue.filter(t => !drop.has(t));
   saveQueueToDisk(sharedState.queue);
   broadcastState();
-  res.json({ removed: videoIdsToRemove.size });
+  res.json({ removed: before - sharedState.queue.length });
 });
 
 // ─── V7: Download Retries ────────────────────────────────────────────────
@@ -578,7 +876,17 @@ app.get('/api/downloads/retries', (req, res) => {
 
 app.post('/api/downloads/retry/:videoId', (req, res) => {
   const { videoId } = req.params;
-  const ok = retryManager.retry(videoId);
+  const body = req.body || {};
+  let ok = retryManager.retry(videoId);
+  if (!ok) {
+    retryManager.register(videoId, body.title || videoId, body.artist || '', body.source || body._source || 'auto');
+    ok = true;
+  }
+  const entry = retryManager.getEntries().find(e => e.videoId === videoId);
+  if (entry) {
+    entry.nextRetry = Date.now();
+    setImmediate(() => runRetry(entry));
+  }
   res.json({ ok });
 });
 
@@ -593,20 +901,59 @@ app.post('/api/ai/scout-proxies', async (req, res) => {
   try {
     const { failedSources, failedVideoIds } = req.body || {};
     const result = await aiScout.scoutProxies(failedSources || [], failedVideoIds || []);
-    res.json(result);
+    const altInstances = [];
+    for (const inst of result.altInstances || []) {
+      const url = String(inst.url || '').trim().replace(/\/+$/, '');
+      const type = String(inst.type || '').toLowerCase();
+      if (!/^https?:\/\//i.test(url) || url.length > 200) {
+        altInstances.push({ ...inst, reachable: false });
+        continue;
+      }
+      let reachable = false;
+      try {
+        const probe = await fetch(sourcePipeline.probeUrl(type || 'invidious', url), { signal: AbortSignal.timeout(4000) });
+        reachable = probe.ok;
+      } catch (_) { reachable = false; }
+      if (reachable && ['invidious', 'piped', 'dab'].includes(type)) {
+        sourcePipeline.registerSource(type, [url]);
+      }
+      altInstances.push({ ...inst, url, type, reachable });
+    }
+    sharedState.scoutSuggestion = null;
+    broadcastState();
+    res.json({ proxies: result.proxies || [], altInstances });
   } catch (e) {
     res.status(500).json({ error: e.message, proxies: [], altInstances: [] });
   }
 });
 
+app.post('/api/ai/apply-proxies', (req, res) => {
+  const proxies = Array.isArray(req.body?.proxies) ? req.body.proxies.filter(p => p && (p.url || typeof p === 'string')) : [];
+  sourcePipeline.setProxyPool(proxies);
+  config.proxyPool = proxies;
+  saveConfig();
+  res.json({ ok: true, count: proxies.length });
+});
+
+app.post('/api/ai/scout-dismiss', (req, res) => {
+  sharedState.scoutSuggestion = null;
+  broadcastState();
+  res.json({ ok: true });
+});
+
 // ─── V7: AI Curate Playlist ──────────────────────────────────────────────
 app.post('/api/ai/curate-playlist', async (req, res) => {
+  sharedState.curatorStatus = 'working';
+  broadcastState();
   try {
     const { count } = req.body || {};
     const result = await aiCurator.curatePlaylist(sharedState.queue, sharedState.playedIds, count || 20);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message, tracks: [] });
+  } finally {
+    sharedState.curatorStatus = 'idle';
+    broadcastState();
   }
 });
 
@@ -844,10 +1191,10 @@ async function metubeAddAndWaitFile(videoId) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const SEARCH_HANDLERS = {
-  invidious: async (q) => { for (const inst of getHealthy(invidiousInstances())) { try { const s=Date.now(), r=await fetch(`${inst}/api/v1/search?q=${encodeURIComponent(q)}&type=video`,{signal:AbortSignal.timeout(9000),headers:musicHeaders()}); if(!r.ok){markInst(inst,false);continue;} const d=await r.json(); markInst(inst,true,Date.now()-s); if(Array.isArray(d)&&d.length>0){ const vids = d.filter(i => (i.type === 'video' || i.lengthSeconds) && (i.videoId || i.video_id)); const rows = (vids.length ? vids : d).slice(0, 8); if(rows.length>0){log('Search', `Invidious ${inst}: ${rows.length}`); return rows.slice(0,5).map(i=>({videoId:i.videoId||i.video_id||'',title:i.title||i.videoId||'Unknown',author:i.author||i.authorName||i.uploaderName||i.authorId||'Unknown',lengthSeconds:normalizeTrackDurationSeconds(i.lengthSeconds, null),artwork:`https://img.youtube.com/vi/${i.videoId||i.video_id||''}/mqdefault.jpg`,_source:'invidious'}));}} } catch(e){markInst(inst,false);} } return null; },
-  piped: async (q) => { for (const inst of getHealthy(sourcePipeline.getHealthyInstances('piped'))) { try { const r=await fetch(`${inst}/search?q=${encodeURIComponent(q)}&filter=videos`,{signal:AbortSignal.timeout(9000),headers:musicHeaders()}); if(!r.ok){markInst(inst,false);continue;} const d=await r.json(); markInst(inst,true); const raw = d.items || []; const items = raw.filter(i => { const ty = (i.type || '').toLowerCase(); return ty === 'stream' || ty === 'video' || (!!i.url && (ty === '' || ty === 'scheduledstream')); }).slice(0, 8); const mapped = items.map(i => { let vid = i.videoId || ''; if (!vid && i.url) { const m = String(i.url).match(/[?&]v=([^&]+)/); if (m) vid = m[1]; else if (String(i.url).startsWith('/watch?v=')) vid = i.url.replace('/watch?v=', '').split('&')[0]; } return { ...i, _vid: vid }; }).filter(i => i._vid); if (mapped.length > 0) { log('Search', `Piped ${inst}: ${mapped.length}`); return mapped.slice(0, 5).map(i => ({ videoId: i._vid, title: i.title || 'Unknown', author: i.uploaderName || i.uploader || i.author || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(i.duration, null), artwork: `https://img.youtube.com/vi/${i._vid}/mqdefault.jpg`, _source: 'piped' })); } } catch(e){markInst(inst,false);} } return null; },
-  dab: async (q) => { for (const inst of getHealthy(sourcePipeline.getHealthyInstances('dab'))) { for (const qp of ['q', 'query']) { try { const s = Date.now(); const r = await fetch(`${inst}/search?${qp}=${encodeURIComponent(q)}&type=track&limit=5`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() }); if (!r.ok) continue; const ct = r.headers.get('content-type') || ''; if (!ct.includes('json')) continue; const d = await r.json(); const tracks = d.tracks || d.results || (Array.isArray(d) ? d : []); if (tracks.length > 0) { markInst(inst, true, Date.now() - s); const mapped = tracks.slice(0, 5).map(t => ({ videoId: t.id || t.trackId || '', title: t.title || t.name || 'Unknown', author: (typeof t.artist === 'object' ? t.artist?.name : t.artist) || t.artistName || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(t.duration, t.duration_ms || t.durationMs), artwork: (typeof t.album === 'object' ? t.album?.cover : null) || t.albumCover || t.cover || '', _source: 'dab', _instance: inst })); log('Search', `DAB ${inst} (${qp}=): ${tracks.length}`); return mapped; } markInst(inst, true, Date.now() - s); } catch (e) { markInst(inst, false); } } } return null; },
-  jamendo: async (q) => { if (config.jamendoClientId) { try { const r = await fetch(`https://api.jamendo.com/v3.1/tracks/?client_id=${encodeURIComponent(config.jamendoClientId)}&format=json&limit=8&search=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() }); if (r.ok) { const d = await r.json(); const results = d.results || []; if (results.length > 0) { log('Search', `Jamendo: ${results.length}`); return results.slice(0, 5).map(t => ({ videoId: `jamendo:${t.id}`, title: t.name || 'Unknown', author: t.artist_name || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(parseFloat(t.duration), null) || 0, artwork: t.image || t.album_image || '', _source: 'jamendo', _instance: 'https://api.jamendo.com/v3.1' })); } } } catch(e) {} } return null; }
+  invidious: async (q) => { for (const inst of getHealthy(invidiousInstances())) { try { const s=Date.now(), r=await fetch(`${inst}/api/v1/search?q=${encodeURIComponent(q)}&type=video`,{signal:AbortSignal.timeout(9000),headers:musicHeaders()}); if(!r.ok){markInst(inst,false);continue;} const d=await r.json(); markInst(inst,true,Date.now()-s); if(Array.isArray(d)&&d.length>0){ const vids = d.filter(i => (i.type === 'video' || i.lengthSeconds) && (i.videoId || i.video_id)); const rows = (vids.length ? vids : d).slice(0, 8); if(rows.length>0){log('Search', `Invidious ${inst}: ${rows.length}`); return rows.slice(0,5).map(i=>({videoId:i.videoId||i.video_id||'',title:i.title||i.videoId||'Unknown',author:i.author||i.authorName||i.uploaderName||i.authorId||'Unknown',lengthSeconds:i.lengthSeconds,artwork:`https://img.youtube.com/vi/${i.videoId||i.video_id||''}/mqdefault.jpg`,_source:'invidious'}));}} } catch(e){markInst(inst,false);} } return null; },
+  piped: async (q) => { for (const inst of getHealthy(sourcePipeline.getHealthyInstances('piped'))) { try { const r=await fetch(`${inst}/search?q=${encodeURIComponent(q)}&filter=videos`,{signal:AbortSignal.timeout(9000),headers:musicHeaders()}); if(!r.ok){markInst(inst,false);continue;} const d=await r.json(); markInst(inst,true); const raw = d.items || []; const items = raw.filter(i => { const ty = (i.type || '').toLowerCase(); return ty === 'stream' || ty === 'video' || (!!i.url && (ty === '' || ty === 'scheduledstream')); }).slice(0, 8); const mapped = items.map(i => { let vid = i.videoId || ''; if (!vid && i.url) { const m = String(i.url).match(/[?&]v=([^&]+)/); if (m) vid = m[1]; else if (String(i.url).startsWith('/watch?v=')) vid = i.url.replace('/watch?v=', '').split('&')[0]; } return { ...i, _vid: vid }; }).filter(i => i._vid); if (mapped.length > 0) { log('Search', `Piped ${inst}: ${mapped.length}`); return mapped.slice(0, 5).map(i => ({ videoId: i._vid, title: i.title || 'Unknown', author: i.uploaderName || i.uploader || i.author || 'Unknown', lengthSeconds: i.duration, artwork: `https://img.youtube.com/vi/${i._vid}/mqdefault.jpg`, _source: 'piped' })); } } catch(e){markInst(inst,false);} } return null; },
+  dab: async (q) => { for (const inst of getHealthy(sourcePipeline.getHealthyInstances('dab'))) { for (const dabPath of ['/api/search', '/search']) { for (const qp of ['q', 'query']) { try { const s = Date.now(); const r = await fetch(`${inst}${dabPath}?${qp}=${encodeURIComponent(q)}&type=track&limit=5`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() }); if (!r.ok) continue; const ct = r.headers.get('content-type') || ''; if (!ct.includes('json')) continue; const d = await r.json(); const tracks = d.tracks || d.results || (Array.isArray(d) ? d : []); if (tracks.length > 0) { markInst(inst, true, Date.now() - s); const mapped = tracks.slice(0, 5).map(t => ({ videoId: t.id || t.trackId || '', title: t.title || t.name || 'Unknown', author: (typeof t.artist === 'object' ? t.artist?.name : t.artist) || t.artistName || 'Unknown', lengthSeconds: t.duration ?? t.duration_ms ?? t.durationMs, artwork: (typeof t.album === 'object' ? t.album?.cover : null) || t.albumCover || t.cover || '', _source: 'dab', _instance: inst })); log('Search', `DAB ${inst} (${qp}=): ${tracks.length}`); return mapped; } markInst(inst, true, Date.now() - s); } catch (e) { markInst(inst, false); } } } } return null; },
+  jamendo: async (q) => { if (config.jamendoClientId) { try { const r = await fetch(`https://api.jamendo.com/v3.1/tracks/?client_id=${encodeURIComponent(config.jamendoClientId)}&format=json&limit=8&search=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() }); if (r.ok) { const d = await r.json(); const results = d.results || []; if (results.length > 0) { log('Search', `Jamendo: ${results.length}`); return results.slice(0, 5).map(t => ({ videoId: `jamendo:${t.id}`, title: t.name || 'Unknown', author: t.artist_name || 'Unknown', lengthSeconds: t.duration, artwork: t.image || t.album_image || '', _source: 'jamendo', _instance: 'https://api.jamendo.com/v3.1' })); } } } catch(e) {} } return null; }
 };
 
 /** Filter out YouTube -Topic channels from search results */
@@ -871,7 +1218,7 @@ app.get('/api/youtube/search', rateLimit(30), async (req, res) => {
       const result = await SEARCH_HANDLERS[key](q);
       if (result) {
         const filtered = filterTopicResults(result);
-        if (filtered.length > 0) return res.json(filtered);
+        if (filtered.length > 0) return res.json(filtered.map(presentSearchHit));
         // If all results were filtered, continue to next source
       }
     }
@@ -1115,6 +1462,7 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
       await sleep(2000);
       const existing = audioCache.find(e => e.id === videoId);
       if (existing?.filepath && fs.existsSync(existing.filepath)) {
+        preloadGate.onCacheUpdated(videoId, cachedVideoIds());
         return res.json({ok:true,cached:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:existing.title,source:'cache'});
       }
       if (!downloadingIds.has(videoId)) break; // download finished or failed
@@ -1124,11 +1472,16 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
 
   // Check cache
   const existing=audioCache.find(e=>e.id===videoId);
-  if(existing?.filepath&&fs.existsSync(existing.filepath)) return res.json({ok:true,cached:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:existing.title,source:'cache'});
+  if(existing?.filepath&&fs.existsSync(existing.filepath)) {
+    settleDownload(videoId, true, existing.title || title, existing.artist || artist, 'cache');
+    return res.json({ok:true,cached:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:existing.title,source:'cache'});
+  }
   if(existing) audioCache=audioCache.filter(e=>e.id!==videoId);
 
+  if (req.body?.retry) failedIds.delete(videoId);
+
   // Skip videoIds recently marked as failed
-  if (failedIds.has(videoId)) {
+  if (failedIds.has(videoId) && !req.body?.retry) {
     log('Cache', `Skipping ${videoId} — recently failed (retry in ~30m)`);
     // Try alternative IDs if provided
     if (Array.isArray(altIds) && altIds.length > 0) {
@@ -1145,14 +1498,27 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
   }
 
   downloadingIds.add(videoId);
+  retryManager.register(videoId, title, artist, _source || 'auto');
+  retryManager.begin(videoId);
   addDownloadEntry(videoId, title, artist, _source || 'auto', 'queued');
   log('Cache', `Downloading: ${title || videoId} (src=${_source || 'auto'}, id=${videoId})`);
 
   try {
+    const workerBody = await tryWorkerDownload(videoId, title, artist);
+    if (workerBody && workerBody.status === 'completed') {
+      const saved = acceptWorkerFile(videoId, title, artist, workerBody.filepath, workerBody.size);
+      if (saved) {
+        downloadingIds.delete(videoId);
+        addDownloadEntry(videoId, title, artist, 'yt-dlp', 'completed');
+        settleDownload(videoId, true, title, artist, 'yt-dlp');
+        return res.json(saved);
+      }
+    }
+
     // Try MeTube first if configured
     if (config.metubeFirst !== false) {
       const metubeResult = await tryMetubeDownload(videoId, title, artist);
-      if (metubeResult) { downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, 'metube', 'completed'); return res.json(metubeResult); }
+      if (metubeResult) { downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, 'metube', 'completed'); settleDownload(videoId, true, title, artist, 'metube'); return res.json(metubeResult); }
     }
 
     let streamUrl=null, src=_source||'unknown';
@@ -1183,7 +1549,7 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
       addDownloadEntry(videoId, title, artist, 'dab', 'downloading');
       try { const r=await fetch(`${_instance}/stream?trackId=${encodeURIComponent(videoId)}&quality=5`,{signal:AbortSignal.timeout(15000),headers:musicHeaders(),redirect:'follow'});
         if(r.ok){const ct=r.headers.get('content-type')||'';
-          if(ct.includes('audio')||ct.includes('octet')){const fp=cachePathForId(videoId,'.mp3'); await pipeline(Readable.fromWeb(r.body),fs.createWriteStream(fp)); const sz=fs.statSync(fp).size; if(sz<1000){fs.unlinkSync(fp);throw new Error('too small');}       audioCache.push({id:videoId,filepath:fp,title:title||videoId,artist:artist||'',downloadedAt:Date.now(),playedAt:null,size:sz,source:'dab'}); log('Cache', `DAB OK: ${title} (${(sz/1048576).toFixed(1)}MB)`); cleanTempAfterDownloads(); addDownloadEntry(videoId, title, artist, 'dab', 'completed'); return res.json({ok:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:title||videoId,source:'dab',size:sz});}
+          if(ct.includes('audio')||ct.includes('octet')){const fp=cachePathForId(videoId,'.mp3'); await pipeline(Readable.fromWeb(r.body),fs.createWriteStream(fp)); const sz=fs.statSync(fp).size; if(sz<1000){fs.unlinkSync(fp);throw new Error('too small');}       audioCache.push({id:videoId,filepath:fp,title:title||videoId,artist:artist||'',downloadedAt:Date.now(),playedAt:null,size:sz,source:'dab'}); log('Cache', `DAB OK: ${title} (${(sz/1048576).toFixed(1)}MB)`); cleanTempAfterDownloads(); addDownloadEntry(videoId, title, artist, 'dab', 'completed'); downloadingIds.delete(videoId); settleDownload(videoId, true, title, artist, 'dab'); return res.json({ok:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:title||videoId,source:'dab',size:sz});}
           if(ct.includes('json')){const d=await r.json(); streamUrl=d.streamUrl||d.url; src='dab';}
         }
       } catch(e){log('Cache', `DAB ${_instance}: ${e.message}`);}
@@ -1210,10 +1576,10 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
     // MeTube as fallback (only if metubeFirst is false, otherwise already tried above)
     if(!streamUrl && config.metubeFirst === false) {
       const metubeResult = await tryMetubeDownload(videoId, title, artist);
-      if (metubeResult) return res.json(metubeResult);
+      if (metubeResult) { downloadingIds.delete(videoId); settleDownload(videoId, true, title, artist, 'metube'); return res.json(metubeResult); }
     }
 
-    if(!streamUrl) { downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, src, 'failed'); return res.status(404).json({error:'No stream from any source (DAB/Jamendo/HiFi/Piped/Invidious/MeTube/Squid)'}); }
+    if(!streamUrl) { downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, src, 'failed'); settleDownload(videoId, false, title, artist, src); return res.status(404).json({error:'No stream from any source (DAB/Jamendo/HiFi/Piped/Invidious/MeTube/Squid)'}); }
 
     // Download using pipeline (safe, no memory leaks)
     log('Cache', `Fetching from ${src}: ${streamUrl.slice(0, 80)}...`);
@@ -1221,18 +1587,19 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
     const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(), DOWNLOAD_TIMEOUT_MS);
     try {
       const ar=await fetch(streamUrl,{signal:ctrl.signal,headers:musicHeaders()}); clearTimeout(to);
-      if(!ar.ok){await ar.body?.cancel(); downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, src, 'failed'); return res.status(502).json({error:`HTTP ${ar.status}`});}
+      if(!ar.ok){await ar.body?.cancel(); downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, src, 'failed'); settleDownload(videoId, false, title, artist, src); return res.status(502).json({error:`HTTP ${ar.status}`});}
       const ct=ar.headers.get('content-type')||'', ext=ct.includes('mpeg')||ct.includes('mp3')?'.mp3':ct.includes('mp4')?'.m4a':ct.includes('ogg')||ct.includes('opus')?'.ogg':ct.includes('flac')?'.flac':ct.includes('wav')||ct.includes('wave')?'.wav':ct.includes('aac')?'.aac':'.webm';
       const fp=cachePathForId(videoId,ext);
       await pipeline(Readable.fromWeb(ar.body),fs.createWriteStream(fp));
       const sz=fs.statSync(fp).size;
-      if(sz<1000){fs.unlinkSync(fp); downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, src, 'failed'); return res.status(502).json({error:`File too small (${sz}B)`});}
+      if(sz<1000){fs.unlinkSync(fp); downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, src, 'failed'); settleDownload(videoId, false, title, artist, src); return res.status(502).json({error:`File too small (${sz}B)`});}
       // Validate audio content for YouTube-sourced files
       if ((src === 'invidious' || src === 'piped') && !isValidAudioFile(fp)) {
         fs.unlinkSync(fp);
         markDownloadFailed(videoId);
         downloadingIds.delete(videoId);
         addDownloadEntry(videoId, title, artist, src, 'failed');
+        settleDownload(videoId, false, title, artist, src);
         return res.status(502).json({error:'Downloaded file is not valid audio (blocked/placeholder)',failed:true,videoId});
       }
       audioCache.push({id:videoId,filepath:fp,title:title||videoId,artist:artist||'',downloadedAt:Date.now(),playedAt:null,size:sz,source:src});
@@ -1251,9 +1618,10 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
       });
       downloadingIds.delete(videoId);
       addDownloadEntry(videoId, title, artist, src, 'completed');
+      settleDownload(videoId, true, title, artist, src);
       res.json({ok:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:title||videoId,source:src,size:sz});
     } catch(e) { clearTimeout(to); downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, src, 'failed'); throw e; }
-  } catch(e) { downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, src||'unknown', 'failed'); log('Cache', e.message); if (IS_DEV) console.error(e); res.status(500).json({error:e.message}); }
+  } catch(e) { downloadingIds.delete(videoId); addDownloadEntry(videoId, title, artist, _source||'unknown', 'failed'); settleDownload(videoId, false, title, artist, _source||'unknown'); log('Cache', e.message); if (IS_DEV) console.error(e); res.status(500).json({error:e.message}); }
 });
 
 app.get('/api/cache/stream/:id', (req, res) => {
@@ -1332,7 +1700,29 @@ app.post('/api/cache/played', (req, res) => { const e=audioCache.find(x=>x.id===
 
 // ─── Download Status API ──────────────────────────────────────────────────────
 app.get('/api/downloads/status', (req, res) => {
-  res.json(downloads.slice(0, 50));
+  res.json({ items: downloads.slice(0, 50) });
+});
+
+app.post('/api/worker/callback', (req, res) => {
+  const body = req.body || {};
+  const waiter = body.jobId ? pendingWorkerJobs.get(body.jobId) : null;
+  if (waiter) {
+    pendingWorkerJobs.delete(body.jobId);
+    waiter(body);
+    return res.json({ ok: true, accepted: true });
+  }
+  if (body.status === 'completed' && body.videoId) {
+    const saved = acceptWorkerFile(body.videoId, body.title, body.artist, body.filepath, body.size);
+    if (saved) {
+      downloadingIds.delete(body.videoId);
+      addDownloadEntry(body.videoId, body.title, body.artist, 'yt-dlp', 'completed');
+      settleDownload(body.videoId, true, body.title, body.artist, 'yt-dlp');
+    }
+  } else if (body.videoId) {
+    downloadingIds.delete(body.videoId);
+    settleDownload(body.videoId, false, body.title, body.artist, 'yt-dlp');
+  }
+  res.json({ ok: true });
 });
 app.post('/api/downloads/clear', (req, res) => {
   const before = downloads.length;
@@ -1707,15 +2097,7 @@ app.get('/api/queue', (req, res) => res.json({ queue: sharedState.queue, trackIn
 app.post('/api/queue', rateLimit(30), (req, res) => {
   const { queue, trackIndex } = req.body;
   if (Array.isArray(queue)) {
-    // Apply dedup filtering
-    const filteredQueue = dedupFilter.filterTracks(queue, sharedState.queue);
-    const safe = filteredQueue.map(t => {
-      const validated = validateTrack(t);
-      const d = sanitizeDuration(validated.duration || t.duration);
-      if (t.duration && Number.isFinite(t.duration) && t.duration > 600) t.duration = Math.min(t.duration, MAX_REASONABLE_TRACK_SEC);
-      if (t.type === 'local') return { ...t, filepath: undefined };
-      return t;
-    });
+    let safe = dedupFilter.dedupeSnapshot(queue.map(normalizeQueueTrack).filter(Boolean));
     if (config.queueLimit > 0 && safe.length > config.queueLimit) {
       safe = safe.slice(0, config.queueLimit);
     }
@@ -1835,10 +2217,23 @@ function prunePlayedIds() {
   }
 }
 app.post('/api/playback/played', rateLimit(30), (req, res) => {
-  const { videoId } = req.body || {};
+  const body = req.body || {};
+  const videoId = body.videoId || body.youtubeId;
   if (videoId && !sharedState.playedIds.includes(videoId)) {
     sharedState.playedIds.push(videoId);
     prunePlayedIds();
+    dedupFilter.addPlayed(videoId);
+  }
+  if (body.artist || videoId) {
+    const ratio = Number(body.listenRatio);
+    rememberTaste({
+      videoId: videoId || '',
+      title: body.title || '',
+      artist: body.artist || '',
+      duration: Number(body.duration) || 0,
+      skipped: !!body.skipped,
+      listenRatio: Number.isFinite(ratio) ? ratio : (body.skipped ? 0 : 1)
+    });
   }
   res.json({ ok: true, playedCount: sharedState.playedIds.length });
 });
@@ -1900,6 +2295,18 @@ app.post('/api/playback/skip', rateLimit(20), async (req, res) => {
   if (!sharedState.isPlaying || !sharedState.sessionActive) {
     return res.status(400).json({ error: 'Not currently playing' });
   }
+  const elapsed = Number(req.body?.elapsed) || 0;
+  const current = sharedState.nowPlaying;
+  if (current && elapsed < 30) {
+    rememberTaste({
+      videoId: current.youtubeId || '',
+      title: current.title || '',
+      artist: current.artist || '',
+      duration: current.duration || 0,
+      skipped: true,
+      listenRatio: 0
+    });
+  }
   clearPlaybackTimer();
   await preCacheNextTrack();
   await advanceTrack();
@@ -1913,7 +2320,7 @@ app.get('/api/status', (req, res) => {
   const hours = Math.floor(uptime / 3600);
   const minutes = Math.floor((uptime % 3600) / 60);
   res.json({
-    version: '6.0.0',
+    version: '7.0.0',
     uptime: `${hours}h ${minutes}m`,
     uptimeSeconds: uptime,
     memory: {
@@ -1950,7 +2357,7 @@ app.get('/api/status', (req, res) => {
     },
     config: {
       crossfadeSeconds: config.crossfadeSeconds || 3,
-      preDownloadCount: config.preDownloadCount || 5,
+      preDownloadCount: config.preDownloadCount || 3,
       maxConcurrentDownloads: config.maxConcurrentDownloads || 3,
       fadeAtPercent: config.fadeAtPercent || 80,
       sessionDuration: config.sessionDuration || 0,
@@ -1977,8 +2384,12 @@ app.get('/api/nowplaying/stream', (req, res) => {
   sharedState.playerMode = 'display';
   log('SSE', `Listener #${id} connected (${info.ip})`);
   // Send initial state with V7 info to this client
-  const initialState = { ...sharedState, listenerCount: sseClients.size, preloadState: preloadGate.getState(), sourceHealth: sourcePipeline.getHealthSummary(), retryCount: retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length, timezone: config.timezone, use12HourClock: config.use12HourClock };
-  res.write(`data: ${JSON.stringify(initialState)}\n\n`);
+  const healthReport = sourcePipeline.getHealthReport();
+  const initialState = { ...sharedState, listenerCount: sseClients.size, preloadState: preloadGate.getState(), sourceHealth: healthReport.sources, sourceInstances: healthReport.instances, retryCount: retryManager.getEntries().filter(e => e.status === 'queued' || e.status === 'retrying').length, curatorStatus: sharedState.curatorStatus || 'idle', timezone: config.timezone, use12HourClock: config.use12HourClock };
+  setImmediate(() => {
+    if (!sseClients.has(id)) return;
+    try { res.write(`data: ${JSON.stringify(initialState)}\n\n`); } catch (_) {}
+  });
   req.on('close', () => {
     sseClients.delete(id);
     log('SSE', `Listener #${id} disconnected`);
@@ -2046,6 +2457,7 @@ const server = app.listen(PORT, () => {
   console.log(`   Now Playing → /display`);
   const summary = sourcePipeline.getHealthSummary();
   console.log(`   Sources: DAB(${summary.dab?.total||0}) Jamendo(${config.jamendoClientId ? 'on' : 'off'}) Piped(${summary.piped?.total||0}) Invidious(${summary.invidious?.total||0}) Metube(${METUBE_BASE ? 'on' : 'off'})\n`);
+  probeWorker();
 });
 
 // Graceful shutdown — close HTTP server, flush SSE, release resources
