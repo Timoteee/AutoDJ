@@ -1358,7 +1358,7 @@ async function loadConfig() {
     const ir = document.getElementById('cfg-invidious-redirect');
     if (ir) ir.value = cfg.invidiousRedirector || '';
     const setVal = (id, val) => { const e = document.getElementById(id); if (e) e.value = val; };
-    setVal('cfg-predownload', cfg.preDownloadCount || 5);
+    setVal('cfg-predownload', cfg.preDownloadCount || 3);
     setVal('cfg-max-concurrent', cfg.maxConcurrentDownloads || 3);
     setVal('cfg-fade-pct', cfg.fadeAtPercent || 80);
     setVal('cfg-max-track', cfg.maxTrackMinutes || 0);
@@ -1412,7 +1412,7 @@ async function saveConfig() {
     musicDirs: document.getElementById('cfg-dirs').value.split('\n').map(s=>s.trim()).filter(Boolean),
     messages: DJ.messages,
     invidiousRedirector: document.getElementById('cfg-invidious-redirect')?.value?.trim() || '',
-    preDownloadCount: parseInt(document.getElementById('cfg-predownload')?.value) || 5,
+    preDownloadCount: parseInt(document.getElementById('cfg-predownload')?.value) || 3,
     maxConcurrentDownloads: parseInt(document.getElementById('cfg-max-concurrent')?.value) || 3,
     fadeAtPercent: parseInt(document.getElementById('cfg-fade-pct')?.value) || 80,
     maxTrackMinutes: parseInt(document.getElementById('cfg-max-track')?.value) || 0,
@@ -1620,14 +1620,31 @@ async function startPlayback() {
   Engine.initAudioCtx();
   Engine.ensureDeckConnected('a');
   Engine.ensureDeckConnected('b');
-  DJ.started = true;
   if (DJ.queue.length === 0) { setStatus('Add some tracks first!'); return; }
   if (DJ.trackIndex < 0) {
-    DJ.trackIndex = 0;
+    DJ.waitingForPreload = true;
+    setStatus('Preloading upcoming tracks…');
+    try {
+      const r = await fetch('/api/playback/start', { method: 'POST' });
+      const data = await r.json();
+      DJ.waitingForPreload = false;
+      if (!r.ok || data.error) {
+        setStatus(data.error || 'Could not start playback');
+        return;
+      }
+      if (data.preload === 'timeout') setStatus('Preload incomplete — starting anyway');
+      const idx = (typeof data.trackIndex === 'number' && data.trackIndex >= 0) ? data.trackIndex : 0;
+      DJ.trackIndex = Math.min(idx, DJ.queue.length - 1);
+    } catch (e) {
+      DJ.waitingForPreload = false;
+      setStatus('Could not start playback');
+      return;
+    }
+    DJ.started = true;
     syncCrossfaderToDeck(DJ.currentDeck);
-    await loadTrackOnDeck(DJ.currentDeck, DJ.queue[0]);
-    fetch('/api/playback/start', { method: 'POST' }).catch(() => {});
+    await loadTrackOnDeck(DJ.currentDeck, DJ.queue[DJ.trackIndex]);
   } else {
+    DJ.started = true;
     getDeckAudio(DJ.currentDeck).play().catch(()=>{});
     void broadcastDeckState();
   }
@@ -2418,7 +2435,7 @@ async function aiRefillQueue() {
 
 // ─── Pre-download ahead ─────────────────────────────
 async function preDownloadAhead() {
-  const count = parseInt(document.getElementById('cfg-predownload')?.value) || 5;
+  const count = parseInt(document.getElementById('cfg-predownload')?.value) || 3;
   const pending = [];
   for (let i = DJ.trackIndex + 1; i < DJ.queue.length && pending.length < count; i++) {
     const t = DJ.queue[i];
@@ -2711,6 +2728,9 @@ function updateStatusBar(d) {
     const s = d.preloadState;
     const el = document.getElementById('status-preload');
     if (el) el.textContent = `Preload: ${s.cached || 0}/${s.required || 0} ${s.status || ''}`.trim();
+    if (DJ.waitingForPreload && s.status === 'waiting') {
+      setStatus(`Preloading ${s.cached || 0}/${s.required || 0}`);
+    }
   }
   if (d.retryCount !== undefined) {
     const el = document.getElementById('status-retries');

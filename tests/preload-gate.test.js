@@ -74,6 +74,26 @@ describe('PreloadGate', () => {
     expect(result).toBe('timeout');
   });
 
+  test('times out as soon as the required tracks can no longer succeed', async () => {
+    const slow = new PreloadGate({ preDownloadCount: 2, preloadTimeoutMs: 30000 });
+    const pending = slow.waitUntilReady([{ youtubeId: 'a' }, { youtubeId: 'b' }]);
+    slow.markFailed('a');
+    const result = await Promise.race([
+      pending,
+      new Promise(resolve => setTimeout(() => resolve('still-waiting'), 400))
+    ]);
+    expect(result).toBe('timeout');
+  });
+
+  test('keeps waiting while another requested track can still finish', async () => {
+    const slow = new PreloadGate({ preDownloadCount: 1, preloadTimeoutMs: 30000 });
+    const pending = slow.waitUntilReady([{ youtubeId: 'a' }, { youtubeId: 'b' }]);
+    slow.markFailed('a');
+    expect(slow.getState().status).toBe('waiting');
+    slow.onCacheUpdated('b', ['b']);
+    expect(await pending).toBe('ready');
+  });
+
   test('local and temp tracks count as ready', async () => {
     const result = await gate.waitUntilReady([
       { type: 'local', title: 'a' },

@@ -611,11 +611,42 @@ async function advanceTrack() {
     }
   }
 
-  // Pre-cache next track
-  preCacheNextTrack();
+  // Keep the next window cached after this track starts
+  preloadUpcoming();
 }
 
+function kickDownload(track) {
+  const id = trackIdOf(track);
+  if (!id || !track || track.type === 'local' || track.type === 'temp') return;
+  if (downloadingIds.has(id)) return;
+  const cached = audioCache.find(e => e.id === id && e.filepath && fs.existsSync(e.filepath));
+  if (cached) return;
+  preloadGate.markDownloading(id);
+  const host = `http://127.0.0.1:${PORT}`;
+  fetch(`${host}/api/cache/download`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ videoId: id, title: track.title, artist: track.artist, _source: track._source || '', _instance: track._instance || '' })
+  }).catch(e => log('Preload', `${id}: ${e.message}`));
+}
+
+function preloadUpcoming() {
+  const needed = config.preDownloadCount || 3;
+  const start = Math.max(0, sharedState.trackIndex + 1);
+  for (const track of sharedState.queue.slice(start, start + needed)) kickDownload(track);
+}
+
+let playbackStartInFlight = null;
 async function startPlayback() {
+  if (playbackStartInFlight) return playbackStartInFlight;
+  if (sharedState.sessionActive && sharedState.isPlaying) {
+    return { ok: true, already: true, preload: preloadGate.getState().status, trackIndex: sharedState.trackIndex };
+  }
+  playbackStartInFlight = runStartPlayback().finally(() => { playbackStartInFlight = null; });
+  return playbackStartInFlight;
+}
+
+async function runStartPlayback() {
   if (sharedState.queue.length === 0) return { error: 'Queue empty' };
   if (sharedState.trackIndex < 0 || sharedState.trackIndex >= sharedState.queue.length) {
     sharedState.trackIndex = -1; // advanceTrack() will increment to 0
@@ -623,39 +654,29 @@ async function startPlayback() {
     sharedState.trackIndex--; // counteract advanceTrack()'s ++
   }
   sharedState.sessionActive = true;
-    sharedState.sessionStart = Date.now();
-    sharedState.playerMode = sseClients.size > 0 ? 'display' : 'headless';
+  sharedState.sessionStart = Date.now();
+  sharedState.playerMode = sseClients.size > 0 ? 'display' : 'headless';
 
-    const needed = config.preDownloadCount || 3;
-    const nextTracks = sharedState.queue.slice(sharedState.trackIndex + 1, sharedState.trackIndex + 1 + needed);
-    if (nextTracks.length > 0) {
-      const cachedIds = cachedVideoIds();
-      preloadGate.seedCache(cachedIds);
-      log('Preload', `Waiting for ${Math.min(needed, nextTracks.length)} tracks before playback`);
-      const gate = preloadGate.waitUntilReady(nextTracks);
-      for (const track of nextTracks) {
-        const id = trackIdOf(track);
-        if (!id || track.type === 'local' || track.type === 'temp') continue;
-        if (cachedIds.includes(id)) continue;
-        preloadGate.markDownloading(id);
-        const host = `http://127.0.0.1:${PORT}`;
-        fetch(`${host}/api/cache/download`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId: id, title: track.title, artist: track.artist, _source: track._source || '', _instance: track._instance || '' })
-        }).catch(e => log('Preload', `${id}: ${e.message}`));
-      }
-      broadcastState();
-      const status = await gate;
-      if (status === 'timeout') log('Preload', 'Preload incomplete — starting anyway');
-      else log('Preload', `Gate status: ${status}`);
-      broadcastState();
-    }
+  let preloadStatus = 'ready';
+  const needed = config.preDownloadCount || 3;
+  const nextTracks = sharedState.queue.slice(sharedState.trackIndex + 1, sharedState.trackIndex + 1 + needed);
+  if (nextTracks.length > 0) {
+    const cachedIds = cachedVideoIds();
+    preloadGate.seedCache(cachedIds);
+    log('Preload', `Waiting for ${Math.min(needed, nextTracks.length)} tracks before playback`);
+    const gate = preloadGate.waitUntilReady(nextTracks);
+    for (const track of nextTracks) kickDownload(track);
+    broadcastState();
+    preloadStatus = await gate;
+    if (preloadStatus === 'timeout') log('Preload', 'Preload incomplete — starting anyway');
+    else log('Preload', `Gate status: ${preloadStatus}`);
+    broadcastState();
+  }
 
-    log('Playback', `Session started (${sseClients.size} listener(s), trackIndex will be ${sharedState.trackIndex + 1})`);
+  log('Playback', `Session started (${sseClients.size} listener(s), trackIndex will be ${sharedState.trackIndex + 1})`);
   saveQueueToDisk(sharedState.queue);
   await advanceTrack();
-  return { ok: true };
+  return { ok: true, preload: preloadStatus, trackIndex: sharedState.trackIndex };
 }
 
 function stopPlayback() {
@@ -1483,18 +1504,18 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
   // Skip videoIds recently marked as failed
   if (failedIds.has(videoId) && !req.body?.retry) {
     log('Cache', `Skipping ${videoId} — recently failed (retry in ~30m)`);
-    // Try alternative IDs if provided
+    preloadGate.markFailed(videoId);
     if (Array.isArray(altIds) && altIds.length > 0) {
       for (const altId of altIds) {
         if (altId === videoId) continue;
         if (failedIds.has(altId)) continue;
         const existingAlt = audioCache.find(e => e.id === altId);
         if (existingAlt?.filepath && fs.existsSync(existingAlt.filepath)) {
-          downloadingIds.delete(videoId);
           return res.json({ok:true,cached:true,alt:true,url:`/api/cache/stream/${encodeURIComponent(altId)}`,title:existingAlt.title,source:'cache',altVideoId:altId});
         }
       }
     }
+    return res.status(409).json({ error: 'Recently failed', failed: true, videoId });
   }
 
   downloadingIds.add(videoId);
