@@ -37,7 +37,7 @@ Open the **DJ Console** to control the mix. Put the **Now Playing** display on a
 
 ```bash
 docker compose up -d
-open http://localhost:8080/dj
+open http://localhost:8090/dj
 ```
 
 ### Node.js (no Docker)
@@ -130,7 +130,7 @@ Pre-configured model dropdown with curated options for free-tier and paid models
 ## Docker Configuration
 
 ### Custom port
-The compose file publishes the app on host port 8080 so it does not collide with anything already using 3000. The container still listens on 3000. To use another host port:
+The compose file publishes the app on host port 8090 so it does not collide with anything already using 3000 or 8080. The container still listens on 3000. To use another host port:
 ```yaml
 ports:
   - "9090:3000"   # access at http://localhost:9090
