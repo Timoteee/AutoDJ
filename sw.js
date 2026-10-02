@@ -1,4 +1,4 @@
-const CACHE_NAME = 'autodj-v1';
+const CACHE_NAME = 'autodj-v7-shell';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
@@ -26,9 +26,23 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  const url = e.request.url;
+  const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return;
   // Skip API calls and audio streams
-  if (url.includes('/api/') || url.includes('/cache/') || url.includes('webpack') || url.includes('hot-update')) {
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/cache/') || url.href.includes('webpack') || url.href.includes('hot-update')) {
+    return;
+  }
+  const isDocument = e.request.mode === 'navigate' || /\/(dj|display)?$/.test(url.pathname);
+  if (isDocument) {
+    e.respondWith(
+      fetch(e.request).then((res) => {
+        if (res && res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        }
+        return res;
+      }).catch(() => caches.match(e.request).then((cached) => cached || caches.match('/dj')))
+    );
     return;
   }
   // Cache-first for static assets, network-first for everything else
@@ -41,7 +55,7 @@ self.addEventListener('fetch', (e) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
         }
         return res;
-      }).catch(() => caches.match('/dj'));
+      }).catch(() => caches.match(e.request));
     })
   );
 });

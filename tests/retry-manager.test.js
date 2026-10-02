@@ -110,6 +110,20 @@ describe('RetryManager', () => {
     expect(manager.getEntries()).toHaveLength(0);
   });
 
+  test('poll invokes retry handler when due', async () => {
+    manager.stop();
+    vi.useFakeTimers();
+    const mgr = new RetryManager({ maxAttempts: 2, backoff: [1000, 1000], pollInterval: 50 });
+    const calls = [];
+    mgr.setRetryHandler(async (entry) => { calls.push(entry.videoId); });
+    mgr.register('vid9', 'T', 'A', 'invidious');
+    await vi.advanceTimersByTimeAsync(60);
+    expect(calls).toEqual(['vid9']);
+    expect(mgr.getEntries()[0].status).toBe('downloading');
+    mgr.stop();
+    vi.useRealTimers();
+  });
+
   test('stop clears polling interval', () => {
     manager.stop();
     // No crash - timer is cleared
