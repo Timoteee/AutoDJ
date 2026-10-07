@@ -1,4 +1,4 @@
-# AutoDJ v5.0.1
+# AutoDJ v5.0.2
 
 Owner-maintained archive of the available AutoDJ source for this version.
 
