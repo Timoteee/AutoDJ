@@ -649,8 +649,7 @@ const SEARCH_HANDLERS = {
   invidious: async (q) => { for (const inst of getHealthy(invidiousInstances())) { try { const s=Date.now(), r=await fetch(`${inst}/api/v1/search?q=${encodeURIComponent(q)}&type=video`,{signal:AbortSignal.timeout(9000),headers:musicHeaders()}); if(!r.ok){markInst(inst,false);continue;} const d=await r.json(); markInst(inst,true,Date.now()-s); if(Array.isArray(d)&&d.length>0){ const vids = d.filter(i => (i.type === 'video' || i.lengthSeconds) && (i.videoId || i.video_id)); const rows = (vids.length ? vids : d).slice(0, 8); if(rows.length>0){log('Search', `Invidious ${inst}: ${rows.length}`); return rows.slice(0,5).map(i=>({videoId:i.videoId||i.video_id||'',title:i.title||i.videoId||'Unknown',author:i.author||i.authorName||i.uploaderName||i.authorId||'Unknown',lengthSeconds:normalizeTrackDurationSeconds(i.lengthSeconds, null),_source:'invidious'}));}} } catch(e){markInst(inst,false);} } return null; },
   piped: async (q) => { for (const inst of getHealthy(SOURCES.piped)) { try { const r=await fetch(`${inst}/search?q=${encodeURIComponent(q)}&filter=videos`,{signal:AbortSignal.timeout(9000),headers:musicHeaders()}); if(!r.ok){markInst(inst,false);continue;} const d=await r.json(); markInst(inst,true); const raw = d.items || []; const items = raw.filter(i => { const ty = (i.type || '').toLowerCase(); return ty === 'stream' || ty === 'video' || (!!i.url && (ty === '' || ty === 'scheduledstream')); }).slice(0, 8); const mapped = items.map(i => { let vid = i.videoId || ''; if (!vid && i.url) { const m = String(i.url).match(/[?&]v=([^&]+)/); if (m) vid = m[1]; else if (String(i.url).startsWith('/watch?v=')) vid = i.url.replace('/watch?v=', '').split('&')[0]; } return { ...i, _vid: vid }; }).filter(i => i._vid); if (mapped.length > 0) { log('Search', `Piped ${inst}: ${mapped.length}`); return mapped.slice(0, 5).map(i => ({ videoId: i._vid, title: i.title || 'Unknown', author: i.uploaderName || i.uploader || i.author || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(i.duration, null), _source: 'piped' })); } } catch(e){markInst(inst,false);} } return null; },
   dab: async (q) => { for (const inst of getHealthy(SOURCES.dab)) { for (const qp of ['q', 'query']) { try { const s = Date.now(); const r = await fetch(`${inst}/search?${qp}=${encodeURIComponent(q)}&type=track&limit=5`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() }); if (!r.ok) continue; const ct = r.headers.get('content-type') || ''; if (!ct.includes('json')) continue; const d = await r.json(); const tracks = d.tracks || d.results || (Array.isArray(d) ? d : []); if (tracks.length > 0) { markInst(inst, true, Date.now() - s); const mapped = tracks.slice(0, 5).map(t => ({ videoId: t.id || t.trackId || '', title: t.title || t.name || 'Unknown', author: (typeof t.artist === 'object' ? t.artist?.name : t.artist) || t.artistName || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(t.duration, t.duration_ms || t.durationMs), artwork: (typeof t.album === 'object' ? t.album?.cover : null) || t.albumCover || t.cover || '', _source: 'dab', _instance: inst })); log('Search', `DAB ${inst} (${qp}=): ${tracks.length}`); return mapped; } markInst(inst, true, Date.now() - s); } catch (e) { markInst(inst, false); } } } return null; },
-  jamendo: async (q) => { if (config.jamendoClientId) { try { const r = await fetch(`https://api.jamendo.com/v3.1/tracks/?client_id=${encodeURIComponent(config.jamendoClientId)}&format=json&limit=8&search=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() }); if (r.ok) { const d = await r.json(); const results = d.results || []; if (results.length > 0) { log('Search', `Jamendo: ${results.length}`); return results.slice(0, 5).map(t => ({ videoId: `jamendo:${t.id}`, title: t.name || 'Unknown', author: t.artist_name || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(parseFloat(t.duration), null) || 0, artwork: t.image || t.album_image || '', _source: 'jamendo', _instance: 'https://api.jamendo.com/v3.1' })); } } } catch(e) {} } return null; },
-  hifi: async (q) => { for (const inst of getHealthy(SOURCES.hifi)) { try { const s = Date.now(); const r = await fetch(`${inst}/search?q=${encodeURIComponent(q)}&type=track&limit=5`, { signal: AbortSignal.timeout(10000), headers: musicHeaders() }); if (!r.ok) { markInst(inst, false); continue; } const d = await r.json(); markInst(inst, true, Date.now() - s); const tracks=d.tracks||d.items||d.data?.tracks||(Array.isArray(d)?d:[]); if(tracks.length>0){log('Search', `HiFi ${inst}: ${tracks.length}`); return tracks.slice(0,5).map(t=>({videoId:t.id||t.trackId||t.track_id||'',title:t.title||t.name||'Unknown',author:(typeof t.artist==='object'?t.artist?.name:t.artist)||t.artists?.[0]?.name||t.artistName||'Unknown',lengthSeconds:normalizeTrackDurationSeconds(t.duration, t.duration_ms||t.durationMs),_source:'hifi',_instance:inst}));} } catch(e){markInst(inst,false);} } return null; }
+  jamendo: async (q) => { if (config.jamendoClientId) { try { const r = await fetch(`https://api.jamendo.com/v3.1/tracks/?client_id=${encodeURIComponent(config.jamendoClientId)}&format=json&limit=8&search=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(8000), headers: musicHeaders() }); if (r.ok) { const d = await r.json(); const results = d.results || []; if (results.length > 0) { log('Search', `Jamendo: ${results.length}`); return results.slice(0, 5).map(t => ({ videoId: `jamendo:${t.id}`, title: t.name || 'Unknown', author: t.artist_name || 'Unknown', lengthSeconds: normalizeTrackDurationSeconds(parseFloat(t.duration), null) || 0, artwork: t.image || t.album_image || '', _source: 'jamendo', _instance: 'https://api.jamendo.com/v3.1' })); } } } catch(e) {} } return null; }
 };
 
 /** Filter out YouTube -Topic channels from search results */
@@ -869,11 +868,6 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
           if(ct.includes('json')){const d=await r.json(); streamUrl=d.streamUrl||d.url; src='dab';}
         }
       } catch(e){log('Cache', `DAB ${_instance}: ${e.message}`);}
-    }
-
-    // HiFi direct download
-    if(!streamUrl&&_source==='hifi'&&_instance) {
-      try { const r=await fetch(`${_instance}/track/?id=${encodeURIComponent(videoId)}&quality=LOSSLESS`,{signal:AbortSignal.timeout(10000),headers:musicHeaders()}); if(r.ok){const d=await r.json(); streamUrl=d.url||d.download_url; src='hifi';} } catch(e){}
     }
 
     // Jamendo (namespaced id jamendo:TRACKID)
@@ -1309,6 +1303,14 @@ function loadQueueFromDisk() {
 const loaded = loadQueueFromDisk();
 sharedState.queue = loaded.queue;
 sharedState.trackIndex = loaded.trackIndex;
+// Auto-start if queue has tracks (resume from where we left off)
+if (sharedState.queue.length > 0) {
+  setImmediate(async () => {
+    log('Playback', `Auto-starting from disk queue (${sharedState.queue.length} tracks, index=${sharedState.trackIndex})`);
+    const result = await startPlayback();
+    if (result.error) log('Playback', `Auto-start failed: ${result.error}`);
+  });
+}
 
 app.get('/api/queue', (req, res) => res.json({ queue: sharedState.queue, trackIndex: sharedState.trackIndex }));
 
@@ -1328,6 +1330,13 @@ app.post('/api/queue', (req, res) => {
     if (typeof trackIndex === 'number') sharedState.trackIndex = trackIndex;
     saveQueueToDisk(safe);
     broadcastState();
+    // Auto-start if session is idle and we have tracks
+    if (!sharedState.sessionActive && safe.length > 0) {
+      setImmediate(async () => {
+        log('Playback', 'Auto-starting from queue update');
+        await startPlayback();
+      });
+    }
     res.json({ ok: true, count: safe.length });
   } else {
     res.status(400).json({ error: 'Invalid queue' });
