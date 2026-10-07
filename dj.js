@@ -172,6 +172,12 @@ async function loadConfig() {
     const ocModel = document.getElementById('cfg-opencode-model');
     if (ocModel && cfg.opencodeModel) ocModel.value = cfg.opencodeModel;
     document.getElementById('cfg-ai-provider').value = cfg.aiProvider || 'anthropic';
+    const orKey = document.getElementById('cfg-openrouter');
+    if (orKey && (cfg.openrouterKey || cfg.hasOpenrouter)) orKey.placeholder = '●●● configured ●●●';
+    const orUrl = document.getElementById('cfg-openrouter-url');
+    if (orUrl && cfg.openrouterBaseUrl) orUrl.value = cfg.openrouterBaseUrl;
+    const orModel = document.getElementById('cfg-openrouter-model');
+    if (orModel && cfg.openrouterModel) orModel.value = cfg.openrouterModel;
     if (cfg.musicDirs) document.getElementById('cfg-dirs').value = cfg.musicDirs.join('\n');
     if (cfg.messages) { DJ.messages = cfg.messages; renderMessages(); }
     const ir = document.getElementById('cfg-invidious-redirect');
@@ -249,6 +255,9 @@ async function saveConfig() {
     opencodeKey: document.getElementById('cfg-opencode')?.value || '',
     opencodeBaseUrl: document.getElementById('cfg-opencode-url')?.value?.trim() || '',
     opencodeModel: document.getElementById('cfg-opencode-model')?.value?.trim() || '',
+    openrouterKey: document.getElementById('cfg-openrouter')?.value || '',
+    openrouterBaseUrl: document.getElementById('cfg-openrouter-url')?.value?.trim() || '',
+    openrouterModel: document.getElementById('cfg-openrouter-model')?.value?.trim() || '',
     aiProvider: document.getElementById('cfg-ai-provider').value,
     musicDirs: document.getElementById('cfg-dirs').value.split('\n').map(s=>s.trim()).filter(Boolean),
     messages: DJ.messages,

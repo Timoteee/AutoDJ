@@ -902,6 +902,7 @@ input[type="number"] { width: 70px; }
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="openai">OpenAI (GPT)</option>
               <option value="opencode">OpenCode AI</option>
+              <option value="openrouter">OpenRouter</option>
             </select>
           </div>
           <div class="field">
@@ -971,6 +972,20 @@ input[type="number"] { width: 70px; }
             </select>
             <div class="field-hint">Set base URL to https://opencode.ai/zen/v1 for Zen models</div>
           </div>
+          <div class="field">
+            <label>OpenRouter API Key</label>
+            <input type="password" id="cfg-openrouter" placeholder="sk-or-...">
+          </div>
+          <div class="field">
+            <label>OpenRouter Base URL (optional)</label>
+            <input type="url" id="cfg-openrouter-url" placeholder="https://openrouter.ai/api/v1">
+            <div class="field-hint">Leave blank for default. Self-hosted users can change to their proxy.</div>
+          </div>
+          <div class="field">
+            <label>OpenRouter Model</label>
+            <input type="text" id="cfg-openrouter-model" placeholder="openrouter/auto">
+            <div class="field-hint">Models: openrouter/auto (auto-routes), anthropic/claude-sonnet-4, openai/gpt-5, etc.</div>
+          </div>
           <button class="btn accent" onclick="saveConfig()">Save Keys</button>
           <button type="button" class="btn" onclick="testSources()">Test music sources</button>
           <div id="src-test-out" style="font-size:10px;color:var(--muted);line-height:1.5;min-height:1.2em"></div>
@@ -1023,7 +1038,6 @@ input[type="number"] { width: 70px; }
               <div class="src-prio-item" draggable="true" data-src="invidious">🔍 Invidious</div>
               <div class="src-prio-item" draggable="true" data-src="piped">🔍 Piped</div>
               <div class="src-prio-item" draggable="true" data-src="dab">🎵 DAB</div>
-              <div class="src-prio-item" draggable="true" data-src="hifi">🎵 HiFi</div>
               <div class="src-prio-item" draggable="true" data-src="jamendo">🎵 Jamendo</div>
               <div class="src-prio-item" draggable="true" data-src="squid">🦑 Squid</div>
             </div>
