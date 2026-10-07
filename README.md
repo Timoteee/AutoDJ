@@ -18,6 +18,26 @@ AutoDJ is a self-hosted music console with two virtual decks, automatic queuing,
 
 ![The AutoDJ console](docs/assets/console.png)
 
+### Take the dark-mode tour
+
+Real interface captures with demo tracks, original lyrics and demo headlines. The launch video shows the controls in action.
+
+[![Watch the 25-second AutoDJ launch walkthrough](docs/assets/launch-poster.jpg)](https://github.com/Timoteee/AutoDJ/releases/download/v8.0.0/brag.mp4)
+
+![Now Playing: artwork glow, synced lyrics and scrolling news](docs/assets/display-dark.png)
+
+<p>
+  <img src="docs/assets/queue-dark.png" alt="Queue: like, remove and prepare upcoming tracks" width="49%">
+  <img src="docs/assets/discovery-dark.png" alt="Discovery: song search and Mood Engine" width="49%">
+</p>
+<p>
+  <img src="docs/assets/for-you-dark.png" alt="For You: recommendations based on listening activity" width="49%">
+  <img src="docs/assets/liked-dark.png" alt="Liked Songs: saved favorites ready to queue" width="49%">
+</p>
+<p align="center">
+  <img src="docs/assets/downloads-dark.png" alt="Downloads: one status per track" width="80%">
+</p>
+
 ### What lands in v8
 
 - **Start sooner.** Playback waits for the first track, rather than a batch of downloads. Adding the first track starts preparation automatically.
@@ -26,6 +46,8 @@ AutoDJ is a self-hosted music console with two virtual decks, automatic queuing,
 - **Find your next favorite.** The **For You** page uses completed plays, skips, and recency to suggest music, with a reason for each recommendation. Listening activity stays in your server's state directory.
 - **Recover gracefully.** Interrupted downloads retry, failed tracks show a useful error, and one status row follows each download. Cache and queue survive container restarts.
 - **Put the mix on another screen.** Display listeners receive the actual mixer audio automatically. A browser may require one click on **Enable Audio** before sound can start.
+- **Watch the room come alive.** Smooth audio-driven bars, an artwork-colored glow, synced lyrics, stable scrolling news and the viewer's local clock keep the display readable.
+- **Keep your favorites close.** Like tracks from the console or queue, then return to them on **Liked Songs**.
 - **Stay in control.** Responsive navigation, local CSS, keyboard focus, reduced-motion support, and visible connection errors keep the console usable.
 
 ## Start the mix
