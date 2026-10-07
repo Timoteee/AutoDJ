@@ -29,3 +29,21 @@ test('a pending download cannot publish playback after a stop or client reset', 
   await expect(pending).resolves.toBe(false);
   expect(commands).toEqual([]);
 });
+
+test('settings are persisted when Docker rejects replacing a file bind mount', () => {
+  const source = fs.readFileSync('server.js', 'utf8');
+  const start = source.indexOf('function saveConfig()');
+  const fn = source.slice(start, source.indexOf('\n}', start) + 2);
+  const files = new Map();
+  const context = { config: { crossfadeSeconds: 7 }, CONFIG_FILE: '/app/config.json',
+    CONFIG_BACKUP_FILE: '/app/config.backup.json', log() {}, fs: {
+      writeFileSync: (file, content) => files.set(file, content),
+      renameSync() { throw Object.assign(new Error('mount point'), { code: 'EBUSY' }); },
+      copyFileSync: (from, to) => files.set(to, files.get(from)),
+      unlinkSync: file => files.delete(file),
+    } };
+  vm.runInNewContext(fn, context);
+  context.saveConfig();
+  expect(JSON.parse(files.get('/app/config.json'))).toEqual(context.config);
+  expect(files.has('/app/config.json.tmp')).toBe(false);
+});
