@@ -2137,8 +2137,8 @@ async function triggerCrossfade(plan) {
     getDeckAudio(toDeck).currentTime = plan.cue || 0;
     document.getElementById('fade-btn').classList.add('opacity-50');
     setStatus('Crossfading → ' + nextTrack.title);
-    await Engine.crossfade(fromDeck, toDeck, duration, () => {
-      recordListening(Engine.decks[fromDeck].track, getDeckAudio(fromDeck));
+    await Engine.crossfade(fromDeck, toDeck, duration, completedPlayback => {
+      recordListening(Engine.decks[fromDeck].track, completedPlayback);
       DJ.trackIndex = DJ.queue.indexOf(nextTrack); DJ.currentDeck = toDeck;
       DJ.fadeLock = false;
       setDeckLive('a', toDeck === 'a'); setDeckLive('b', toDeck === 'b');

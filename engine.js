@@ -224,10 +224,11 @@ const Engine = (() => {
       if (t >= 1) {
         clearInterval(fadeRaf);
         isFading = false;
+        const completedPlayback = { currentTime: from.audio?.currentTime || 0, duration: from.audio?.duration || 0 };
         if (from.audio) { from.audio.pause(); from.audio.currentTime = 0; }
         if (from.gain) from.gain.gain.value = 0;
         if (to.gain) to.gain.gain.value = 1;
-        if (onComplete) onComplete();
+        if (onComplete) onComplete(completedPlayback);
         return;
       }
 
