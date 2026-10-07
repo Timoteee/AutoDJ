@@ -4,7 +4,7 @@ services:
     container_name: metube
     restart: unless-stopped
     ports:
-      - "8081:8081"
+      - "8091:8081"
     environment:
       - DOWNLOAD_DIR=/downloads
     volumes:
@@ -19,7 +19,7 @@ services:
     depends_on:
       - metube
     ports:
-      - "3000:3000"
+      - "8090:3000"
     volumes:
       - ./music:/music:ro
       - ./cache:/app/cache

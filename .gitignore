@@ -5,6 +5,7 @@ config.json
 config.backup.json
 queue.json
 queue.backup.json
+downloads/
 HANDOFF.md
 *.log
 .DS_Store
