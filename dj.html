@@ -1,1102 +1,799 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#121212" media="(prefers-color-scheme:dark)">
+<meta name="theme-color" content="#131313" media="(prefers-color-scheme:dark)">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="description" content="AutoDJ — automated music mixing with persistent playback">
+<meta name="description" content="AutoDJ v6.0.0 — Signal & Flow Control Room">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
-<title>AutoDJ — Control Room</title>
-<link rel="stylesheet" href="/css/shared.css">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-<style>
-:root {
-  /* Warm club/venue aesthetic — charcoal + amber */
-  --bg: #0c0c14;
-  --surface: #14141f;
-  --surface2: #1c1c2e;
-  --surface3: #24243a;
-  --border: rgba(217,119,6,0.15);
-  --accent: #d97706;
-  --accent-hover: #f59e0b;
-  --accent2: #f59e0b;
-  --accent3: #a855f7;
-  --green: #10b981;
-  --yellow: #f59e0b;
-  --text: #d4d4de;
-  --bright: #f0f0fa;
-  --muted: #8a8a9a;
-  --glow-g: rgba(16,185,129,0.15);
-  --glow-r: rgba(239,68,68,0.15);
-  --glow-a: rgba(217,119,6,0.2);
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --shadow: 0 2px 16px rgba(0,0,0,0.5);
-  --transition: 200ms ease;
-}
-[data-theme="light"] {
-  --bg: #f8f6f0;
-  --surface: #eeebe4;
-  --surface2: #e0ddd4;
-  --surface3: #d4d1c8;
-  --border: rgba(217,119,6,0.2);
-  --accent: #b76506;
-  --accent-hover: #d97706;
-  --accent2: #d97706;
-  --accent3: #7c3aed;
-  --green: #059669;
-  --yellow: #d97706;
-  --text: #2d2a24;
-  --bright: #1a1814;
-  --muted: #8a8578;
-  --glow-g: rgba(5,150,105,0.1);
-  --glow-r: rgba(239,68,68,0.08);
-  --glow-a: rgba(217,119,6,0.12);
-  --shadow: 0 2px 12px rgba(0,0,0,0.08);
-}
+<title>AutoDJ v6 — Signal & Flow</title>
 
+<!-- Google Fonts: Inter + JetBrains Mono + Geist (via CDN substitute) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- TailwindCSS via CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        signal: { DEFAULT: '#ffb3ac', light: '#ffcdc8', dark: '#e6938c' },
+        flow:   { DEFAULT: '#a6e6ff', light: '#c4eeff', dark: '#7bc0d9' },
+        surface: { DEFAULT: '#131313', light: '#1a1a1a', lighter: '#222222', card: '#0e0e0e', border: '#2a2a2a', hover: '#353534' },
+        amber:   { dj: '#d97706' },
+      },
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+        display: ['Space Grotesk', 'sans-serif'],
+      },
+      borderRadius: {
+        'xs': '0.125rem',
+        'sm': '0.25rem',
+        'md': '0.5rem',
+        'xl': '0.75rem',
+      },
+      spacing: {
+        'sidebar': '16rem',
+        'topbar': '4rem',
+      },
+    }
+  }
+}
+</script>
+
+<style>
+/* ─── Base ──────────────────────────────────────── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; overflow: hidden; }
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'Share Tech Mono', monospace;
-  display: flex; flex-direction: column;
-  height: 100vh;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #131313;
+  color: #e0e0e0;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+.dark body { background: #131313; }
 
-/* Background depth: radial glow + subtle grid */
-body::before {
-  content: '';
-  position: fixed; inset: 0;
-  background:
-    radial-gradient(ellipse at 20% 40%, var(--glow-a) 0%, transparent 60%),
+/* Background depth */
+.bg-grid {
+  background-image:
+    radial-gradient(ellipse at 20% 30%, rgba(255,179,172,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 70%, rgba(166,230,255,0.04) 0%, transparent 60%),
     repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,0.015) 40px),
     repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,0.015) 40px);
-  pointer-events: none; z-index: 0;
 }
 
-/* ─── Layout ─────────────────────────────────── */
-.topbar {
-  display: flex; align-items: center; gap: 16px;
-  padding: 8px 16px;
-  background: rgba(12,12,20,0.9);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
-  z-index: 10; flex-shrink: 0;
-}
-
-.logo { font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: 900; background: linear-gradient(135deg, var(--accent2), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 3px; }
-.logo span { -webkit-text-fill-color: var(--accent2); }
-
-.nav-btns { display: flex; gap: 6px; margin-left: auto; }
-.nav-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; padding: 6px 14px; cursor: pointer; border-radius: 4px; text-decoration: none; transition: all 0.2s; }
-.nav-btn:hover { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 12px var(--glow-a); }
-.nav-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(217,119,6,0.08); }
-
-.status-ticker {
-  font-size: 10px; color: var(--accent); letter-spacing: 1px;
-  background: rgba(217,119,6,0.06); border: 1px solid rgba(217,119,6,0.15);
-  padding: 4px 12px; border-radius: var(--radius-sm); max-width: 400px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-
-.clock-display { font-size: 12px; color: var(--muted); letter-spacing: 1px; }
-.theme-toggle {
-  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
-  font-family: 'Share Tech Mono', monospace; font-size: 9px; letter-spacing: 2px;
-  padding: 4px 10px; cursor: pointer; border-radius: var(--radius-sm);
-  transition: all var(--transition);
-  white-space: nowrap;
-}
-.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
-
-.main-content {
-  flex: 1; overflow-y: auto; overflow-x: hidden;
-  position: relative; z-index: 1;
-  padding: 12px;
-  display: flex; flex-direction: column; gap: 10px;
-}
-
-.main-content::-webkit-scrollbar { width: 6px; }
-.main-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-.main-content::-webkit-scrollbar-track { background: transparent; }
-
-/* Global scrollbar styles */
+/* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
-* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #353534; }
+* { scrollbar-width: thin; scrollbar-color: #2a2a2a transparent; }
 
-/* ─── Tabs ───────────────────────────────────── */
-.tab-bar {
-  display: flex; gap: 4px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 10px; flex-shrink: 0;
+/* ─── Sidebar ──────────────────────────────────── */
+.sidebar-link {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  border-radius: 0.375rem;
+  color: #888;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: all 150ms ease;
+  text-decoration: none;
+  border: 1px solid transparent;
 }
-.tab {
-  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
-  padding: 8px 18px; cursor: pointer; border: 1px solid transparent;
-  border-bottom: none; color: var(--muted); transition: all 0.2s;
-  background: transparent; font-family: 'Share Tech Mono', monospace;
+.sidebar-link:hover {
+  background: rgba(255,255,255,0.04);
+  color: #ccc;
 }
-.tab:hover { color: var(--text); }
-.tab.active { color: var(--accent); border-color: var(--border); border-bottom: 1px solid var(--bg); background: var(--surface); }
+.sidebar-link.active {
+  background: rgba(255,179,172,0.08);
+  border-color: rgba(255,179,172,0.2);
+  color: #ffb3ac;
+}
+.sidebar-link .icon { width: 1.25rem; height: 1.25rem; flex-shrink: 0; }
 
-.tab-content { display: none; }
-.tab-content.active { display: block; flex: 1; min-height: 0; }
-/* Tab scroll: queue, logs, settings need it — controlled by individual panel-body */
-.tab-content[data-scroll] { overflow-y: auto; }
-
-/* ─── Panels / Cards ─────────────────────────── */
+/* ─── Panels ────────────────────────────────────── */
 .panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  background: #0e0e0e;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.5rem;
 }
 .panel-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #2a2a2a;
 }
-.panel-title { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); }
-.panel-body { padding: 14px 16px; }
+.panel-title { font-size: 0.6875rem; letter-spacing: 0.05em; text-transform: uppercase; color: #666; font-weight: 600; }
+.panel-body { padding: 1rem; }
 
-/* ─── Discover / Queue tab scroll ─────────────── */
-.source-priority-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
-.source-priority-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; cursor: grab; }
-.source-priority-item:hover { border-color: var(--accent); }
-.source-priority-item .drag-handle { cursor: grab; color: var(--muted); font-size: 12px; }
-
-/* ─── Decks ──────────────────────────────────── */
-.decks-row {
-  display: grid; grid-template-columns: 1fr 120px 1fr; gap: 8px; align-items: stretch;
-}
-
+/* ─── Deck ──────────────────────────────────────── */
 .deck {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  position: relative;
-  min-width: 0;
+  background: #0e0e0e;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.5rem;
+  padding: 1rem;
   transition: border-color 0.3s, box-shadow 0.3s;
+  position: relative;
 }
-/* ─── Mixer ──────────────────────────────────── */
-.mixer {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: 16px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+.deck.live-a { border-color: rgba(255,179,172,0.4); box-shadow: 0 0 24px rgba(255,179,172,0.06); }
+.deck.live-b { border-color: rgba(166,230,255,0.4); box-shadow: 0 0 24px rgba(166,230,255,0.06); }
+.deck-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.625rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
 }
-.mixer-label { font-size: 8px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); }
-.bpm-display { font-family: 'Orbitron', sans-serif; font-size: 22px; color: var(--accent); letter-spacing: 2px; }
-.bpm-label { font-size: 8px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
-.xfader-wrap { width: 100%; padding: 4px 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.xfader-labels { width: 100%; display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); letter-spacing: 2px; }
-.xfader-wrap input[type="range"] { width: 100%; accent-color: var(--accent2); cursor: pointer; }
-.fade-trigger { background: transparent; border: 1px solid var(--accent2); color: var(--accent2); font-family: 'Share Tech Mono', monospace; font-size: 9px; letter-spacing: 2px; padding: 6px 12px; cursor: pointer; border-radius: var(--radius-sm); transition: all var(--transition); }
-.fade-trigger:hover { background: var(--accent2); color: white; }
-.fade-trigger.fading { animation: pulse 1s ease infinite; border-color: var(--yellow); color: var(--yellow); }
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-
-.deck-id { font-size: 9px; letter-spacing: 4px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
-.deck.live { border-color: var(--accent2); box-shadow: 0 0 20px var(--glow-r); }
-.deck.live::after { content: '● LIVE'; position: absolute; top: 10px; right: 12px; font-size: 8px; letter-spacing: 2px; color: var(--accent2); animation: blink 1.2s step-end infinite; }
-@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-
-.waveform-canvas {
-  width: 100%; height: 48px;
-  background: var(--surface2);
-  border: 1px solid var(--border); border-radius: 2px;
-  margin-bottom: 10px; cursor: pointer;
+.deck-a-color { color: #ffb3ac; }
+.deck-b-color { color: #a6e6ff; }
+.live-dot {
+  display: inline-block;
+  width: 6px; height: 6px; border-radius: 50%;
+  margin-right: 6px;
+  animation: pulse-dot 1.5s ease-in-out infinite;
 }
+.live-dot.a { background: #ffb3ac; }
+.live-dot.b { background: #a6e6ff; }
+@keyframes pulse-dot { 0%,100%{opacity:1}50%{opacity:0.4} }
 
-.track-meta { margin-bottom: 12px; }
-.t-title { font-size: 13px; color: var(--bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
-.t-artist { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
-.t-album { font-size: 10px; color: var(--muted); opacity: 0.6; }
-.t-tags { font-size: 9px; color: var(--accent3); margin-top: 3px; }
+/* Waveform canvas */
+.wave-canvas { width: 100%; height: 52px; border-radius: 0.25rem; background: #0a0a0a; border: 1px solid #1e1e1e; cursor: pointer; }
 
-.progress-wrap { position: relative; margin-bottom: 6px; cursor: pointer; }
-.progress-bg { height: 4px; background: var(--border); border-radius: 2px; }
+/* VU meters */
+.vu-strip { display: flex; gap: 3px; height: 28px; align-items: flex-end; margin-bottom: 0.5rem; }
+.vu-bar { flex: 1; border-radius: 1px; min-height: 2px; transition: height 0.06s; background: currentColor; }
+
+/* Transport buttons */
+.transport-group { display: flex; gap: 4px; flex-wrap: wrap; }
+.btn-transport {
+  background: #1a1a1a; border: 1px solid #2a2a2a;
+  color: #aaa; font-family: 'JetBrains Mono', monospace;
+  font-size: 0.625rem; letter-spacing: 0.05em;
+  padding: 0.375rem 0.625rem;
+  cursor: pointer; border-radius: 0.25rem;
+  transition: all 120ms ease;
+  white-space: nowrap;
+}
+.btn-transport:hover { border-color: #ffb3ac; color: #ffb3ac; background: rgba(255,179,172,0.06); }
+.btn-transport.flow:hover { border-color: #a6e6ff; color: #a6e6ff; background: rgba(166,230,255,0.06); }
+.btn-transport.active { background: #ffb3ac; color: #131313; border-color: #ffb3ac; }
+.btn-transport.active.flow { background: #a6e6ff; color: #131313; border-color: #a6e6ff; }
+
+/* Progress bar */
+.progress-track { position: relative; height: 4px; background: #1e1e1e; border-radius: 2px; cursor: pointer; margin: 0.375rem 0; }
 .progress-fill { height: 100%; border-radius: 2px; transition: width 0.3s linear; }
-.deck.live .progress-fill { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); }
-.deck:not(.live) .progress-fill { background: var(--accent); }
-.cue-marker { position: absolute; top: -3px; width: 2px; height: 10px; background: var(--yellow); border-radius: 1px; }
+.progress-fill.a { background: #ffb3ac; }
+.progress-fill.b { background: #a6e6ff; }
+.cue-marker { position: absolute; top: -3px; width: 2px; height: 10px; background: #d97706; border-radius: 1px; }
 
-.time-row { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-bottom: 8px; }
-.time-remaining { color: var(--accent2); }
-
-.deck-controls { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
-.ctrl-btn {
-  background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); font-size: 12px; padding: 6px 10px;
-  cursor: pointer; border-radius: 2px; transition: all 0.15s;
-  font-family: 'Share Tech Mono', monospace;
+/* ─── Crossfader ───────────────────────────────── */
+input[type=range].xfader {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 4px;
+  background: linear-gradient(to right, #ffb3ac, #555, #a6e6ff);
+  border-radius: 2px; outline: none; cursor: pointer;
 }
-.ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
-.ctrl-btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-
-.vol-row { display: flex; align-items: center; gap: 8px; font-size: 9px; color: var(--muted); }
-.vol-row input { flex: 1; }
-
-/* ─── Center Mixer ───────────────────────────── */
-.mixer {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 16px 12px;
-  display: flex; flex-direction: column; gap: 8px;
-  align-items: center; justify-content: center;
+input[type=range].xfader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px; height: 18px;
+  background: #fff; border-radius: 50%;
+  border: 2px solid #131313;
+  box-shadow: 0 0 8px rgba(255,255,255,0.2);
+  cursor: pointer;
 }
-.mixer-label { font-size: 9px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; }
-.xfader-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
-#crossfader { width: 100%; writing-mode: horizontal-tb; accent-color: var(--accent2); cursor: pointer; }
-.xfader-labels { display: flex; justify-content: space-between; width: 100%; font-size: 9px; color: var(--muted); }
 
-.fade-trigger {
-  background: var(--surface2); border: 1px solid var(--accent2);
-  color: var(--accent2); font-family: 'Share Tech Mono', monospace;
-  font-size: 9px; letter-spacing: 1px; padding: 8px 6px;
-  cursor: pointer; border-radius: 2px; text-transform: uppercase;
-  width: 100%; transition: all 0.2s; text-align: center;
+/* ─── Generic Btn ───────────────────────────────── */
+.btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6875rem; letter-spacing: 0.05em;
+  padding: 0.5rem 1rem; cursor: pointer;
+  border-radius: 0.375rem;
+  border: 1px solid #2a2a2a;
+  background: transparent; color: #ccc;
+  transition: all 150ms ease;
+  text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 0.375rem;
 }
-.fade-trigger:hover { background: var(--accent2); color: white; }
-.fade-trigger.fading { background: var(--accent2); color: white; animation: blink 0.5s infinite; }
+.btn:hover { border-color: #ffb3ac; color: #ffb3ac; }
+.btn-signal { border-color: #ffb3ac; color: #ffb3ac; }
+.btn-signal:hover { background: rgba(255,179,172,0.1); }
+.btn-flow { border-color: #a6e6ff; color: #a6e6ff; }
+.btn-flow:hover { background: rgba(166,230,255,0.1); }
+.btn-danger { border-color: #ef4444; color: #ef4444; }
+.btn-danger:hover { background: rgba(239,68,68,0.1); }
+.btn-success { border-color: #34d399; color: #34d399; }
+.btn-success:hover { background: rgba(52,211,153,0.1); }
+.btn-sm { padding: 0.25rem 0.625rem; font-size: 0.625rem; }
+.btn-xs { padding: 0.125rem 0.5rem; font-size: 0.5625rem; }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
 
-.bpm-display { font-size: 22px; color: var(--accent); font-family: 'Orbitron'; text-align: center; }
-.bpm-label { font-size: 8px; color: var(--muted); letter-spacing: 2px; }
+/* ─── Form fields ───────────────────────────────── */
+.field { display: flex; flex-direction: column; gap: 0.375rem; }
+.field label { font-size: 0.6875rem; letter-spacing: 0.05em; text-transform: uppercase; color: #666; font-weight: 500; }
+.field input, .field select, .field textarea {
+  background: #1a1a1a; border: 1px solid #2a2a2a;
+  color: #e0e0e0; font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem; padding: 0.5rem 0.75rem;
+  border-radius: 0.25rem; outline: none;
+  transition: border-color 150ms ease;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color: #ffb3ac; }
+.field textarea { resize: vertical; min-height: 60px; }
+.field-hint { font-size: 0.6875rem; color: #555; margin-top: 0.125rem; }
 
-/* ─── Queue ──────────────────────────────────── */
-.queue-grid { display: grid; grid-template-columns: 1fr 280px; gap: 10px; }
-
-.queue-list { max-height: 340px; overflow-y: auto; }
-.queue-list::-webkit-scrollbar { width: 4px; }
-.queue-list::-webkit-scrollbar-thumb { background: var(--border); }
-
+/* ─── Queue items ───────────────────────────────── */
 .qitem {
   display: grid;
-  grid-template-columns: 24px 40px 1fr 36px 44px 24px;
-  gap: 6px; align-items: center;
-  padding: 8px 10px;
-  font-size: 11px;
-  border-bottom: 1px solid var(--border);
-  transition: background 0.15s, border-color 0.15s;
+  grid-template-columns: 1.5rem 3rem 1fr 4rem 3rem 1.5rem;
+  gap: 0.5rem; align-items: center;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  border-bottom: 1px solid #1e1e1e;
+  transition: background 0.15s;
 }
 .qitem:last-child { border-bottom: none; }
-.qitem:hover { background: rgba(0,229,255,0.03); }
-.qitem.playing { background: rgba(255,51,102,0.07); border-left: 2px solid var(--accent2); }
-.qitem.next { background: rgba(0,229,255,0.05); border-left: 2px solid var(--accent); }
-.qitem.past { opacity: 0.35; }
-.qitem.local .q-src { color: var(--green); }
-.qitem.online .q-src { color: var(--accent3); }
+.qitem:hover { background: rgba(255,255,255,0.02); }
+.qitem.playing { background: rgba(255,179,172,0.06); border-left: 2px solid #ffb3ac; }
+.qitem.next { background: rgba(166,230,255,0.04); border-left: 2px solid #a6e6ff; }
+.qitem.past { opacity: 0.3; }
+.q-num { color: #555; text-align: right; font-size: 0.6875rem; font-family: 'JetBrains Mono', monospace; }
+.q-src { font-size: 0.5625rem; letter-spacing: 0.05em; text-transform: uppercase; color: #666; }
+.q-badge { font-size: 0.5625rem; padding: 0.125rem 0.375rem; border-radius: 0.1875rem; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+.badge-playing { background: rgba(255,179,172,0.15); color: #ffb3ac; }
+.badge-next { background: rgba(166,230,255,0.12); color: #a6e6ff; }
+.badge-pending { background: rgba(255,255,255,0.05); color: #888; }
 
-.q-num { color: var(--muted); text-align: right; font-size: 10px; }
-.q-src { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; }
-.q-info { overflow: hidden; }
-.q-title { color: var(--bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.q-artist { color: var(--muted); font-size: 10px; }
-.q-dur { color: var(--muted); font-size: 10px; text-align: right; }
-.q-tags { font-size: 8px; color: var(--accent3); }
-.q-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
-.q-remove:hover { color: var(--accent2); }
-.q-play-now { background: none; border: 1px solid var(--accent); color: var(--accent); cursor: pointer; font-size: 10px; padding: 2px 6px; border-radius: 3px; line-height: 1; }
-.q-play-now:hover { background: var(--accent); color: #fff; }
-
-.q-badge { font-size: 8px; padding: 2px 5px; border-radius: 2px; text-transform: uppercase; letter-spacing: 1px; }
-.badge-play { background: rgba(255,51,102,0.2); color: var(--accent2); }
-.badge-next { background: rgba(0,229,255,0.15); color: var(--accent); }
-.badge-q { background: rgba(168,85,247,0.15); color: var(--accent3); }
-.badge-loc { background: rgba(0,255,136,0.12); color: var(--green); }
-
-/* Queue sidebar */
-.q-sidebar { display: flex; flex-direction: column; gap: 8px; }
-.btn { background: transparent; border: 1px solid var(--border); color: var(--text); font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 8px 14px; cursor: pointer; border-radius: 2px; transition: all 0.2s; display: block; width: 100%; text-align: center; }
-.btn:hover { border-color: var(--accent); color: var(--accent); }
-.btn.accent { border-color: var(--accent); color: var(--accent); }
-.btn.accent:hover { background: var(--accent); color: var(--bg); }
-.btn.danger { border-color: var(--accent2); color: var(--accent2); }
-.btn.danger:hover { background: var(--accent2); color: white; }
-.btn.green { border-color: var(--green); color: var(--green); }
-.btn.green:hover { background: var(--green); color: var(--bg); }
-.btn.purple { border-color: var(--accent3); color: var(--accent3); }
-.btn.purple:hover { background: var(--accent3); color: white; }
-.btn:disabled { opacity: 0.3; cursor: not-allowed; }
-
-/* ─── Source Priority ────────────────────────── */
-.src-prio-item {
-  background: var(--surface2); border: 1px solid var(--border); border-radius: 2px;
-  padding: 8px 12px; cursor: grab; font-size: 11px; color: var(--text);
-  transition: background 0.2s, border-color 0.2s;
-  user-select: none;
+/* ─── Stats cards ───────────────────────────────── */
+.stat-card {
+  background: #0e0e0e;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
 }
-.src-prio-item:active { cursor: grabbing; }
-.src-prio-item.drag-over { border-color: var(--accent); background: var(--surface1); }
-.src-prio-item.dragging { opacity: 0.4; }
+.stat-label { font-size: 0.625rem; letter-spacing: 0.1em; text-transform: uppercase; color: #555; margin-bottom: 0.25rem; font-weight: 500; }
+.stat-value { font-family: 'Space Grotesk', sans-serif; font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
+.stat-sub { font-size: 0.6875rem; color: #666; margin-top: 0.125rem; }
+.stat-bar { height: 2px; background: #1e1e1e; border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
+.stat-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
 
-/* ─── Settings ───────────────────────────────── */
-.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.field { display: flex; flex-direction: column; gap: 5px; }
-.field label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
-.field input, .field select, .field textarea {
-  background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); font-family: 'Share Tech Mono', monospace;
-  font-size: 12px; padding: 8px 12px; border-radius: 2px; outline: none;
+/* ─── Section pages ────────────────────────────── */
+.page-section { display: none; height: 100%; overflow-y: auto; }
+.page-section.active { display: block; }
+
+/* ─── Album card (discovery) ────────────────────── */
+.album-card {
+  position: relative; overflow: hidden;
+  background: #0e0e0e; border: 1px solid #2a2a2a;
+  border-radius: 0.5rem;
   transition: border-color 0.2s;
 }
-.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
-.field textarea { resize: vertical; min-height: 80px; }
-.field-hint { font-size: 9px; color: var(--muted); margin-top: 2px; }
-
-.toggle-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
-.toggle-row label { font-size: 11px; color: var(--text); }
-input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
-input[type="range"] { accent-color: var(--accent); cursor: pointer; }
-input[type="number"] { width: 70px; }
-
-/* ─── AI Analysis ────────────────────────────── */
-.analysis-result {
-  background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 2px; padding: 12px; font-size: 11px;
-  white-space: pre-wrap; color: var(--text); min-height: 60px;
+.album-card:hover { border-color: #ffb3ac; }
+.album-card .overlay {
+  position: absolute; inset: 0;
+  background: rgba(19,19,19,0.85);
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  opacity: 0; transition: opacity 0.2s;
+  pointer-events: none;
 }
-.analysis-result .highlight { color: var(--accent); }
+.album-card:hover .overlay { opacity: 1; pointer-events: auto; }
 
-/* ─── File drop zone ─────────────────────────── */
-.drop-zone {
-  border: 2px dashed var(--border);
-  border-radius: 3px; padding: 30px;
-  text-align: center; cursor: pointer;
-  transition: all 0.2s; color: var(--muted);
-  font-size: 12px; letter-spacing: 1px;
+/* ─── Marquee ──────────────────────────────────── */
+.marquee-wrap { overflow: hidden; white-space: nowrap; position: relative; }
+.marquee-inner { display: inline-block; animation: marquee 20s linear infinite; }
+@keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+
+/* ─── Loading / status spinners ─────────────────── */
+.spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid #2a2a2a; border-top-color: #ffb3ac; border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Tabs inside pages ─────────────────────────── */
+.sub-tab-bar { display: flex; gap: 2px; border-bottom: 1px solid #2a2a2a; margin-bottom: 0.75rem; }
+.sub-tab {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.625rem; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 0.5rem 1rem; cursor: pointer;
+  color: #666; transition: all 150ms;
+  border: 1px solid transparent; border-bottom: none;
+  background: transparent;
+  border-radius: 0.25rem 0.25rem 0 0;
 }
-.drop-zone:hover, .drop-zone.drag-over {
-  border-color: var(--accent); color: var(--accent);
-  background: rgba(0,229,255,0.04);
-}
-.drop-zone input { display: none; }
+.sub-tab:hover { color: #aaa; }
+.sub-tab.active { color: #ffb3ac; border-color: #2a2a2a; background: #0e0e0e; }
 
-/* Meters */
-.vu-meters { display: flex; gap: 4px; height: 32px; align-items: flex-end; margin-bottom: 8px; }
-.vu-bar { flex: 1; border-radius: 1px; min-height: 2px; transition: height 0.08s; }
-
-/* Local track list */
-.local-file-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
-.local-file { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 11px; }
-.local-file:hover { background: rgba(0,229,255,0.03); }
-.local-file-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.local-file-meta { color: var(--muted); font-size: 10px; margin-left: 8px; white-space: nowrap; }
-
-/* Message editor */
-.msg-list { max-height: 160px; overflow-y: auto; }
-.msg-item { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border); }
-.msg-item span { flex: 1; font-size: 11px; color: var(--text); }
-.msg-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
-.msg-del:hover { color: var(--accent2); }
-
-/* Spotify result */
-.spotify-result { display: flex; gap: 10px; align-items: center; padding: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 2px; margin-bottom: 6px; }
-.sp-img { width: 40px; height: 40px; border-radius: 2px; object-fit: cover; }
-.sp-info { flex: 1; overflow: hidden; }
-.sp-name { font-size: 12px; color: var(--bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sp-artist { font-size: 10px; color: var(--muted); }
-
-/* Draggable queue */
-.qitem[draggable="true"] { cursor: grab; }
-.qitem.dragging { opacity: 0.4; }
-.qitem.drag-over { border-top: 2px solid var(--accent); }
-
-/* ─── System Stats ───────────────────────────── */
-.stats-bar {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.stat-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 10px 12px;
-  position: relative;
-  overflow: hidden;
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  height: 2px;
-  border-radius: 0 0 3px 3px;
-  transition: width 0.6s ease;
-}
-.stat-card.cpu::before { background: var(--accent); }
-.stat-card.ram::before { background: var(--accent3); }
-.stat-card.disk::before { background: var(--green); }
-.stat-card.temp-storage::before { background: var(--yellow); }
-.stat-card.session::before { background: var(--accent3); }
-.stat-card.queue-limit::before { background: var(--accent); }
-
-.stat-label {
-  font-size: 8px; letter-spacing: 3px; text-transform: uppercase;
-  color: var(--muted); margin-bottom: 6px;
-}
-
-.stat-value {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 22px; font-weight: 700;
-  line-height: 1;
-  margin-bottom: 4px;
-}
-.stat-card.cpu .stat-value { color: var(--accent); }
-.stat-card.ram .stat-value { color: var(--accent3); }
-.stat-card.disk .stat-value { color: var(--green); }
-.stat-card.temp-storage .stat-value { color: #ffcc00; }
-
-.stat-sub {
-  font-size: 9px; color: var(--muted); line-height: 1.4;
-}
-
-.stat-bar-bg {
-  height: 3px; background: var(--border); border-radius: 2px;
-  margin-top: 6px; overflow: hidden;
-}
-.stat-bar-fill {
-  height: 100%; border-radius: 2px; transition: width 0.6s ease;
-}
-.stat-card.cpu .stat-bar-fill { background: var(--accent); }
-.stat-card.ram .stat-bar-fill { background: var(--accent3); }
-.stat-card.disk .stat-bar-fill { background: var(--green); }
-.stat-card.temp-storage .stat-bar-fill { background: #ffcc00; }
-
-.stat-warn { color: var(--accent2) !important; }
-
-/* Temp files list */
-.temp-file-list { max-height: 120px; overflow-y: auto; margin-top: 6px; }
-.temp-file-item {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 4px 8px; font-size: 10px;
-  border-bottom: 1px solid var(--border);
-}
-.temp-file-item .tf-name { color: #ffcc00; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.temp-file-item .tf-size { color: var(--muted); margin-left: 8px; white-space: nowrap; }
-.temp-file-item .tf-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 2px; }
-.temp-file-item .tf-del:hover { color: var(--accent2); }
-
-/* ─── Mobile Responsive ────────────────────────── */
+/* ─── Responsive: mobile → bottom nav ──────────── */
 @media (max-width: 768px) {
-  .decks-row { grid-template-columns: 1fr; gap: 6px; }
-  .mixer { flex-direction: row; flex-wrap: wrap; padding: 8px; gap: 6px; }
-  .mixer .bpm-display { font-size: 16px; }
-  .mixer .xfader-wrap { flex: 1; min-width: 80px; }
-  .mixer .fade-trigger { padding: 4px 6px; font-size: 8px; }
-  .queue-grid { grid-template-columns: 1fr; }
-  .settings-grid { grid-template-columns: 1fr; }
-  .stats-bar { grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .sidebar { display: none !important; }
+  .bottom-nav { display: flex !important; }
+  .main-area { margin-left: 0 !important; }
+  .decks-grid { grid-template-columns: 1fr !important; }
+  .mixer-column { order: -1; }
+  .vu-strip { height: 20px; }
+  .deck { padding: 0.75rem; }
+  /* Settings grid → single column */
+  .settings-grid { grid-template-columns: 1fr !important; }
+  .stats-grid { grid-template-columns: repeat(2,1fr) !important; }
+  .queue-grid { grid-template-columns: 1fr !important; }
 }
-
 @media (max-width: 480px) {
-  .stats-bar { grid-template-columns: 1fr 1fr; }
   .topbar .clock-display { display: none; }
-  #mix-up-next { display: block; }
-  body { font-size: 10px; }
-  .vu-meters { height: 20px; }
-  .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .status-ticker { max-width: 140px; }
 }
 </style>
 </head>
-<body>
+<body class="dark bg-[#131313]">
 
-<div class="topbar">
-  <span class="logo">AUTO<span>DJ</span></span>
-  <div class="status-ticker" id="status">Initializing...</div>
-  <div class="nav-btns">
-    <a class="nav-btn active" href="/dj">DJ Console</a>
-    <a class="nav-btn" href="/display" target="_blank">Now Playing ↗</a>
-  </div>
-  <div style="display:flex;gap:10px;align-items:center;font-size:10px;letter-spacing:2px">
-    <span title="Last.fm">LFM <span id="ind-lastfm" style="color:var(--muted)">○</span></span>
-    <span title="Jamendo">JM <span id="ind-jamendo" style="color:var(--muted)">○</span></span>
-    <span title="Spotify">SP <span id="ind-spotify" style="color:var(--muted)">○</span></span>
-    <span title="AI">AI <span id="ind-ai" style="color:var(--muted)">○</span></span>
-  </div>
-  <div class="clock-display" id="clock">--:--:--</div>
-  <button class="theme-toggle" id="themeToggle" title="Toggle theme">LIGHT</button>
-</div>
+<!-- ─── LAYOUT: Sidebar + Main ────────────────────── -->
+<div class="flex h-screen overflow-hidden bg-grid">
 
-<div class="main-content">
-  <div class="tab-bar">
-    <button class="tab active" data-tab="mix" onclick="showTab('mix')">Mix</button>
-    <button class="tab" data-tab="queue" onclick="showTab('queue')">Queue</button>
-    <button class="tab" data-tab="library" onclick="showTab('library')">Library</button>
-    <button class="tab" data-tab="discover" onclick="showTab('discover')">Discover</button>
-    <button class="tab" data-tab="logs" onclick="showTab('logs');fetchLogs()">Logs</button>
-    <button class="tab" data-tab="settings" onclick="showTab('settings')">Settings</button>
-    <button class="tab" data-tab="listeners" onclick="showTab('listeners');fetchListeners()">Listeners</button>
-  </div>
+  <!-- Sidebar (fixed, w-64) -->
+  <aside class="sidebar w-64 flex-shrink-0 bg-[#0e0e0e] border-r border-[#2a2a2a] flex flex-col z-20">
+    <!-- Logo -->
+    <div class="h-16 flex items-center gap-2 px-5 border-b border-[#2a2a2a]">
+      <svg class="w-6 h-6 text-signal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <span class="font-display font-bold text-lg tracking-wider">
+        <span class="text-signal">AUTO</span><span class="text-flow">DJ</span>
+      </span>
+      <span class="text-[0.5rem] text-[#555] ml-auto font-mono tracking-wider">v6</span>
+    </div>
 
-  <!-- MIX TAB -->
-  <div id="tab-mix" class="tab-content active">
-    <div class="decks-row">
-      <!-- Deck A -->
-      <div class="deck live" id="deck-a">
-        <div class="deck-id">⬡ Deck A</div>
-        <canvas class="waveform-canvas" id="wave-a" height="48"></canvas>
-        <div class="vu-meters" id="vu-a">
-          <div class="vu-bar" style="background:var(--green)"></div>
-          <div class="vu-bar" style="background:var(--green)"></div>
-          <div class="vu-bar" style="background:var(--green)"></div>
-          <div class="vu-bar" style="background:var(--yellow)"></div>
-          <div class="vu-bar" style="background:var(--yellow)"></div>
-          <div class="vu-bar" style="background:var(--accent2)"></div>
-        </div>
-        <div class="track-meta" style="position:relative">
-          <img id="artwork-a" style="width:48px;height:48px;border-radius:3px;object-fit:cover;float:right;margin-left:8px;display:none" alt="">
-          <div class="t-title" id="title-a">— No Track —</div>
-          <div class="t-artist" id="artist-a">Load a track to begin</div>
-          <div class="t-album" id="album-a"></div>
-          <div class="t-tags" id="tags-a"></div>
-        </div>
-        <div class="progress-wrap" id="prog-wrap-a" onclick="seekDeck('a', event)">
-          <div class="progress-bg"><div class="progress-fill" id="prog-a" style="width:0%"></div></div>
-          <div class="cue-marker" id="cue-a" style="display:none"></div>
-        </div>
-        <div class="time-row">
-          <span id="time-a">0:00</span>
-          <span class="time-remaining" id="remain-a">-0:00</span>
-          <span id="dur-a">0:00</span>
-        </div>
-        <div class="deck-controls">
-          <button class="ctrl-btn" onclick="deckPlay('a')">▶</button>
-          <button class="ctrl-btn" onclick="deckPause('a')">⏸</button>
-          <button class="ctrl-btn" onclick="deckStop('a')">⏹</button>
-          <button class="ctrl-btn" id="cue-btn-a" onclick="setCue('a')">CUE</button>
-          <button class="ctrl-btn" onclick="deckSkip('a', event)">⏭</button>
-        </div>
-        <div class="vol-row">VOL <input type="range" id="vol-a" min="0" max="1" step="0.01" value="1" oninput="setVol('a',this.value)"> <span id="vol-val-a">100%</span></div>
+    <!-- Nav links -->
+    <nav class="flex-1 p-3 space-y-1 overflow-y-auto">
+      <a href="#" class="sidebar-link active" data-page="console">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Console
+      </a>
+      <a href="#" class="sidebar-link" data-page="queue">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        Queue <span id="q-count-sidebar" class="ml-auto text-[0.625rem] text-[#666] font-mono">0</span>
+      </a>
+      <a href="#" class="sidebar-link" data-page="discovery">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+        Discovery
+      </a>
+      <a href="#" class="sidebar-link" data-page="settings">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </a>
+      <a href="/display" target="_blank" class="sidebar-link">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Display ↗
+      </a>
+    </nav>
+
+    <!-- Status indicators -->
+    <div class="p-3 border-t border-[#2a2a2a] space-y-1">
+      <div class="flex items-center gap-2 text-[0.625rem] font-mono text-[#555]">
+        <span class="flex items-center gap-1"><span id="ind-lastfm" class="w-1.5 h-1.5 rounded-full bg-[#555]"></span> LFM</span>
+        <span class="flex items-center gap-1"><span id="ind-jamendo" class="w-1.5 h-1.5 rounded-full bg-[#555]"></span> JM</span>
+        <span class="flex items-center gap-1"><span id="ind-spotify" class="w-1.5 h-1.5 rounded-full bg-[#555]"></span> SP</span>
+        <span class="flex items-center gap-1"><span id="ind-ai" class="w-1.5 h-1.5 rounded-full bg-[#555]"></span> AI</span>
       </div>
+      <div class="flex items-center gap-1 text-[0.5625rem] font-mono text-[#444]">
+        <span id="stat-listeners">0</span> listeners · <span id="stat-latency">—</span> lat · <span id="stat-cpu-small">—</span> cpu
+      </div>
+    </div>
+  </aside>
 
-      <!-- Mixer -->
-      <div class="mixer">
-        <div class="mixer-label">Mixer</div>
-        <div class="bpm-display" id="bpm-a">—</div>
-        <div class="bpm-label">BPM A</div>
-        <div class="xfader-wrap">
-          <div class="xfader-labels"><span>A</span><span>B</span></div>
-          <input type="range" id="crossfader" min="0" max="1" step="0.01" value="0" oninput="onXfader(this.value)">
+  <!-- Main Area -->
+  <div class="main-area flex-1 flex flex-col min-w-0">
+
+    <!-- Top Bar (h-16) -->
+    <header class="topbar h-16 flex items-center gap-3 px-4 bg-[#131313] border-b border-[#2a2a2a] flex-shrink-0 z-10">
+      <button id="menuToggle" class="md:hidden p-1.5 text-[#888] hover:text-white transition-colors" aria-label="Menu">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="status-ticker flex-1 min-w-0">
+        <div class="marquee-wrap">
+          <span id="status" class="marquee-inner text-[0.75rem] font-mono text-[#888]">Initializing Signal & Flow...</span>
         </div>
-        <div class="bpm-display" id="bpm-b">—</div>
-        <div class="bpm-label">BPM B</div>
-        <button class="fade-trigger" id="fade-btn" onclick="triggerCrossfade()">⇄ CROSSFADE</button>
-        <div style="width:100%">
-          <div class="field">
-            <label>Fade Dur (s)</label>
-            <input type="number" id="fade-dur" value="8" min="2" max="60" style="width:100%">
+      </div>
+      <div class="clock-display font-mono text-[0.6875rem] text-[#555] tracking-wider" id="clock">--:--:--</div>
+      <button id="themeToggle" class="btn btn-xs text-[0.5625rem]">LIGHT</button>
+    </header>
+
+    <!-- Page Content -->
+    <main class="flex-1 overflow-hidden relative">
+
+      <!-- ════════════════════════════════════════════ -->
+      <!-- PAGE: CONSOLE (Decks/Console)               -->
+      <!-- ════════════════════════════════════════════ -->
+      <section id="page-console" class="page-section active p-4 space-y-4">
+        <!-- Top status row: BPM, Fade, Timer -->
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex items-center gap-3 bg-[#0e0e0e] border border-[#2a2a2a] rounded-lg px-4 py-2">
+            <span class="font-display text-2xl font-bold text-signal" id="global-bpm">128.00</span>
+            <span class="text-[0.5rem] text-[#555] font-mono uppercase tracking-widest">BPM</span>
+            <button class="btn btn-xs" id="tap-bpm" title="Tap BPM">TAP</button>
+          </div>
+          <button class="btn btn-sm btn-flow" id="smart-fade-btn">⟳ Smart Fade</button>
+          <span class="font-mono text-[0.6875rem] text-[#555]">
+            <span id="session-timer">00:00:00</span> <span class="text-[0.5rem]">session</span>
+          </span>
+          <div class="ml-auto flex gap-2">
+            <span class="text-[0.625rem] font-mono text-[#555]">A</span>
+            <input type="range" id="crossfader" class="xfader w-24" min="0" max="1" step="0.01" value="0" oninput="onXfader(this.value)">
+            <span class="text-[0.625rem] font-mono text-[#555]">B</span>
+            <span class="text-[0.625rem] font-mono text-[#555]" id="master-peak">-∞ dB</span>
           </div>
         </div>
-        <div class="toggle-row"><input type="checkbox" id="automix" checked><label>Auto-Mix</label></div>
-        <div class="toggle-row"><input type="checkbox" id="smart-fade" checked><label>Smart Fade</label></div>
-        <button class="btn" id="share-audio-btn" onclick="toggleWebRTC()">🔊 Share Audio</button>
-      </div>
 
-      <!-- Deck B -->
-      <div class="deck" id="deck-b">
-        <div class="deck-id">⬡ Deck B</div>
-        <canvas class="waveform-canvas" id="wave-b" height="48"></canvas>
-        <div class="vu-meters" id="vu-b">
-          <div class="vu-bar" style="background:var(--green)"></div>
-          <div class="vu-bar" style="background:var(--green)"></div>
-          <div class="vu-bar" style="background:var(--green)"></div>
-          <div class="vu-bar" style="background:var(--yellow)"></div>
-          <div class="vu-bar" style="background:var(--yellow)"></div>
-          <div class="vu-bar" style="background:var(--accent2)"></div>
-        </div>
-        <div class="track-meta" style="position:relative">
-          <img id="artwork-b" style="width:48px;height:48px;border-radius:3px;object-fit:cover;float:right;margin-left:8px;display:none" alt="">
-          <div class="t-title" id="title-b">— No Track —</div>
-          <div class="t-artist" id="artist-b">Cued up next</div>
-          <div class="t-album" id="album-b"></div>
-          <div class="t-tags" id="tags-b"></div>
-        </div>
-        <div class="progress-wrap" id="prog-wrap-b" onclick="seekDeck('b', event)">
-          <div class="progress-bg"><div class="progress-fill" id="prog-b" style="width:0%"></div></div>
-          <div class="cue-marker" id="cue-b" style="display:none"></div>
-        </div>
-        <div class="time-row">
-          <span id="time-b">0:00</span>
-          <span class="time-remaining" id="remain-b">-0:00</span>
-          <span id="dur-b">0:00</span>
-        </div>
-        <div class="deck-controls">
-          <button class="ctrl-btn" onclick="deckPlay('b')">▶</button>
-          <button class="ctrl-btn" onclick="deckPause('b')">⏸</button>
-          <button class="ctrl-btn" onclick="deckStop('b')">⏹</button>
-          <button class="ctrl-btn" id="cue-btn-b" onclick="setCue('b')">CUE</button>
-          <button class="ctrl-btn" onclick="deckSkip('b', event)">⏭</button>
-        </div>
-        <div class="vol-row">VOL <input type="range" id="vol-b" min="0" max="1" step="0.01" value="1" oninput="setVol('b',this.value)"> <span id="vol-val-b">100%</span></div>
-      </div>
-    </div>
-
-    <div id="mix-now-playing" style="margin-top:12px;display:none">
-      <div style="padding:8px 12px;font-size:9px;letter-spacing:2px;color:var(--accent);text-transform:uppercase">Now Playing</div>
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius-md)">
-        <div style="width:52px;height:52px;border-radius:4px;overflow:hidden;background:var(--surface2);flex-shrink:0">
-          <img id="np-art-thumb" style="width:100%;height:100%;object-fit:cover;display:none" alt="">
-        </div>
-        <div style="flex:1;min-width:0;overflow:hidden">
-          <div id="np-title-display" style="color:var(--bright);font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</div>
-          <div id="np-artist-display" style="color:var(--text);font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</div>
-          <div id="np-time-display" style="color:var(--muted);font-size:10px;margin-top:4px;font-family:'Orbitron',sans-serif"><span id="np-elapsed-display">0:00</span> / <span id="np-duration-display">0:00</span></div>
-        </div>
-        <button class="btn accent" style="padding:6px 12px;font-size:10px;flex-shrink:0" onclick="fetch('/api/playback/next',{method:'POST'})">▶ Next</button>
-      </div>
-    </div>
-    <div id="mix-up-next" style="margin-top:12px;padding-top:0"></div>
-
-    <!-- System Stats Bar -->
-    <div class="stats-bar">
-      <div class="stat-card cpu">
-        <div class="stat-label">CPU Usage</div>
-        <div class="stat-value" id="stat-cpu">—%</div>
-        <div class="stat-sub" id="stat-cpu-sub">— cores</div>
-        <div class="stat-bar-bg"><div class="stat-bar-fill" id="stat-cpu-bar" style="width:0%"></div></div>
-      </div>
-      <div class="stat-card ram">
-        <div class="stat-label">RAM</div>
-        <div class="stat-value" id="stat-ram">—%</div>
-        <div class="stat-sub" id="stat-ram-sub">— / —</div>
-        <div class="stat-bar-bg"><div class="stat-bar-fill" id="stat-ram-bar" style="width:0%"></div></div>
-      </div>
-      <div class="stat-card disk">
-        <div class="stat-label">Disk</div>
-        <div class="stat-value" id="stat-disk">—%</div>
-        <div class="stat-sub" id="stat-disk-sub">— free of —</div>
-        <div class="stat-bar-bg"><div class="stat-bar-fill" id="stat-disk-bar" style="width:0%"></div></div>
-      </div>
-        <div class="stat-card temp-storage">
-        <div class="stat-label">Temp Storage</div>
-        <div class="stat-value" id="stat-temp">—</div>
-        <div class="stat-sub" id="stat-temp-sub">—</div>
-        <div class="stat-bar-bg"><div class="stat-bar-fill" id="stat-temp-bar" style="width:0%"></div></div>
-      </div>
-      <div class="stat-card session">
-        <div class="stat-label">Session</div>
-        <div class="stat-value" id="stat-session">—</div>
-        <div class="stat-sub" id="stat-session-sub">—</div>
-      </div>
-      <div class="stat-card queue-limit">
-        <div class="stat-label">Queue</div>
-        <div class="stat-value" id="stat-queue-limit">—</div>
-        <div class="stat-sub" id="stat-queue-limit-sub">tracks</div>
-      </div>
-      <button class="btn" style="font-size:9px;padding:4px 8px;align-self:center" onclick="fetch('/api/nowplaying/clear',{method:'POST'}).catch(()=>{})">Clear Now Playing</button>
-    </div>
-    </div>
-
-    <!-- Temp Files Panel -->
-    <div class="panel" id="temp-files-panel" style="display:none">
-      <div class="panel-header">
-        <span class="panel-title" style="color:#ffcc00">⏳ Temp Files — <span id="temp-count">0</span> held in memory</span>
-        <button class="btn danger" style="padding:4px 10px;font-size:9px" onclick="clearTempFiles()">✕ Clear All</button>
-      </div>
-      <div class="panel-body" style="padding:8px 12px">
-        <div style="font-size:10px;color:var(--muted);margin-bottom:6px">Files are stored in server temp and auto-deleted when the queue is cleared or server stops.</div>
-        <div class="temp-file-list" id="temp-file-list"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- QUEUE TAB -->
-  <div id="tab-queue" class="tab-content" data-scroll>
-    <div class="queue-grid">
-      <div class="panel">
-        <div class="panel-header">
-          <span class="panel-title">Queue <span id="q-count" style="color:var(--accent)">0</span> tracks</span>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button type="button" class="btn accent" onclick="queueFocusSearch()">＋ Add / search</button>
-            <button class="btn" onclick="shuffleQueue()">Shuffle</button>
-            <button class="btn danger" onclick="clearQueue()">Clear</button>
-            <button class="btn danger" onclick="clearAllAndReset()">Reset All</button>
-          </div>
-        </div>
-        <div class="queue-list" id="queue-list">
-          <div style="padding:20px;text-align:center;color:var(--muted);font-size:11px">Queue empty</div>
-        </div>
-        <div class="panel" style="margin-top:10px">
-          <div class="panel-header"><span class="panel-title">Search online</span></div>
-          <div class="panel-body" style="padding:12px 16px">
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <input type="search" id="unified-search-q" placeholder="Artist, track, or keywords…" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:8px 10px;font-size:11px;border-radius:2px;outline:none">
-              <button type="button" class="btn accent" onclick="unifiedQueueSearch()">Search</button>
+        <!-- Dual Decks + Center Mixer -->
+        <div class="decks-grid grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-4">
+          <!-- Deck A -->
+          <div class="deck" id="deck-a">
+            <div class="deck-label deck-a-color flex items-center gap-2">
+              <span class="live-dot a" id="live-dot-a" style="display:none"></span>
+              <span>⬡ Deck A</span>
+              <span class="ml-auto text-[0.5rem] text-[#555]" id="pitch-a">+0.0%</span>
             </div>
-            <div id="unified-search-results" style="margin-top:10px;max-height:220px;overflow-y:auto"></div>
+            <div class="track-meta mb-3">
+              <div class="flex gap-3">
+                <img id="artwork-a" class="w-11 h-11 rounded object-cover flex-shrink-0 hidden" alt="">
+                <div class="flex-1 min-w-0">
+                  <div class="font-semibold text-sm text-white truncate" id="title-a">— No Track —</div>
+                  <div class="text-[0.6875rem] text-[#888] truncate" id="artist-a">Load a track to begin</div>
+                  <div class="text-[0.625rem] text-[#555] truncate" id="tags-a"></div>
+                </div>
+              </div>
+            </div>
+            <canvas class="wave-canvas" id="wave-a" height="52"></canvas>
+            <div class="vu-strip" id="vu-a">
+              <div class="vu-bar text-[#34d399]"></div><div class="vu-bar text-[#34d399]"></div>
+              <div class="vu-bar text-[#34d399]"></div><div class="vu-bar text-[#fbbf24]"></div>
+              <div class="vu-bar text-[#fbbf24]"></div><div class="vu-bar text-[#ffb3ac]"></div>
+            </div>
+            <div class="progress-track" id="prog-wrap-a" onclick="seekDeck('a', event)">
+              <div class="progress-fill a" id="prog-a" style="width:0%"></div>
+              <div class="cue-marker" id="cue-a" style="display:none"></div>
+            </div>
+            <div class="flex justify-between text-[0.625rem] font-mono text-[#555] mb-2">
+              <span id="time-a">0:00</span>
+              <span id="remain-a" class="text-signal">-0:00</span>
+              <span id="dur-a">0:00</span>
+            </div>
+            <div class="transport-group">
+              <button class="btn-transport" onclick="deckCue('a')" title="Cue">CUE</button>
+              <button class="btn-transport" onclick="deckReverse('a')" title="Reverse">⟲</button>
+              <button class="btn-transport" onclick="deckLoop('a')" title="Loop">↺</button>
+              <button class="btn-transport btn-signal" onclick="deckPlay('a')" title="Play">▶</button>
+              <button class="btn-transport" onclick="deckStop('a')" title="Stop">⏹</button>
+              <button class="btn-transport flow" onclick="deckSync('a')" title="Sync BPM">≡</button>
+            </div>
+            <div class="flex items-center gap-2 mt-2">
+              <span class="text-[0.5rem] font-mono text-[#555] uppercase">Vol</span>
+              <input type="range" id="vol-a" min="0" max="1" step="0.01" value="1" oninput="setVol('a',this.value)" class="flex-1 accent-signal h-1">
+              <span class="text-[0.625rem] font-mono text-[#555] w-8 text-right" id="vol-val-a">100%</span>
+            </div>
+          </div>
+
+          <!-- Center Mixer Column -->
+          <div class="mixer-column flex flex-col items-center gap-3 bg-[#0e0e0e] border border-[#2a2a2a] rounded-lg px-3 py-4 min-w-[120px]">
+            <div class="font-mono text-[0.5rem] tracking-widest text-[#555] uppercase">Mixer</div>
+            <div class="text-center">
+              <div class="font-display text-xl font-bold text-signal" id="bpm-display-a">—</div>
+              <div class="text-[0.5rem] text-[#555] font-mono uppercase">BPM A</div>
+            </div>
+            <div class="w-full space-y-1">
+              <div class="flex justify-between text-[0.5rem] font-mono text-[#555]"><span>A</span><span>B</span></div>
+              <input type="range" class="xfader" id="mixer-xfader" min="0" max="1" step="0.01" value="0" oninput="document.getElementById('crossfader').value=this.value;onXfader(this.value)">
+            </div>
+            <div class="text-center">
+              <div class="font-display text-xl font-bold text-flow" id="bpm-display-b">—</div>
+              <div class="text-[0.5rem] text-[#555] font-mono uppercase">BPM B</div>
+            </div>
+            <button class="btn btn-sm btn-flow w-full" id="fade-btn" onclick="triggerCrossfade()">⇄ Crossfade</button>
+            <div class="w-full field">
+              <label>Fade (s)</label>
+              <input type="number" id="fade-dur" value="8" min="2" max="60" class="w-full text-center">
+            </div>
+            <label class="flex items-center gap-2 text-[0.625rem] text-[#888]"><input type="checkbox" id="automix" checked class="accent-signal"> Auto-Mix</label>
+            <label class="flex items-center gap-2 text-[0.625rem] text-[#888]"><input type="checkbox" id="smart-fade" checked class="accent-signal"> Smart Fade</label>
+            <button class="btn btn-xs btn-success w-full" id="share-audio-btn" onclick="toggleWebRTC()">🔊 Share</button>
+          </div>
+
+          <!-- Deck B -->
+          <div class="deck" id="deck-b">
+            <div class="deck-label deck-b-color flex items-center gap-2">
+              <span class="live-dot b" id="live-dot-b" style="display:none"></span>
+              <span>⬡ Deck B</span>
+              <span class="ml-auto text-[0.5rem] text-[#555]" id="pitch-b">+0.0%</span>
+            </div>
+            <div class="track-meta mb-3">
+              <div class="flex gap-3">
+                <img id="artwork-b" class="w-11 h-11 rounded object-cover flex-shrink-0 hidden" alt="">
+                <div class="flex-1 min-w-0">
+                  <div class="font-semibold text-sm text-white truncate" id="title-b">— No Track —</div>
+                  <div class="text-[0.6875rem] text-[#888] truncate" id="artist-b">Cued up next</div>
+                  <div class="text-[0.625rem] text-[#555] truncate" id="tags-b"></div>
+                </div>
+              </div>
+            </div>
+            <canvas class="wave-canvas" id="wave-b" height="52"></canvas>
+            <div class="vu-strip" id="vu-b">
+              <div class="vu-bar text-[#34d399]"></div><div class="vu-bar text-[#34d399]"></div>
+              <div class="vu-bar text-[#34d399]"></div><div class="vu-bar text-[#fbbf24]"></div>
+              <div class="vu-bar text-[#fbbf24]"></div><div class="vu-bar text-[#a6e6ff]"></div>
+            </div>
+            <div class="progress-track" id="prog-wrap-b" onclick="seekDeck('b', event)">
+              <div class="progress-fill b" id="prog-b" style="width:0%"></div>
+              <div class="cue-marker" id="cue-b" style="display:none"></div>
+            </div>
+            <div class="flex justify-between text-[0.625rem] font-mono text-[#555] mb-2">
+              <span id="time-b">0:00</span>
+              <span id="remain-b" class="text-flow">-0:00</span>
+              <span id="dur-b">0:00</span>
+            </div>
+            <div class="transport-group">
+              <button class="btn-transport" onclick="deckCue('b')" title="Cue">CUE</button>
+              <button class="btn-transport" onclick="deckReverse('b')" title="Reverse">⟲</button>
+              <button class="btn-transport" onclick="deckLoop('b')" title="Loop">↺</button>
+              <button class="btn-transport btn-signal" onclick="deckPlay('b')" title="Play">▶</button>
+              <button class="btn-transport" onclick="deckStop('b')" title="Stop">⏹</button>
+              <button class="btn-transport flow" onclick="deckSync('b')" title="Sync BPM">≡</button>
+            </div>
+            <div class="flex items-center gap-2 mt-2">
+              <span class="text-[0.5rem] font-mono text-[#555] uppercase">Vol</span>
+              <input type="range" id="vol-b" min="0" max="1" step="0.01" value="1" oninput="setVol('b',this.value)" class="flex-1 accent-flow h-1">
+              <span class="text-[0.625rem] font-mono text-[#555] w-8 text-right" id="vol-val-b">100%</span>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="q-sidebar">
+
+        <!-- Up Next -->
         <div class="panel">
-          <div class="panel-header"><span class="panel-title">Add to Queue</span></div>
-          <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
-            <button class="btn accent" onclick="document.getElementById('file-input').click()">+ Add Files</button>
-            <input type="file" id="file-input" multiple accept="audio/*" style="display:none" onchange="addLocalFiles(this.files)">
-            <button class="btn green" onclick="document.getElementById('folder-input').click()">+ Add Folder</button>
-            <input type="file" id="folder-input" webkitdirectory mozdirectory accept="audio/*" style="display:none" onchange="addLocalFiles(this.files)">
-            <hr style="border-color:var(--border)">
-            <button class="btn" style="border-color:#ffcc00;color:#ffcc00" onclick="document.getElementById('temp-upload-input').click()">⏳ Upload (Temp)</button>
-            <input type="file" id="temp-upload-input" multiple accept="audio/*" style="display:none" onchange="uploadTempFiles(this.files)">
-            <button class="btn" style="border-color:#ffcc00;color:#ffcc00" onclick="document.getElementById('temp-folder-input').click()">⏳ Upload Folder (Temp)</button>
-            <input type="file" id="temp-folder-input" webkitdirectory mozdirectory accept="audio/*" style="display:none" onchange="uploadTempFiles(this.files)">
-            <div id="temp-status" style="font-size:10px;color:#ffcc00;display:none;padding:4px 0"></div>
-            <hr style="border-color:var(--border)">
-            <div class="field">
-              <label>Queue Mode</label>
-              <select id="queue-mode">
-                <option value="local-first">Local First, then Online</option>
-                <option value="online-first">Online First, then Local</option>
-                <option value="shuffle-mix">Shuffle Mix (Interleave)</option>
-                <option value="local-only">Local Only</option>
-                <option value="online-only">Online Only (Auto-DJ)</option>
-              </select>
+          <div class="panel-header"><span class="panel-title">UP NEXT</span></div>
+          <div class="panel-body p-3" id="console-upnext">
+            <div class="text-[0.75rem] text-[#555]">Queue empty — add tracks to see upcoming</div>
+          </div>
+        </div>
+
+        <!-- System Stats -->
+        <div class="stats-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div class="stat-card"><div class="stat-label">CPU</div><div class="stat-value text-signal" id="stat-cpu">—%</div><div class="stat-sub" id="stat-cpu-sub">— cores</div><div class="stat-bar"><div class="stat-bar-fill bg-signal" id="stat-cpu-bar" style="width:0%"></div></div></div>
+          <div class="stat-card"><div class="stat-label">RAM</div><div class="stat-value text-flow" id="stat-ram">—%</div><div class="stat-sub" id="stat-ram-sub">— / —</div><div class="stat-bar"><div class="stat-bar-fill bg-flow" id="stat-ram-bar" style="width:0%"></div></div></div>
+          <div class="stat-card"><div class="stat-label">Disk</div><div class="stat-value text-[#34d399]" id="stat-disk">—%</div><div class="stat-sub" id="stat-disk-sub">— free</div><div class="stat-bar"><div class="stat-bar-fill bg-[#34d399]" id="stat-disk-bar" style="width:0%"></div></div></div>
+          <div class="stat-card"><div class="stat-label">Temp</div><div class="stat-value text-[#fbbf24]" id="stat-temp">0</div><div class="stat-sub" id="stat-temp-sub">—</div><div class="stat-bar"><div class="stat-bar-fill bg-[#fbbf24]" id="stat-temp-bar" style="width:0%"></div></div></div>
+          <div class="stat-card"><div class="stat-label">Session</div><div class="stat-value text-white" id="stat-session">∞</div><div class="stat-sub" id="stat-session-sub">no limit</div></div>
+          <div class="stat-card"><div class="stat-label">Queue</div><div class="stat-value text-white" id="stat-queue">0</div><div class="stat-sub" id="stat-queue-sub">tracks</div></div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════ -->
+      <!-- PAGE: QUEUE                                   -->
+      <!-- ════════════════════════════════════════════ -->
+      <section id="page-queue" class="page-section p-4">
+        <div class="queue-grid grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
+          <!-- Queue List -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Queue <span id="q-count" class="text-signal">0</span> tracks</span>
+              <div class="flex gap-2 flex-wrap">
+                <button class="btn btn-sm btn-signal" onclick="document.getElementById('queue-search-inp').focus()">+ Search</button>
+                <button class="btn btn-sm" onclick="shuffleQueue()">Shuffle</button>
+                <button class="btn btn-sm btn-danger" onclick="clearQueue()">Clear</button>
+                <button class="btn btn-sm btn-danger" onclick="clearAllAndReset()">Reset</button>
+              </div>
             </div>
-            <button class="btn purple ai-btn" onclick="aiRefillQueue()">🤖 AI Refill Queue</button>
-            <button class="btn" onclick="fetchMoreOnline()">+ More Online</button>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-header"><span class="panel-title">Now Playing</span></div>
-          <div class="panel-body">
-            <div style="font-size:12px;color:var(--bright);margin-bottom:4px" id="np-sidebar-title">—</div>
-            <div style="font-size:10px;color:var(--muted)" id="np-sidebar-artist">—</div>
-            <div style="font-size:10px;color:var(--accent3);margin-top:4px" id="np-sidebar-genre">—</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- LIBRARY TAB -->
-  <div id="tab-library" class="tab-content">
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Local Library</span>
-        <div style="display:flex;gap:6px">
-          <button class="btn accent" onclick="scanLibrary()">Scan Folders</button>
-          <button class="btn green" onclick="addAllToQueue()">Add All to Queue</button>
-        </div>
-      </div>
-      <div class="panel-body">
-        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('lib-file-input').click()">
-          <input type="file" id="lib-file-input" multiple accept="audio/*" onchange="addLocalFiles(this.files)">
-          <div>⊕ Drop audio files here or click to browse</div>
-          <div style="font-size:10px;margin-top:4px;color:var(--muted)">Supports MP3, FLAC, WAV, OGG, M4A, AAC, OPUS</div>
-        </div>
-        <div class="local-file-list" id="local-file-list">
-          <div style="padding:16px;text-align:center;color:var(--muted);font-size:11px">No files loaded</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- DISCOVER TAB -->
-  <div id="tab-discover" class="tab-content" data-scroll>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:10px">
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">Last.fm Discovery</span></div>
-        <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
-          <div class="field"><label>Seed Artist</label><input type="text" id="seed-artist" placeholder="e.g. Aphex Twin"></div>
-          <div class="field"><label>Seed Track (optional)</label><input type="text" id="seed-track" placeholder="e.g. Come to Daddy"></div>
-          <div class="field">
-            <label>Discovery Mode</label>
-            <select id="discovery-mode">
-              <option value="both" selected>Similar Artists + Genre Tags</option>
-              <option value="similar">Similar Artists Only</option>
-              <option value="tag">Genre Tags Only</option>
-            </select>
-          </div>
-          <button class="btn accent" id="start-discover-btn" onclick="startAutoDiscover()">▶ Start Auto-Discovery</button>
-          <button class="btn" onclick="fetchMoreOnline()">+ Fetch More Tracks</button>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">Spotify Discovery</span></div>
-        <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
-          <div class="field"><label>Search</label><input type="text" id="spotify-search" placeholder="Artist, track, or mood..."></div>
-          <div class="field">
-            <label>Type</label>
-            <select id="spotify-type">
-              <option value="track">Tracks</option>
-              <option value="artist">Artist (get top tracks)</option>
-              <option value="recommendations">Recommendations</option>
-            </select>
-          </div>
-          <button class="btn" id="spotify-search-btn" style="border-color:#1db954;color:#1db954" onclick="spotifySearch()">🎵 Spotify Search</button>
-          <div id="spotify-results" style="max-height:300px;overflow-y:auto"></div>
-        </div>
-      </div>
-      <div class="panel" style="grid-column:1/-1">
-        <div class="panel-header">
-          <span class="panel-title">🤖 AI Track Intelligence</span>
-          <button class="btn purple ai-btn" onclick="aiAnalyzeAndRecommend()">Analyze &amp; Recommend</button>
-        </div>
-        <div class="panel-body">
-          <div class="field" style="margin-bottom:8px"><label>Mood / Vibe Context</label><input type="text" id="ai-mood" placeholder="e.g. late night driving, beach sunset, high energy gym..."></div>
-          <div class="analysis-result" id="ai-result">AI recommendations will appear here after analysis...</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- LOGS TAB -->
-  <div id="tab-logs" class="tab-content" data-scroll>
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Server Logs</span>
-        <div style="display:flex;gap:6px;align-items:center">
-          <label style="font-size:9px;color:var(--muted);letter-spacing:1px">Filter:</label>
-          <select id="log-filter-level" onchange="fetchLogs()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:10px;padding:4px 6px;border-radius:2px">
-            <option value="">All</option>
-            <option value="info">Info</option>
-            <option value="warn">Warn</option>
-            <option value="error">Error</option>
-          </select>
-          <button class="btn danger" style="padding:4px 10px;font-size:9px" onclick="clearLogs()">Clear</button>
-          <button class="btn" style="padding:4px 10px;font-size:9px" onclick="copyLogs()">Copy</button>
-          <button class="btn" style="padding:4px 10px;font-size:9px" onclick="downloadLogs()">Download</button>
-        </div>
-      </div>
-      <div class="panel-body" style="padding:0">
-        <div id="log-entries" style="max-height:500px;overflow-y:auto;font-size:10px;line-height:1.6;font-family:'Share Tech Mono',monospace;word-break:break-all">
-          <div style="padding:16px;text-align:center;color:var(--muted)">Loading logs...</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- SETTINGS TAB -->
-  <div id="tab-settings" class="tab-content" data-scroll>
-    <div class="settings-grid">
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">API Keys</span></div>
-        <div class="panel-body" style="display:flex;flex-direction:column;gap:10px;max-height:70vh;overflow-y:auto">
-          <div class="field">
-            <label>Last.fm API Key <a href="https://www.last.fm/api/account/create" target="_blank" style="color:var(--accent);font-size:9px">GET FREE →</a></label>
-            <input type="password" id="cfg-lastfm" placeholder="Enter Last.fm API key...">
-          </div>
-          <div class="field">
-            <label>Jamendo client_id <a href="https://developer.jamendo.com/v3.1" target="_blank" style="color:var(--accent3);font-size:9px">CC catalog →</a></label>
-            <input type="password" id="cfg-jamendo" placeholder="Optional — enables Jamendo search and download">
-          </div>
-          <div class="field">
-            <label>Spotify Client ID <a href="https://developer.spotify.com/dashboard" target="_blank" style="color:var(--green);font-size:9px">GET FREE →</a></label>
-            <input type="text" id="cfg-sp-id" placeholder="Spotify Client ID">
-          </div>
-          <div class="field">
-            <label>Spotify Client Secret</label>
-            <input type="password" id="cfg-sp-secret" placeholder="Spotify Client Secret">
-          </div>
-          <div class="field">
-            <label>AI Provider</label>
-            <select id="cfg-ai-provider">
-              <option value="anthropic">Anthropic (Claude)</option>
-              <option value="openai">OpenAI (GPT)</option>
-              <option value="opencode">OpenCode AI</option>
-              <option value="openrouter">OpenRouter</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Anthropic API Key</label>
-            <input type="password" id="cfg-anthropic" placeholder="sk-ant-...">
-          </div>
-          <div class="field">
-            <label>OpenAI API Key</label>
-            <input type="password" id="cfg-openai" placeholder="sk-...">
-          </div>
-          <div class="field">
-            <label>OpenCode API Key</label>
-            <input type="password" id="cfg-opencode" placeholder="oc_...">
-          </div>
-          <div class="field">
-            <label>OpenCode Base URL (optional)</label>
-            <input type="url" id="cfg-opencode-url" placeholder="https://api.opencode.ai/v1">
-            <div class="field-hint">Leave blank for default. Change for self-hosted deployments.</div>
-          </div>
-          <div class="field">
-            <label>OpenCode Model</label>
-            <select id="cfg-opencode-model">
-              <optgroup label="OpenCode Zen — Free">
-                <option value="deepseek-v4-flash-free">DeepSeek V4 Flash (free)</option>
-                <option value="minimax-m2.5-free">MiniMax M2.5 (free)</option>
-                <option value="gpt-5-nano">GPT-5 Nano</option>
-                <option value="big-pickle">Big Pickle</option>
-              </optgroup>
-              <optgroup label="OpenCode Zen — GPT Series">
-                <option value="gpt-5.5-pro">GPT-5.5 Pro</option>
-                <option value="gpt-5.5">GPT-5.5</option>
-                <option value="gpt-5.4-pro">GPT-5.4 Pro</option>
-                <option value="gpt-5.4">GPT-5.4</option>
-                <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
-                <option value="gpt-5.4-nano">GPT-5.4 Nano</option>
-                <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
-                <option value="gpt-5.3-codex-spark">GPT-5.3 Codex Spark</option>
-                <option value="gpt-5.2-codex">GPT-5.2 Codex</option>
-                <option value="gpt-5.2">GPT-5.2</option>
-                <option value="gpt-5.1-codex-max">GPT-5.1 Codex Max</option>
-                <option value="gpt-5.1-codex-mini">GPT-5.1 Codex Mini</option>
-                <option value="gpt-5.1-codex">GPT-5.1 Codex</option>
-                <option value="gpt-5.1">GPT-5.1</option>
-                <option value="gpt-5-codex">GPT-5 Codex</option>
-                <option value="gpt-5">GPT-5</option>
-              </optgroup>
-              <optgroup label="OpenCode Zen — Claude">
-                <option value="claude-opus-4-7">Claude Opus 4.7</option>
-                <option value="claude-opus-4-6">Claude Opus 4.6</option>
-                <option value="claude-opus-4-5">Claude Opus 4.5</option>
-                <option value="claude-opus-4-1">Claude Opus 4.1</option>
-                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-                <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
-                <option value="claude-sonnet-4">Claude Sonnet 4</option>
-                <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
-                <option value="claude-haiku-3-5">Claude Haiku 3.5</option>
-              </optgroup>
-              <optgroup label="OpenCode Zen — Other">
-                <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
-                <option value="gemini-3-flash">Gemini 3 Flash</option>
-                <option value="glm-5.1">GLM-5.1</option>
-                <option value="glm-5">GLM-5</option>
-                <option value="kimi-k2.6">Kimi K2.6</option>
-                <option value="qwen3.6-plus">Qwen3.6 Plus</option>
-                <option value="minimax-m2.7">MiniMax M2.7</option>
-              </optgroup>
-            </select>
-            <div class="field-hint">Set base URL to https://opencode.ai/zen/v1 for Zen models</div>
-          </div>
-          <div class="field">
-            <label>OpenRouter API Key</label>
-            <input type="password" id="cfg-openrouter" placeholder="sk-or-...">
-          </div>
-          <div class="field">
-            <label>OpenRouter Base URL (optional)</label>
-            <input type="url" id="cfg-openrouter-url" placeholder="https://openrouter.ai/api/v1">
-            <div class="field-hint">Leave blank for default. Self-hosted users can change to their proxy.</div>
-          </div>
-          <div class="field">
-            <label>OpenRouter Model</label>
-            <input type="text" id="cfg-openrouter-model" placeholder="openrouter/auto">
-            <div class="field-hint">Models: openrouter/auto (auto-routes), anthropic/claude-sonnet-4, openai/gpt-5, etc.</div>
-          </div>
-          <button class="btn accent" onclick="saveConfig()">Save Keys</button>
-          <button type="button" class="btn" onclick="testSources()">Test music sources</button>
-          <div id="src-test-out" style="font-size:10px;color:var(--muted);line-height:1.5;min-height:1.2em"></div>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">Playback Settings</span></div>
-        <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
-          <div class="field"><label>Pre-download Ahead (tracks)</label><input type="number" id="cfg-predownload" value="5" min="1" max="20"></div>
-          <div class="field"><label>Max Concurrent Downloads</label><input type="number" id="cfg-max-concurrent" value="3" min="1" max="10"></div>
-          <div class="field"><label>Smart Fade at %</label><input type="number" id="cfg-fade-pct" value="80" min="10" max="100"></div>
-          <div class="field"><label>Max Track Length (minutes, 0 = no limit)</label><input type="number" id="cfg-max-track" value="0" min="0" max="120"></div>
-          <div class="field"><label>Session Duration (hours, 0 = unlimited)</label><input type="number" id="cfg-session-duration" value="0" min="0" max="168"></div>
-          <div class="field"><label>Queue Limit (tracks, 0 = unlimited)</label><input type="number" id="cfg-queue-limit" value="0" min="0" max="500"></div>
-          <div class="field">
-            <label>Music Folders (one per line)</label>
-            <textarea id="cfg-dirs" rows="3" placeholder="/music&#10;/home/user/Music"></textarea>
-            <div class="field-hint">Server-side paths. Restart server after changing.</div>
-          </div>
-          <div class="toggle-row"><input type="checkbox" id="cfg-metube-first" checked><label>Try MeTube first (download priority)</label></div>
-          <div class="toggle-row"><input type="checkbox" id="cfg-filter-topic" checked><label>Filter -Topic channels (YouTube)</label></div>
-          <div class="field">
-            <label>Invidious redirect / extra instance (optional)</label>
-            <input type="url" id="cfg-invidious-redirect" placeholder="https://your-invidious.example.com">
-            <div class="field-hint">Tried first before built-in Invidious list. Must be a base URL you trust.</div>
-          </div>
-          <div class="field">
-            <label>RSS Feed URL (marquee scroll text)</label>
-            <input type="url" id="cfg-rss-feed" placeholder="https://example.com/feed.xml">
-            <div class="field-hint">Pulls headlines to display on the Now Playing marquee.</div>
-          </div>
-          <div class="field">
-            <label>Marquee Mode</label>
-            <select id="cfg-marquee-mode" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:6px 10px;font-size:11px;border-radius:2px;outline:none;width:100%">
-              <option value="rss">RSS headlines (primary)</option>
-              <option value="messages">Static messages only</option>
-              <option value="both">RSS + messages mixed</option>
-            </select>
-            <div class="field-hint">Controls what scrolls on the Now Playing marquee.</div>
-          </div>
-          <div class="field">
-            <label>Custom proxy search (JSON array, optional)</label>
-            <textarea id="cfg-squid-proxies" rows="5" placeholder='[{"name":"myq","searchUrlTemplate":"https://example.com/search?q={query}","streamUrlTemplate":"https://example.com/stream?id={id}","baseUrl":"https://example.com"}]'></textarea>
-            <div class="field-hint">Operators must own rights to content. <code>searchUrlTemplate</code> must return JSON array or <code>results</code>/<code>tracks</code>. <code>streamUrlTemplate</code> uses <code>{id}</code> from search.</div>
-          </div>
-          <div class="field">
-            <label>Source Priority (drag to reorder)</label>
-            <div id="source-priority-list" style="display:flex;flex-direction:column;gap:4px">
-              <div class="src-prio-item" draggable="true" data-src="metube">🎬 MeTube</div>
-              <div class="src-prio-item" draggable="true" data-src="invidious">🔍 Invidious</div>
-              <div class="src-prio-item" draggable="true" data-src="piped">🔍 Piped</div>
-              <div class="src-prio-item" draggable="true" data-src="dab">🎵 DAB</div>
-              <div class="src-prio-item" draggable="true" data-src="jamendo">🎵 Jamendo</div>
-              <div class="src-prio-item" draggable="true" data-src="squid">🦑 Squid</div>
+            <div class="queue-list max-h-[50vh] overflow-y-auto" id="queue-list">
+              <div class="p-6 text-center text-[0.75rem] text-[#555]">Queue empty — search or add files</div>
             </div>
-            <div class="field-hint">Sources at the top are tried first. Changes take effect on next search/download.</div>
           </div>
-          <button class="btn accent" onclick="saveConfig()">Save Settings</button>
-        </div>
-      </div>
-      <div class="panel" style="grid-column:1/-1">
-        <div class="panel-header"><span class="panel-title">Display Messages (shown on Now Playing screen)</span></div>
-        <div class="panel-body">
-          <div class="msg-list" id="msg-list"></div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <input type="text" id="new-msg" placeholder="Add a message..." style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:inherit;padding:6px 10px;font-size:11px;border-radius:2px;outline:none">
-            <button class="btn accent" onclick="addMessage()">Add</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 
-  <!-- LISTENERS TAB -->
-  <div id="tab-listeners" class="tab-content">
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Connected Listeners <span id="listener-count-badge" style="color:var(--accent)">0</span></span>
-        <button class="btn" style="font-size:9px;padding:4px 8px" onclick="fetchListeners()">Refresh</button>
-      </div>
-      <div class="panel-body" style="padding:8px 0">
-        <div style="font-size:10px;color:var(--muted);padding:0 16px 8px">Display pages connected via SSE. Disconnects within 30s of page close.</div>
-        <div id="listener-table-wrap" style="overflow-x:auto">
-          <table id="listener-table" style="width:100%;border-collapse:collapse;font-size:11px">
-            <thead>
-              <tr style="border-bottom:1px solid var(--border);color:var(--muted);font-size:9px;letter-spacing:2px;text-transform:uppercase">
-                <th style="padding:6px 12px;text-align:left">#</th>
-                <th style="padding:6px 12px;text-align:left">IP</th>
-                <th style="padding:6px 12px;text-align:left">Browser</th>
-                <th style="padding:6px 12px;text-align:left">OS</th>
-                <th style="padding:6px 12px;text-align:left">Device</th>
-                <th style="padding:6px 12px;text-align:left">Page</th>
-                <th style="padding:6px 12px;text-align:right">Connected</th>
-              </tr>
-            </thead>
-            <tbody id="listener-tbody">
-              <tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted)">No listeners connected. Open /display in another tab.</td></tr>
-            </tbody>
-          </table>
+          <!-- Sidebar -->
+          <div class="space-y-3">
+            <div class="panel">
+              <div class="panel-header"><span class="panel-title">Add to Queue</span></div>
+              <div class="panel-body space-y-2">
+                <div class="flex gap-2">
+                  <input type="search" id="queue-search-inp" placeholder="Artist, track…" class="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1.5 text-[0.75rem] text-white font-mono outline-none focus:border-signal">
+                  <button class="btn btn-sm btn-signal" onclick="unifiedQueueSearch()">Go</button>
+                </div>
+                <div id="unified-search-results" class="max-h-48 overflow-y-auto"></div>
+                <hr class="border-[#2a2a2a]">
+                <button class="btn btn-sm w-full" onclick="document.getElementById('file-input').click()">+ Add Files</button>
+                <input type="file" id="file-input" multiple accept="audio/*" style="display:none" onchange="addLocalFiles(this.files)">
+                <button class="btn btn-sm btn-success w-full" onclick="document.getElementById('folder-input').click()">+ Add Folder</button>
+                <input type="file" id="folder-input" webkitdirectory mozdirectory accept="audio/*" style="display:none" onchange="addLocalFiles(this.files)">
+                <hr class="border-[#2a2a2a]">
+                <select id="queue-mode" class="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1.5 text-[0.6875rem] font-mono text-white">
+                  <option value="local-first">Local First → Online</option>
+                  <option value="online-first">Online First → Local</option>
+                  <option value="shuffle-mix">Shuffle Mix</option>
+                  <option value="local-only">Local Only</option>
+                  <option value="online-only">Online Only</option>
+                </select>
+                <button class="btn btn-sm w-full" id="ai-refill-btn" onclick="aiRefillQueue()">🤖 AI Refill</button>
+                <button class="btn btn-sm w-full" onclick="fetchMoreOnline()">+ More Online</button>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-header"><span class="panel-title">Now Playing</span></div>
+              <div class="panel-body">
+                <div class="text-sm font-semibold text-white truncate" id="np-sidebar-title">—</div>
+                <div class="text-[0.6875rem] text-[#888] truncate" id="np-sidebar-artist">—</div>
+                <div class="text-[0.625rem] text-flow mt-1" id="np-sidebar-genre">—</div>
+              </div>
+            </div>
+          </div>
         </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════ -->
+      <!-- PAGE: DISCOVERY                              -->
+      <!-- ════════════════════════════════════════════ -->
+      <section id="page-discovery" class="page-section p-4">
+        <!-- Hero Search -->
+        <div class="relative mb-6">
+          <div class="absolute inset-0 bg-gradient-to-r from-signal/5 to-flow/5 rounded-xl blur-2xl"></div>
+          <div class="relative bg-[#0e0e0e] border border-[#2a2a2a] rounded-xl p-6">
+            <h2 class="font-display text-2xl font-bold text-white mb-1">Discover</h2>
+            <p class="text-[0.8125rem] text-[#888] mb-4">Search across YouTube, Spotify, and Last.fm — or let AI recommend</p>
+            <div class="flex gap-2 max-w-xl">
+              <input type="search" id="discover-search" placeholder="Artist, track, or mood…" class="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-signal">
+              <button class="btn btn-signal" onclick="discoverSearch()">Search</button>
+              <button class="btn btn-flow" id="ai-recommend-btn" onclick="aiAnalyzeAndRecommend()">AI</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+          <!-- Mood Engine -->
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">🎛️ Mood Engine</span></div>
+            <div class="panel-body space-y-2">
+              <div class="field"><label>Vibe</label>
+                <input type="text" id="ai-mood" placeholder="e.g. late night driving, beach sunset..." class="w-full">
+              </div>
+              <div class="flex gap-2">
+                <button class="btn btn-sm btn-flow flex-1" onclick="setMood('chill')">Chill</button>
+                <button class="btn btn-sm btn-signal flex-1" onclick="setMood('energy')">Energy</button>
+                <button class="btn btn-sm flex-1" onclick="setMood('deep')">Deep</button>
+              </div>
+            </div>
+          </div>
+          <!-- AI Recommendation Card -->
+          <div class="panel lg:col-span-2">
+            <div class="panel-header"><span class="panel-title">🤖 AI Recommendation</span></div>
+            <div class="panel-body">
+              <div id="ai-result" class="text-[0.75rem] text-[#555]">AI recommendations will appear here after analysis...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results grid -->
+        <div id="discovery-results" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div class="col-span-full text-center text-[0.75rem] text-[#555] py-8">Search or browse to discover new tracks</div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════ -->
+      <!-- PAGE: SETTINGS                               -->
+      <!-- ════════════════════════════════════════════ -->
+      <section id="page-settings" class="page-section p-4">
+        <div class="settings-grid grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <!-- API Credentials -->
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">🔑 API Credentials</span></div>
+            <div class="panel-body space-y-3 max-h-[70vh] overflow-y-auto">
+              <div class="field"><label>Last.fm API Key</label><input type="password" id="cfg-lastfm" placeholder="Enter Last.fm API key..."></div>
+              <div class="field"><label>Jamendo client_id</label><input type="password" id="cfg-jamendo" placeholder="Optional — Jamendo CC catalog"></div>
+              <div class="field"><label>Spotify Client ID</label><input type="text" id="cfg-sp-id" placeholder="Spotify Client ID"></div>
+              <div class="field"><label>Spotify Client Secret</label><input type="password" id="cfg-sp-secret" placeholder="Spotify Client Secret"></div>
+              <div class="field"><label>AI Provider</label>
+                <select id="cfg-ai-provider">
+                  <option value="anthropic">Anthropic (Claude)</option>
+                  <option value="openai">OpenAI (GPT)</option>
+                  <option value="opencode">OpenCode AI</option>
+                  <option value="openrouter">OpenRouter</option>
+                </select>
+              </div>
+              <div class="field"><label>Anthropic API Key</label><input type="password" id="cfg-anthropic" placeholder="sk-ant-..."></div>
+              <div class="field"><label>OpenAI API Key</label><input type="password" id="cfg-openai" placeholder="sk-..."></div>
+              <div class="field"><label>OpenCode API Key</label><input type="password" id="cfg-opencode" placeholder="oc_..."></div>
+              <div class="field"><label>OpenCode Base URL</label><input type="url" id="cfg-opencode-url" placeholder="https://api.opencode.ai/v1"></div>
+              <div class="field"><label>OpenRouter API Key</label><input type="password" id="cfg-openrouter" placeholder="sk-or-..."></div>
+              <div class="field"><label>OpenRouter Model</label><input type="text" id="cfg-openrouter-model" placeholder="openrouter/auto"></div>
+              <button class="btn btn-signal w-full" onclick="saveConfig()">Save Keys</button>
+              <button class="btn btn-sm w-full" onclick="testSources()">Test Sources</button>
+              <div id="src-test-out" class="text-[0.6875rem] text-[#555] min-h-[1.2em]"></div>
+            </div>
+          </div>
+
+          <!-- Playback / Signal Sources -->
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">⚙️ Configuration</span></div>
+            <div class="panel-body space-y-3">
+              <div class="field"><label>Pre-download Ahead</label><input type="number" id="cfg-predownload" value="5" min="1" max="20"></div>
+              <div class="field"><label>Max Concurrent Downloads</label><input type="number" id="cfg-max-concurrent" value="3" min="1" max="10"></div>
+              <div class="field"><label>Smart Fade at %</label><input type="number" id="cfg-fade-pct" value="80" min="10" max="100"></div>
+              <div class="field"><label>Max Track (minutes, 0=unlimited)</label><input type="number" id="cfg-max-track" value="0" min="0" max="120"></div>
+              <div class="field"><label>Session Duration (hours)</label><input type="number" id="cfg-session-duration" value="0" min="0" max="168"></div>
+              <div class="field"><label>Queue Limit</label><input type="number" id="cfg-queue-limit" value="0" min="0" max="500"></div>
+              <label class="flex items-center gap-2 text-[0.75rem] text-[#888]"><input type="checkbox" id="cfg-metube-first" checked class="accent-signal"> MeTube first</label>
+              <label class="flex items-center gap-2 text-[0.75rem] text-[#888]"><input type="checkbox" id="cfg-filter-topic" checked class="accent-signal"> Filter -Topic</label>
+              <div class="field"><label>Music Folders</label><textarea id="cfg-dirs" rows="2" placeholder="/music"></textarea></div>
+              <div class="field"><label>Invidious Redirect</label><input type="url" id="cfg-invidious-redirect" placeholder="https://..."></div>
+              <div class="field"><label>Source Priority</label>
+                <div id="source-priority-list" class="space-y-1">
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="metube">🎬 MeTube</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="invidious">🔍 Invidious</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="piped">🔍 Piped</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="dab">🎵 DAB</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="jamendo">🎵 Jamendo</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="squid">🦑 Squid</div>
+                </div>
+              </div>
+              <button class="btn btn-signal w-full" onclick="saveConfig()">Save Settings</button>
+              <div class="field"><label>RSS Feed URL</label><input type="url" id="cfg-rss-feed" placeholder="https://..."></div>
+              <div class="field"><label>Marquee Mode</label><select id="cfg-marquee-mode" class="w-full"><option value="rss">RSS</option><option value="messages">Messages</option><option value="both">Both</option></select></div>
+            </div>
+          </div>
+
+          <!-- Display Messages -->
+          <div class="panel lg:col-span-2">
+            <div class="panel-header"><span class="panel-title">📝 Display Messages</span></div>
+            <div class="panel-body">
+              <div class="msg-list space-y-1" id="msg-list"></div>
+              <div class="flex gap-2 mt-2">
+                <input type="text" id="new-msg" placeholder="Add a message for the Now Playing screen..." class="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-1.5 text-[0.75rem] text-white font-mono outline-none focus:border-signal">
+                <button class="btn btn-sm btn-signal" onclick="addMessage()">Add</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Logs -->
+          <div class="panel lg:col-span-2">
+            <div class="panel-header">
+              <span class="panel-title">📋 Logs</span>
+              <div class="flex gap-2">
+                <select id="log-filter-level" onchange="fetchLogs()" class="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-[0.625rem] font-mono text-white">
+                  <option value="">All</option><option value="info">Info</option><option value="warn">Warn</option><option value="error">Error</option>
+                </select>
+                <button class="btn btn-xs" onclick="fetchLogs()">Refresh</button>
+                <button class="btn btn-xs btn-danger" onclick="clearLogs()">Clear</button>
+              </div>
+            </div>
+            <div class="panel-body p-0">
+              <div id="log-entries" class="max-h-60 overflow-y-auto text-[0.625rem] font-mono leading-relaxed p-3" style="word-break:break-all">
+                <div class="text-center text-[#555] py-4">Loading logs...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ─── Bottom Nav (mobile) ────────────────── -->
+    <nav class="bottom-nav hidden fixed bottom-0 left-0 right-0 bg-[#0e0e0e] border-t border-[#2a2a2a] z-30">
+      <div class="flex">
+        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[#666] sidebar-link active" data-page="console">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <span>Console</span>
+        </a>
+        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[#666] sidebar-link" data-page="queue">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/></svg>
+          <span>Queue</span>
+        </a>
+        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[#666] sidebar-link" data-page="discovery">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+          <span>Discover</span>
+        </a>
+        <a href="#" class="flex-1 flex flex-col items-center py-2 text-[0.5rem] text-[#666] sidebar-link" data-page="settings">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Settings</span>
+        </a>
       </div>
-    </div>
+    </nav>
   </div>
 </div>
 
@@ -1104,7 +801,1437 @@ input[type="number"] { width: 70px; }
 <audio id="audio-a" preload="auto"></audio>
 <audio id="audio-b" preload="auto"></audio>
 
+<!-- Engine -->
 <script src="/engine.js"></script>
-<script src="/dj.js"></script>
+
+<!-- ─── APPLICATION JS ────────────────────────────── -->
+<script>
+/** AutoDJ v6 — Signal & Flow Control Room */
+const DJ = {
+  queue: [],
+  history: [],
+  trackIndex: -1,
+  currentDeck: 'a',
+  usedTracks: new Set(),
+  seedTags: [],
+  knownArtists: [],
+  localFiles: [],
+  messages: [],
+  hasLastfm: false,
+  hasJamendo: false,
+  hasSpotify: false,
+  hasAI: false,
+  started: false,
+  discovering: false,
+  fadeLock: false,
+  lastNpBroadcast: 0,
+  recentlyPlayed: [],
+  _webrtcActive: false,
+  _webrtcReceiver: null,
+  config: {},
+  tapBpmTimes: [],
+};
+
+// ═══════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  initTheme();
+  setupAudioElements();
+  await loadConfig();
+  await loadPersistentQueue();
+  startClock();
+  setupSourcePriorityDrag();
+  updateSystemStats();
+  setInterval(updateSystemStats, 3000);
+  setInterval(fetchListeners, 5000);
+  setInterval(() => {
+    const logs = document.getElementById('tab-logs');
+    if (logs && logs.classList.contains('active')) fetchLogs();
+  }, 3000);
+  // Init SSE for now-playing display sync
+  initSSE();
+  setStatus('Signal acquired — ready');
+  setTimeout(startRenderLoop, 300);
+});
+
+// ─── Theme ──────────────────────────────────────────
+function initTheme() {
+  const saved = localStorage.getItem('autodj-theme');
+  const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+  const theme = saved || (prefersLight ? 'light' : 'dark');
+  document.documentElement.classList.toggle('dark', theme !== 'light');
+  const btn = document.getElementById('themeToggle');
+  if (btn) {
+    btn.textContent = theme === 'light' ? 'DARK' : 'LIGHT';
+    btn.onclick = () => {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('autodj-theme', isDark ? 'dark' : 'light');
+      btn.textContent = isDark ? 'LIGHT' : 'DARK';
+    };
+  }
+}
+
+// ─── Navigation (same-page) ─────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+  const page = document.getElementById('page-' + name);
+  if (page) page.classList.add('active');
+  document.querySelectorAll(`.sidebar-link[data-page="${name}"]`).forEach(l => l.classList.add('active'));
+  // When navigating to discovery, adjust if needed
+  if (name === 'settings') { fetchLogs(); }
+}
+
+document.querySelectorAll('.sidebar-link[data-page]').forEach(link => {
+  link.addEventListener('click', e => {
+    e.preventDefault();
+    showPage(link.dataset.page);
+  });
+});
+
+// ─── Clock ──────────────────────────────────────────
+function startClock() {
+  const el = document.getElementById('clock');
+  if (!el) return;
+  const tick = () => { el.textContent = new Date().toLocaleTimeString('en-US', {hour12: false}); };
+  setInterval(tick, 1000); tick();
+}
+
+// ─── SSE for real-time updates ───────────────────────
+let sseSource = null;
+function initSSE() {
+  if (sseSource) { sseSource.close(); }
+  try {
+    sseSource = new EventSource('/api/nowplaying/stream');
+    sseSource.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.nowPlaying) updateNowPlayingDisplay(data);
+      } catch(err) {}
+    };
+    sseSource.onerror = () => {
+      // Auto-reconnect after 3s
+      setTimeout(initSSE, 3000);
+    };
+  } catch(e) {}
+}
+
+function updateNowPlayingDisplay(data) {
+  // Update sidebar now-playing card
+  const np = data.nowPlaying;
+  if (np) {
+    const t = document.getElementById('np-sidebar-title');
+    const a = document.getElementById('np-sidebar-artist');
+    const g = document.getElementById('np-sidebar-genre');
+    if (t) t.textContent = np.title || '—';
+    if (a) a.textContent = np.artist || '—';
+    if (g) g.textContent = (np.tags && np.tags[0]) || (np.genre || '—');
+  }
+  if (data.listeners != null) {
+    document.getElementById('stat-listeners').textContent = data.listeners;
+  }
+}
+
+// ─── Audio Setup ────────────────────────────────────
+function setupAudioElements() {
+  Engine.setupDeckAudio('a', document.getElementById('audio-a'));
+  Engine.setupDeckAudio('b', document.getElementById('audio-b'));
+  const aa = document.getElementById('audio-a');
+  const ab = document.getElementById('audio-b');
+  aa.addEventListener('ended', () => onTrackEnded('a'));
+  ab.addEventListener('ended', () => onTrackEnded('b'));
+  aa.addEventListener('timeupdate', () => updateDeckUI('a'));
+  ab.addEventListener('timeupdate', () => updateDeckUI('b'));
+  aa.addEventListener('loadedmetadata', () => onMetaLoaded('a'));
+  ab.addEventListener('loadedmetadata', () => onMetaLoaded('b'));
+  aa.addEventListener('error', (e) => { console.error('Deck A error', e); onPlayError('a'); });
+  ab.addEventListener('error', (e) => { console.error('Deck B error', e); onPlayError('b'); });
+}
+
+// ─── Config ─────────────────────────────────────────
+async function loadConfig() {
+  try {
+    const r = await fetch('/api/config');
+    const cfg = await r.json();
+    DJ.hasLastfm = cfg.hasLastfm;
+    DJ.hasJamendo = cfg.hasJamendo;
+    DJ.hasSpotify = cfg.hasSpotify;
+    DJ.hasAI = cfg.hasAI;
+
+    if (cfg.lastfmKey) document.getElementById('cfg-lastfm').placeholder = '●●● configured ●●●';
+    const jm = document.getElementById('cfg-jamendo');
+    if (jm) { jm.placeholder = cfg.hasJamendo ? '●●● configured ●●●' : 'Jamendo client_id...'; }
+    if (cfg.spotifyClientId) document.getElementById('cfg-sp-id').value = cfg.spotifyClientId;
+    if (cfg.anthropicKey) document.getElementById('cfg-anthropic').placeholder = '●●● configured ●●●';
+    if (cfg.openaiKey) document.getElementById('cfg-openai').placeholder = '●●● configured ●●●';
+    if (cfg.opencodeKey) document.getElementById('cfg-opencode').placeholder = '●●● configured ●●●';
+    const ocUrl = document.getElementById('cfg-opencode-url');
+    if (ocUrl && cfg.opencodeBaseUrl) ocUrl.value = cfg.opencodeBaseUrl;
+    document.getElementById('cfg-ai-provider').value = cfg.aiProvider || 'anthropic';
+    const orKey = document.getElementById('cfg-openrouter');
+    if (orKey && (cfg.openrouterKey || cfg.hasOpenrouter)) orKey.placeholder = '●●● configured ●●●';
+    const orModel = document.getElementById('cfg-openrouter-model');
+    if (orModel && cfg.openrouterModel) orModel.value = cfg.openrouterModel;
+    if (cfg.musicDirs) document.getElementById('cfg-dirs').value = cfg.musicDirs.join('\n');
+    if (cfg.messages) { DJ.messages = cfg.messages; renderMessages(); }
+    const ir = document.getElementById('cfg-invidious-redirect');
+    if (ir) ir.value = cfg.invidiousRedirector || '';
+    const setVal = (id, val) => { const e = document.getElementById(id); if (e) e.value = val; };
+    setVal('cfg-predownload', cfg.preDownloadCount || 5);
+    setVal('cfg-max-concurrent', cfg.maxConcurrentDownloads || 3);
+    setVal('cfg-fade-pct', cfg.fadeAtPercent || 80);
+    setVal('cfg-max-track', cfg.maxTrackMinutes || 0);
+    const mf = document.getElementById('cfg-metube-first');
+    if (mf) mf.checked = cfg.metubeFirst !== false;
+    const ft = document.getElementById('cfg-filter-topic');
+    if (ft) ft.checked = cfg.filterTopicChannels !== false;
+    if (Array.isArray(cfg.sourcePriority)) renderSourcePriority(cfg.sourcePriority);
+    const rss = document.getElementById('cfg-rss-feed');
+    if (rss) rss.value = cfg.rssFeedUrl || '';
+    const mMode = document.getElementById('cfg-marquee-mode');
+    if (mMode) mMode.value = cfg.marqueeMode || 'rss';
+    setVal('cfg-session-duration', cfg.sessionDuration || 0);
+    setVal('cfg-queue-limit', cfg.queueLimit || 0);
+
+    DJ.config.sessionDuration = cfg.sessionDuration || 0;
+    DJ.config.queueLimit = cfg.queueLimit || 0;
+    updateServiceIndicators();
+  } catch(e) {}
+}
+
+function updateServiceIndicators() {
+  const setInd = (id, on) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.background = on ? '#34d399' : '#555';
+  };
+  setInd('ind-lastfm', DJ.hasLastfm);
+  setInd('ind-jamendo', DJ.hasJamendo);
+  setInd('ind-spotify', DJ.hasSpotify);
+  setInd('ind-ai', DJ.hasAI);
+  // Disable AI buttons if no AI
+  document.querySelectorAll('.ai-btn').forEach(b => { b.disabled = !DJ.hasAI; b.style.opacity = DJ.hasAI ? '1' : '0.4'; });
+  const aiBtn = document.getElementById('ai-recommend-btn');
+  if (aiBtn) { aiBtn.disabled = !DJ.hasAI; aiBtn.style.opacity = DJ.hasAI ? '1' : '0.4'; }
+}
+
+async function saveConfig() {
+  const body = {
+    lastfmKey: document.getElementById('cfg-lastfm').value,
+    jamendoClientId: document.getElementById('cfg-jamendo')?.value || '',
+    spotifyClientId: document.getElementById('cfg-sp-id').value,
+    spotifyClientSecret: document.getElementById('cfg-sp-secret').value,
+    anthropicKey: document.getElementById('cfg-anthropic').value,
+    openaiKey: document.getElementById('cfg-openai').value,
+    opencodeKey: document.getElementById('cfg-opencode')?.value || '',
+    opencodeBaseUrl: document.getElementById('cfg-opencode-url')?.value?.trim() || '',
+    openrouterKey: document.getElementById('cfg-openrouter')?.value || '',
+    openrouterModel: document.getElementById('cfg-openrouter-model')?.value?.trim() || '',
+    aiProvider: document.getElementById('cfg-ai-provider').value,
+    musicDirs: document.getElementById('cfg-dirs').value.split('\n').map(s=>s.trim()).filter(Boolean),
+    messages: DJ.messages,
+    invidiousRedirector: document.getElementById('cfg-invidious-redirect')?.value?.trim() || '',
+    preDownloadCount: parseInt(document.getElementById('cfg-predownload')?.value) || 5,
+    maxConcurrentDownloads: parseInt(document.getElementById('cfg-max-concurrent')?.value) || 3,
+    fadeAtPercent: parseInt(document.getElementById('cfg-fade-pct')?.value) || 80,
+    maxTrackMinutes: parseInt(document.getElementById('cfg-max-track')?.value) || 0,
+    metubeFirst: !!document.getElementById('cfg-metube-first')?.checked,
+    filterTopicChannels: !!document.getElementById('cfg-filter-topic')?.checked,
+    sourcePriority: readSourcePriority(),
+    rssFeedUrl: document.getElementById('cfg-rss-feed')?.value?.trim() || '',
+    marqueeMode: document.getElementById('cfg-marquee-mode')?.value || 'rss',
+    sessionDuration: parseInt(document.getElementById('cfg-session-duration')?.value) || 0,
+    queueLimit: parseInt(document.getElementById('cfg-queue-limit')?.value) || 0
+  };
+  const r = await fetch('/api/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if (r.ok) {
+    DJ.config.sessionDuration = body.sessionDuration;
+    DJ.config.queueLimit = body.queueLimit;
+    await loadConfig();
+  }
+  setStatus('Configuration saved ✓');
+}
+
+// ─── Persistence ────────────────────────────────────
+let _persistTimer = null;
+function persistQueue() {
+  if (_persistTimer) clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(() => {
+    fetch('/api/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ queue: DJ.queue, trackIndex: DJ.trackIndex })
+    }).catch(() => {});
+  }, 300);
+}
+
+async function loadPersistentQueue() {
+  try {
+    const [qRes, npRes] = await Promise.all([
+      fetch('/api/queue'),
+      fetch('/api/nowplaying')
+    ]);
+    const qd = await qRes.json();
+    if (Array.isArray(qd.queue) && qd.queue.length > 0) {
+      DJ.queue = qd.queue;
+      DJ.trackIndex = typeof qd.trackIndex === 'number' ? qd.trackIndex : 0;
+      renderQueue();
+      setStatus(`Restored ${qd.queue.length} tracks`);
+    }
+    const np = await npRes.json();
+    if (Array.isArray(np.playedIds)) {
+      np.playedIds.forEach(id => DJ.usedTracks.add(`yt:${id}`));
+    }
+    if (np.sessionActive && np.nowPlaying) {
+      DJ.started = true;
+      const track = np.nowPlaying;
+      const deck = DJ.currentDeck || 'a';
+      const audio = getDeckAudio(deck);
+      if (track.youtubeId) {
+        audio.src = `/api/cache/stream/${encodeURIComponent(track.youtubeId)}`;
+        audio.load();
+      }
+      document.getElementById(`title-${deck}`).textContent = track.title || '—';
+      document.getElementById(`artist-${deck}`).textContent = track.artist || '—';
+      if (np.isPlaying) { audio.play().catch(() => {}); }
+    }
+  } catch(e) {}
+}
+
+// ─── Local Files ────────────────────────────────────
+async function addLocalFiles(fileList) {
+  let added = 0;
+  for (const file of fileList) {
+    if (!file.type.startsWith('audio/') && !file.name.match(/\.(mp3|flac|wav|ogg|m4a|aac|opus|wma)$/i)) continue;
+    const url = URL.createObjectURL(file);
+    const nameParts = file.name.replace(/\.[^.]+$/, '').split(' - ');
+    const fallbackTitle = nameParts.length >= 2 ? nameParts.slice(1).join(' - ') : nameParts[0];
+    const fallbackArtist = nameParts.length >= 2 ? nameParts[0] : 'Unknown';
+    const track = {
+      type: 'local', file, url,
+      title: fallbackTitle, artist: fallbackArtist, album: '', year: '',
+      duration: 0, tags: [], artwork: null, youtubeId: null
+    };
+    Engine.readFileMetadata(file).then(meta => {
+      if (meta.title) track.title = meta.title;
+      if (meta.artist) track.artist = meta.artist;
+      if (meta.album) track.album = meta.album;
+      if (meta.artwork) track.artwork = meta.artwork;
+    });
+    DJ.localFiles.push(track);
+    added++;
+  }
+  setStatus(`Added ${added} file${added !== 1 ? 's' : ''} to library`);
+  if (!DJ.started && added > 0) {
+    for (const f of DJ.localFiles.slice(-added)) DJ.queue.push({...f});
+    renderQueue();
+  }
+}
+
+// ─── Playback Core ─────────────────────────────────
+function getDeckAudio(deck) { return document.getElementById(`audio-${deck}`); }
+function getNextDeck() { return DJ.currentDeck === 'a' ? 'b' : 'a'; }
+
+function normalizeClientDuration(raw) {
+  let s = Number(raw);
+  if (!Number.isFinite(s) || s <= 0) return 0;
+  if (s < 5) return 0;
+  else if (s > 120 && s < 1e12) s /= 1000;
+  if (s < 10) return 0;
+  return Math.min(Math.round(s), 6 * 3600);
+}
+
+function getCrossfaderValue() {
+  const el = document.getElementById('crossfader');
+  return el ? parseFloat(el.value) || 0 : 0;
+}
+
+function getAudibleDeck() {
+  const v = getCrossfaderValue();
+  if (v <= 0.45) return 'a';
+  if (v >= 0.55) return 'b';
+  return DJ.currentDeck;
+}
+
+function buildStreamUrlForTrack(track) {
+  if (!track) return '';
+  if (track.type === 'local' || track.type === 'temp') return track.url || '';
+  if (track._streamUrl) {
+    const u = track._streamUrl;
+    if (u.startsWith('/') || u.startsWith('./')) return u;
+    if (/^https?:\/\//i.test(u)) return '/api/piped/relay?url=' + encodeURIComponent(u);
+    return u;
+  }
+  return '';
+}
+
+function buildDeckPayload(deck) {
+  const track = Engine.decks[deck]?.track;
+  const audio = getDeckAudio(deck);
+  const cur = audio?.currentTime || 0;
+  const rawDur = (audio && audio.duration && Number.isFinite(audio.duration)) ? audio.duration : (track?.duration || 0);
+  const dur = Number.isFinite(rawDur) && rawDur > 0 ? rawDur : 0;
+  const audible = getAudibleDeck();
+  if (!track) {
+    return { title: '', artist: '', album: '', artwork: '', elapsed: 0, duration: 0, streamUrl: '', youtubeId: null, fadePoint: null, tags: [], isAudible: false };
+  }
+  return {
+    title: track.title, artist: track.artist, album: track.album || '', artwork: track.artwork || track.image || '',
+    elapsed: cur, duration: dur, fadePoint: Engine.decks[deck]?.fadePoint ?? null,
+    tags: track.tags, streamUrl: buildStreamUrlForTrack(track), youtubeId: track.youtubeId || null,
+    isAudible: audible === deck
+  };
+}
+
+let xfBroadcastRaf = null;
+function scheduleDeckStateBroadcast() {
+  if (xfBroadcastRaf) return;
+  xfBroadcastRaf = requestAnimationFrame(async () => {
+    xfBroadcastRaf = null;
+    await broadcastDeckState();
+  });
+}
+
+function isAnyDeckPlaying() {
+  const a = getDeckAudio('a'), b = getDeckAudio('b');
+  return !!(a && !a.paused) || !!(b && !b.paused);
+}
+
+function syncCrossfaderToDeck(deck) {
+  const xf = document.getElementById('crossfader');
+  if (!xf) return;
+  xf.value = deck === 'b' ? 1 : 0;
+  const mx = document.getElementById('mixer-xfader');
+  if (mx) mx.value = xf.value;
+  applyXfaderGains();
+}
+
+async function broadcastDeckState(extra = {}) {
+  const audible = getAudibleDeck();
+  const t = Engine.decks[audible]?.track;
+  const audio = getDeckAudio(audible);
+  const next = DJ.queue[DJ.trackIndex + 1];
+  const genre = t?.tags?.[0] || DJ.seedTags[0] || '';
+  const dur = t ? (t.duration || audio?.duration || 0) : 0;
+  const elapsed = audio?.currentTime || 0;
+  const playing = DJ.started && isAnyDeckPlaying();
+  const payload = {
+    nowPlaying: t ? {
+      title: t.title, artist: t.artist, album: t.album,
+      duration: dur, elapsed,
+      fadePoint: Engine.decks[audible]?.fadePoint,
+      tags: t.tags, artwork: t.artwork || t.image || '',
+      streamUrl: buildStreamUrlForTrack(t),
+      youtubeId: t.youtubeId || null
+    } : null,
+    primaryDeck: audible,
+    decks: { a: buildDeckPayload('a'), b: buildDeckPayload('b') },
+    nextUp: next ? { title: next.title || '—', artist: next.artist || '—', artwork: next.artwork || next.image || '' } : null,
+    genre: genre ? genre.charAt(0).toUpperCase() + genre.slice(1) : '',
+    isPlaying: playing,
+    isFading: !!Engine.isFading,
+    messages: DJ.messages,
+    ...extra
+  };
+  await Engine.broadcastNowPlaying(payload);
+}
+
+async function startPlayback() {
+  Engine.initAudioCtx();
+  Engine.ensureDeckConnected('a');
+  Engine.ensureDeckConnected('b');
+  DJ.started = true;
+  if (DJ.queue.length === 0) { setStatus('Add some tracks first!'); return; }
+  if (DJ.trackIndex < 0) {
+    DJ.trackIndex = 0;
+    syncCrossfaderToDeck(DJ.currentDeck);
+    await loadTrackOnDeck(DJ.currentDeck, DJ.queue[0]);
+    fetch('/api/playback/start', { method: 'POST' }).catch(() => {});
+  } else {
+    getDeckAudio(DJ.currentDeck).play().catch(()=>{});
+    void broadcastDeckState();
+  }
+}
+
+function waitForAudioReady(audio, timeoutMs = 30000) {
+  if (!audio) return Promise.resolve();
+  if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => { cleanup(); resolve(); };
+    const t = setTimeout(done, timeoutMs);
+    const cleanup = () => { clearTimeout(t); audio.removeEventListener('canplaythrough', done); audio.removeEventListener('canplay', done); audio.removeEventListener('error', done); };
+    audio.addEventListener('canplaythrough', done, { once: true });
+    audio.addEventListener('canplay', done, { once: true });
+    audio.addEventListener('error', done, { once: true });
+  });
+}
+
+async function loadTrackOnDeck(deck, track, opts = {}) {
+  if (!track) return;
+  Engine.decks[deck].track = track;
+  Engine.decks[deck].cuePoint = 0;
+  Engine.decks[deck].fadePoint = null;
+  Engine.decks[deck].bpm = null;
+  const audio = getDeckAudio(deck);
+  let streamUrl = null;
+
+  if (track.type === 'local' || track.type === 'temp') {
+    streamUrl = track.url;
+    audio.src = streamUrl;
+    audio.load();
+  } else if (track.youtubeId) {
+    setStatus(`⬇ Downloading: ${track.artist} — ${track.title}...`);
+    try {
+      const r = await fetch('/api/cache/download', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: track.youtubeId, title: track.title, artist: track.artist, _source: track._source || '', _instance: track._instance || '' })
+      });
+      const data = await r.json();
+      if (r.ok && data.url) {
+        streamUrl = data.url;
+        track._streamUrl = data.url;
+        if (data.title && (!track.title || track.title === '?')) track.title = data.title;
+        setStatus(`▶ Playing: ${track.title} (${data.cached ? 'cached' : 'via ' + (data.source||'download')})`);
+        audio.src = streamUrl;
+        audio.load();
+        if (deck === DJ.currentDeck) preDownloadAhead();
+      } else {
+        setStatus(`⚠ ${data.error || 'Download failed'}. Removing...`);
+        removeFailedTrack(DJ.queue.indexOf(track));
+        setTimeout(() => advanceQueue(), 2000);
+        return;
+      }
+    } catch(e) {
+      setStatus(`⚠ Error: ${e.message}. Removing...`);
+      removeFailedTrack(DJ.queue.indexOf(track));
+      setTimeout(() => advanceQueue(), 2000);
+      return;
+    }
+  } else {
+    setStatus(`No source for: ${track.title} — removing`);
+    removeFailedTrack(DJ.queue.indexOf(track));
+    setTimeout(() => advanceQueue(), 1500);
+    return;
+  }
+
+  document.getElementById(`title-${deck}`).textContent = track.title || '—';
+  document.getElementById(`artist-${deck}`).textContent = track.artist || '—';
+  document.getElementById(`tags-${deck}`).textContent = track.tags?.slice(0,4).join(' · ') || '';
+  updateDeckArtwork(deck, track);
+  if (deck === DJ.currentDeck) {
+    setDeckLive('a', deck==='a');
+    setDeckLive('b', deck==='b');
+  }
+  Engine.ensureDeckConnected(deck);
+  applyXfaderGains();
+  await waitForAudioReady(audio);
+  if (!opts.prepareOnly) {
+    const playPromise = audio.play();
+    if (playPromise) playPromise.then(() => updateMediaSession(track)).catch(e => {
+      setStatus(`Play blocked (${deck.toUpperCase()}): click ▶ to start`);
+    });
+  }
+  void broadcastDeckState();
+}
+
+function setDeckLive(deck, live) {
+  const el = document.getElementById(`deck-${deck}`);
+  if (!el) return;
+  el.classList.toggle('live-a', live && deck === 'a');
+  el.classList.toggle('live-b', live && deck === 'b');
+  const dot = document.getElementById(`live-dot-${deck}`);
+  if (dot) dot.style.display = live ? 'inline-block' : 'none';
+}
+
+function updateDeckArtwork(deck, track) {
+  const el = document.getElementById(`artwork-${deck}`);
+  if (!el) return;
+  if (track.artwork || track.image) {
+    el.src = track.artwork || track.image;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function onMetaLoaded(deck) {
+  const audio = getDeckAudio(deck);
+  const dur = audio.duration;
+  const track = Engine.decks[deck].track;
+  if (!Number.isFinite(dur) || dur <= 0) { document.getElementById(`dur-${deck}`).textContent = '—'; return; }
+  if (track && dur && Number.isFinite(dur)) {
+    if (dur < 21600) track.duration = dur;
+  }
+  document.getElementById(`dur-${deck}`).textContent = fmt(dur);
+  if (document.getElementById('smart-fade')?.checked && audio.src && Number.isFinite(dur)) {
+    Engine.detectFadePoint(audio.src, dur).then(fp => {
+      if (fp != null && Number.isFinite(fp)) Engine.decks[deck].fadePoint = fp;
+    });
+  }
+  if (audio.src) {
+    Engine.analyzeBPM(audio.src).then(bpm => {
+      if (bpm) {
+        Engine.decks[deck].bpm = bpm;
+        document.getElementById(`bpm-display-${deck}`).textContent = bpm;
+        updateGlobalBPM();
+      }
+    });
+  }
+}
+
+function updateGlobalBPM() {
+  const ba = Engine.decks.a?.bpm;
+  const bb = Engine.decks.b?.bpm;
+  const audible = getAudibleDeck();
+  const bpm = audible === 'a' ? ba : bb;
+  const el = document.getElementById('global-bpm');
+  if (el) el.textContent = bpm ? bpm.toFixed(2) : '128.00';
+}
+
+function onPlayError(deck) {
+  const audible = getAudibleDeck();
+  if (deck === audible || deck === DJ.currentDeck) {
+    setStatus(`⚠ Stream error on ${deck.toUpperCase()} — skipping`);
+    void broadcastDeckState({ streamError: true, errorDeck: deck });
+    setTimeout(() => void advanceQueue(), 1000);
+  }
+}
+
+function onTrackEnded(deck) {
+  if (deck !== DJ.currentDeck) return;
+  void advanceQueue();
+}
+
+function removeFailedTrack(idx) {
+  if (idx < 0 || idx >= DJ.queue.length) return;
+  DJ.queue.splice(idx, 1);
+  if (idx <= DJ.trackIndex) DJ.trackIndex = Math.max(-1, DJ.trackIndex - 1);
+  fetch('/api/queue/remove/' + idx, { method: 'POST' }).catch(() => {});
+  renderQueue();
+}
+
+async function advanceQueue() {
+  DJ.fadeLock = false;
+  const justPlayed = DJ.queue[DJ.trackIndex];
+  if (justPlayed) {
+    DJ.history.push(justPlayed);
+    addToRecentlyPlayed(justPlayed.artist, justPlayed.title);
+    if (justPlayed.youtubeId) DJ.usedTracks.add(`yt:${justPlayed.youtubeId}`);
+  }
+  DJ.trackIndex++;
+  pruneUsedTracks();
+  if (justPlayed?.youtubeId) {
+    fetch('/api/playback/played', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId: justPlayed.youtubeId }) }).catch(() => {});
+  }
+  fetch('/api/playback/next', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trackIndex: DJ.trackIndex }) }).catch(() => {});
+  if (DJ.trackIndex >= DJ.queue.length) {
+    setStatus('Queue ended — fetching more tracks...');
+    fetchMoreOnline().then(async () => {
+      if (DJ.queue.length > DJ.trackIndex) {
+        const nd = getNextDeck();
+        DJ.currentDeck = nd;
+        syncCrossfaderToDeck(nd);
+        await loadTrackOnDeck(nd, DJ.queue[DJ.trackIndex]);
+        preDownloadAhead();
+        renderQueue();
+      }
+    });
+    return;
+  }
+  const track = DJ.queue[DJ.trackIndex];
+  const nextDeck = getNextDeck();
+  DJ.currentDeck = nextDeck;
+  syncCrossfaderToDeck(nextDeck);
+  await loadTrackOnDeck(nextDeck, track);
+  setDeckLive('a', nextDeck==='a');
+  setDeckLive('b', nextDeck==='b');
+  renderQueue();
+  void broadcastDeckState();
+  if (DJ.queue.length - DJ.trackIndex < 3) fetchMoreOnline();
+  preDownloadAhead();
+}
+
+// ─── Deck Controls ─────────────────────────────────
+function deckPlay(deck) {
+  if (!DJ.started) { startPlayback(); return; }
+  Engine.initAudioCtx();
+  Engine.ensureDeckConnected(deck);
+  const audio = getDeckAudio(deck);
+  if (!audio.src) { setStatus(`No track on Deck ${deck.toUpperCase()}`); return; }
+  audio.play().then(() => { setStatus(`▶ Playing Deck ${deck.toUpperCase()}`); void broadcastDeckState(); }).catch(e => setStatus(`Play error: ${e.message}`));
+}
+function deckStop(deck) { const a = getDeckAudio(deck); a.pause(); a.currentTime = 0; void broadcastDeckState(); }
+function deckCue(deck) { Engine.decks[deck].cuePoint = getDeckAudio(deck).currentTime; setStatus(`Cue @ ${fmt(Engine.decks[deck].cuePoint)}`); }
+function deckReverse(deck) { setStatus(`Reverse (${deck.toUpperCase()}) — not implemented in MVP`); }
+function deckLoop(deck) { setStatus(`Loop (${deck.toUpperCase()}) — not implemented in MVP`); }
+function deckSync(deck) {
+  const other = deck === 'a' ? 'b' : 'a';
+  const bpm = Engine.decks[other]?.bpm;
+  if (bpm) { Engine.decks[deck].bpm = bpm; document.getElementById(`bpm-display-${deck}`).textContent = bpm; updateGlobalBPM(); setStatus(`Synced ${deck.toUpperCase()} to ${bpm} BPM`); }
+  else setStatus(`No BPM on ${other.toUpperCase()} to sync from`);
+}
+function seekDeck(deck, event) {
+  const audio = getDeckAudio(deck);
+  if (!audio.duration) return;
+  const rect = document.getElementById(`prog-wrap-${deck}`).getBoundingClientRect();
+  audio.currentTime = ((event.clientX - rect.left) / rect.width) * audio.duration;
+}
+function setVol(deck, val) {
+  if (Engine.decks[deck].gain) Engine.decks[deck].gain.gain.value = parseFloat(val);
+  document.getElementById(`vol-val-${deck}`).textContent = Math.round(val*100)+'%';
+}
+function setXfaderGains(val) {
+  const v = parseFloat(val);
+  if (Engine.decks.a.gain) Engine.decks.a.gain.gain.value = 1 - v;
+  if (Engine.decks.b.gain) Engine.decks.b.gain.gain.value = v;
+}
+function onXfader(val) {
+  setXfaderGains(val);
+  const mx = document.getElementById('mixer-xfader');
+  if (mx) mx.value = val;
+  scheduleDeckStateBroadcast();
+  updateGlobalBPM();
+}
+function applyXfaderGains() { setXfaderGains(getCrossfaderValue()); }
+
+// ─── Auto-mix ──────────────────────────────────────
+function updateDeckUI(deck) {
+  const audio = getDeckAudio(deck);
+  const cur = audio.currentTime || 0;
+  const rawDur = audio.duration || 0;
+  const dur = Number.isFinite(rawDur) && rawDur > 0 ? rawDur : 0;
+  const remain = dur > 0 ? dur - cur : 0;
+  const pct = dur > 0 ? (cur / dur * 100) : 0;
+  document.getElementById(`prog-${deck}`).style.width = pct + '%';
+  document.getElementById(`time-${deck}`).textContent = fmt(cur);
+  document.getElementById(`remain-${deck}`).textContent = (Number.isFinite(remain) && remain > 0) ? '-' + fmt(remain) : '0:00';
+  document.getElementById(`dur-${deck}`).textContent = dur > 0 ? fmt(dur) : '—';
+  const audible = getAudibleDeck();
+  if (deck === audible && Date.now() - DJ.lastNpBroadcast > 350) {
+    DJ.lastNpBroadcast = Date.now();
+    void broadcastDeckState();
+  }
+  if (!document.getElementById('automix')?.checked) return;
+  if (deck !== DJ.currentDeck) return;
+  if (Engine.isFading || DJ.fadeLock) return;
+  if (!Number.isFinite(dur) || dur < 5 || !Number.isFinite(remain) || remain <= 0) return;
+  const otherDeck = getNextDeck();
+  const otherTrack = Engine.decks[otherDeck]?.track;
+  if (!otherTrack) return;
+  const fadePct = parseInt(document.getElementById('cfg-fade-pct')?.value) || 80;
+  const pctPlayed = cur / dur * 100;
+  if (pctPlayed >= fadePct && document.getElementById('smart-fade')?.checked) {
+    DJ.fadeLock = true;
+    void triggerCrossfade();
+    return;
+  }
+  if (!document.getElementById('smart-fade')?.checked) {
+    const fadeSec = parseInt(document.getElementById('fade-dur')?.value) || 8;
+    const fp = Engine.decks[deck].fadePoint;
+    const triggerRemain = fp && Number.isFinite(fp) ? (dur - fp) : fadeSec;
+    if (remain <= triggerRemain + 0.5 && remain > 0.5) {
+      DJ.fadeLock = true;
+      void triggerCrossfade();
+    }
+  }
+}
+
+// ─── Crossfade ──────────────────────────────────────
+async function triggerCrossfade() {
+  if (Engine.isFading) return;
+  const fromDeck = DJ.currentDeck;
+  const toDeck = getNextDeck();
+  const dur = parseInt(document.getElementById('fade-dur')?.value) || 8;
+  const nextTrack = DJ.queue[DJ.trackIndex + 1];
+  if (!nextTrack) {
+    setStatus('Fetching next track...');
+    fetchMoreOnline().then(async () => {
+      if (DJ.queue[DJ.trackIndex + 1]) await triggerCrossfade();
+    });
+    return;
+  }
+  DJ.trackIndex++;
+  await loadTrackOnDeck(toDeck, nextTrack, { prepareOnly: true });
+  document.getElementById('fade-btn').classList.add('opacity-50');
+  setStatus(`⇄ Crossfading → ${nextTrack.title}`);
+  Engine.broadcastNowPlaying({ isFading: true });
+  Engine.crossfade(fromDeck, toDeck, dur, () => {
+    DJ.currentDeck = toDeck;
+    DJ.fadeLock = false;
+    setDeckLive('a', toDeck==='a');
+    setDeckLive('b', toDeck==='b');
+    document.getElementById('fade-btn').classList.remove('opacity-50');
+    setStatus(`▶ ${nextTrack.title} — ${nextTrack.artist}`);
+    applyXfaderGains();
+    void broadcastDeckState();
+    renderQueue();
+    Engine.broadcastNowPlaying({ isFading: false });
+    if (DJ.queue.length - DJ.trackIndex < 3) fetchMoreOnline();
+  });
+}
+
+// ─── TAP BPM ────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const tapBtn = document.getElementById('tap-bpm');
+  if (tapBtn) {
+    tapBtn.addEventListener('click', () => {
+      const now = performance.now();
+      DJ.tapBpmTimes.push(now);
+      if (DJ.tapBpmTimes.length > 8) DJ.tapBpmTimes.shift();
+      if (DJ.tapBpmTimes.length >= 2) {
+        const intervals = [];
+        for (let i = 1; i < DJ.tapBpmTimes.length; i++) {
+          intervals.push(DJ.tapBpmTimes[i] - DJ.tapBpmTimes[i-1]);
+        }
+        const avg = intervals.reduce((a,b)=>a+b,0) / intervals.length;
+        const bpm = Math.round(60000 / avg);
+        if (bpm >= 60 && bpm <= 200) {
+          document.getElementById('global-bpm').textContent = bpm.toFixed(2);
+          setStatus(`Tapped ${bpm} BPM`);
+        }
+      }
+    });
+  }
+});
+
+// ─── Render Loop ────────────────────────────────────
+function startRenderLoop() {
+  const canvases = { a: document.getElementById('wave-a'), b: document.getElementById('wave-b') };
+  Object.entries(canvases).forEach(([k, c]) => { if (c) c.width = c.offsetWidth || 400; });
+  window.addEventListener('resize', () => { Object.values(canvases).forEach(c => { if (c) c.width = c.offsetWidth; }); });
+  let lastNp = 0;
+  const loop = () => {
+    ['a','b'].forEach(deck => {
+      const audio = getDeckAudio(deck);
+      const raw = audio?.duration;
+      const dur = Number.isFinite(raw) && raw > 0 ? raw : 1;
+      const cur = audio?.currentTime || 0;
+      if (canvases[deck]) Engine.drawWaveform(deck, canvases[deck], cur / dur);
+      const levels = Engine.getVULevel(deck);
+      const bars = document.getElementById(`vu-${deck}`)?.children || [];
+      levels.forEach((lv, i) => { if (bars[i]) bars[i].style.height = Math.max(2, lv*30)+'px'; });
+    });
+    const now = Date.now();
+    if (DJ.started && now - lastNp > 8000) { lastNp = now; broadcastDeckState(); }
+    updateNowPlayingCard();
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+function updateNowPlayingCard() {
+  const track = DJ.queue[DJ.trackIndex];
+  if (!track || DJ.trackIndex < 0) return;
+  const audio = getDeckAudio(DJ.currentDeck);
+  const cur = audio?.currentTime || 0;
+  const dur = audio?.duration || track.duration || 0;
+  const titleEl = document.getElementById('np-sidebar-title');
+  const artistEl = document.getElementById('np-sidebar-artist');
+  if (titleEl) titleEl.textContent = track.title || '—';
+  if (artistEl) artistEl.textContent = track.artist || '—';
+}
+
+// ─── Queue ──────────────────────────────────────────
+function renderQueue() {
+  const list = document.getElementById('queue-list');
+  const countEl = document.getElementById('q-count');
+  const sideCount = document.getElementById('q-count-sidebar');
+  if (countEl) countEl.textContent = DJ.queue.length;
+  if (sideCount) sideCount.textContent = DJ.queue.length;
+  if (!list) return;
+  if (!DJ.queue.length) {
+    list.innerHTML = '<div class="p-6 text-center text-[0.75rem] text-[#555]">Queue empty</div>';
+    return;
+  }
+  list.innerHTML = DJ.queue.map((t, i) => {
+    const isPlay = i === DJ.trackIndex;
+    const isNext = i === DJ.trackIndex + 1;
+    const isPast = i < DJ.trackIndex;
+    const src = t.type === 'temp' ? 'TEMP' : t.type === 'local' ? 'LOCAL' : 'ONLINE';
+    const badgeClass = isPlay ? 'badge-playing' : isNext ? 'badge-next' : 'badge-pending';
+    const badgeText = isPlay ? '▶ NOW' : isNext ? 'NEXT' : src;
+    return `<div class="qitem${isPlay?' playing':''}${isNext?' next':''}${isPast?' past':''}"
+      draggable="${!isPlay}" data-idx="${i}"
+      ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)"
+      ondrop="onDrop(event,${i})" ondragleave="onDragLeave(event)">
+      <div class="q-num">${i+1}</div>
+      <div class="q-src">${src}</div>
+      <div class="min-w-0 overflow-hidden">
+        <div class="text-[0.75rem] text-white truncate font-medium">${escHtml(t.title || '—')}</div>
+        <div class="text-[0.625rem] text-[#888] truncate">${escHtml(t.artist || '—')}${t.album ? ' · ' + escHtml(t.album) : ''}</div>
+      </div>
+      <span class="q-badge ${badgeClass}">${badgeText}</span>
+      <div class="text-[0.625rem] font-mono text-[#555]">${t.duration ? fmt(t.duration) : '—'}</div>
+      ${!isPast && !isPlay ? `<button class="btn btn-xs" onclick="playQueueTrack(${i})" title="Play now">▶</button>` : ''}
+    </div>`;
+  }).join('');
+  list.querySelector('.playing')?.scrollIntoView({ block:'nearest', behavior:'smooth' });
+  renderConsoleUpNext();
+  persistQueue();
+}
+
+function renderConsoleUpNext() {
+  const box = document.getElementById('console-upnext');
+  if (!box) return;
+  const start = DJ.trackIndex + 1;
+  const slice = DJ.queue.slice(start, start + 8);
+  if (!slice.length) {
+    box.innerHTML = '<div class="text-[0.75rem] text-[#555]">Queue empty — add tracks to see upcoming</div>';
+    return;
+  }
+  box.innerHTML = slice.map((t, i) => {
+    const qi = start + i;
+    return `<div class="flex items-center gap-2 py-1.5 border-b border-[#1e1e1e] last:border-0">
+      <span class="text-[0.625rem] font-mono text-[#555] w-5">${qi+1}</span>
+      <div class="flex-1 min-w-0">
+        <div class="text-[0.6875rem] text-white truncate">${escHtml(t.title || '—')}</div>
+        <div class="text-[0.5625rem] text-[#888] truncate">${escHtml(t.artist || '—')}</div>
+      </div>
+      <button class="btn btn-xs" onclick="cueQueueTrack('a',${qi})" title="Cue A">A</button>
+      <button class="btn btn-xs" onclick="cueQueueTrack('b',${qi})" title="Cue B">B</button>
+    </div>`;
+  }).join('');
+}
+
+let dragIdx = null;
+function onDragStart(e,i) { dragIdx=i; e.currentTarget.classList.add('opacity-40'); }
+function onDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('border-t-signal'); }
+function onDragLeave(e) { e.currentTarget.classList.remove('border-t-signal'); }
+function onDrop(e,target) {
+  e.preventDefault(); e.currentTarget.classList.remove('border-t-signal');
+  if (dragIdx===null||dragIdx===target) return;
+  const item = DJ.queue.splice(dragIdx,1)[0];
+  DJ.queue.splice(target,0,item);
+  if (dragIdx < DJ.trackIndex) DJ.trackIndex--;
+  else if (target <= DJ.trackIndex) DJ.trackIndex++;
+  dragIdx = null; renderQueue();
+}
+function playQueueTrack(idx) {
+  if (idx < 0 || idx >= DJ.queue.length) return;
+  Engine.initAudioCtx();
+  DJ.started = true;
+  const audio = getDeckAudio(DJ.currentDeck);
+  if (audio) { audio.pause(); audio.src = ''; }
+  DJ.trackIndex = idx;
+  Engine.isFading = false;
+  syncCrossfaderToDeck(DJ.currentDeck);
+  loadTrackOnDeck(DJ.currentDeck, DJ.queue[idx]);
+  renderQueue();
+  fetch('/api/queue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queue: DJ.queue, trackIndex: DJ.trackIndex }) }).catch(() => {});
+  fetch('/api/playback/next', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trackIndex: DJ.trackIndex }) }).catch(() => {});
+}
+async function cueQueueTrack(deck, queueIdx) {
+  const t = DJ.queue[queueIdx];
+  if (!t) return;
+  Engine.initAudioCtx();
+  DJ.started = true;
+  await loadTrackOnDeck(deck, t, { prepareOnly: true });
+  setStatus(`Cue Deck ${deck.toUpperCase()} from queue #${queueIdx + 1}: ${t.title}`);
+}
+function removeFromQueue(i) {
+  if (i===DJ.trackIndex) return;
+  DJ.queue.splice(i,1);
+  if (i < DJ.trackIndex) DJ.trackIndex--;
+  renderQueue();
+}
+function shuffleQueue() {
+  const past = DJ.queue.slice(0, DJ.trackIndex+1);
+  const future = DJ.queue.slice(DJ.trackIndex+1).sort(()=>Math.random()-0.5);
+  DJ.queue = [...past, ...future];
+  renderQueue();
+  setStatus('Queue shuffled');
+}
+function clearQueue() {
+  DJ.queue = DJ.queue.slice(0, DJ.trackIndex+1);
+  renderQueue();
+  setStatus('Queue cleared');
+}
+function clearAllAndReset() {
+  if (!confirm('Reset everything?')) return;
+  deckStop('a'); deckStop('b');
+  DJ.queue = [];
+  DJ.trackIndex = -1;
+  DJ.history = [];
+  DJ.usedTracks = new Set();
+  DJ.started = false;
+  DJ.currentDeck = 'a';
+  fetch('/api/queue/clear', { method: 'POST' }).catch(() => {});
+  renderQueue();
+  setStatus('Session reset');
+}
+
+// ─── Discovery ──────────────────────────────────────
+async function startAutoDiscover() {
+  const artist = document.getElementById('seed-artist')?.value.trim();
+  const track = document.getElementById('seed-track')?.value.trim();
+  if (!artist) { setStatus('Enter a seed artist'); return; }
+  if (!DJ.hasLastfm) { setStatus('Add a Last.fm API key first'); return; }
+  setStatus('Starting discovery...');
+  DJ.knownArtists = [artist];
+  DJ.usedTracks.clear();
+  DJ.seedTags = [];
+  try {
+    const info = track ? await Engine.getTrackInfo(artist, track) : await Engine.getArtistInfo(artist);
+    DJ.seedTags = info.tags || [];
+    setStatus(`Tags: ${DJ.seedTags.slice(0,4).join(', ') || 'none'}`);
+    let seeds = track ? [{title:track,artist}] : [];
+    const tops = await Engine.getTopTracks(artist, 4);
+    seeds.push(...tops);
+    for (const t of seeds.slice(0, 3)) await enqueueOnlineTrack(t);
+    if (DJ.trackIndex < 0 && DJ.queue.length > 0) { DJ.trackIndex = 0; startPlayback(); renderQueue(); }
+    setTimeout(() => fetchMoreOnline(), 2000);
+  } catch(e) { setStatus('Discovery error: ' + e.message); }
+}
+
+async function fetchMoreOnline() {
+  if (DJ.discovering || !DJ.hasLastfm) return;
+  DJ.discovering = true;
+  const mode = document.getElementById('discovery-mode')?.value || 'both';
+  let candidates = [];
+  try {
+    if ((mode === 'similar' || mode === 'both') && DJ.knownArtists.length) {
+      const base = DJ.knownArtists[Math.floor(Math.random() * Math.min(DJ.knownArtists.length, 5))];
+      const similar = await Engine.getSimilarArtists(base, 6);
+      for (const a of similar.slice(0, 3)) {
+        const tracks = await Engine.getTopTracks(a, 2);
+        candidates.push(...tracks);
+      }
+    }
+    if ((mode === 'tag' || mode === 'both') && DJ.seedTags.length) {
+      const tag = DJ.seedTags[Math.floor(Math.random() * DJ.seedTags.length)];
+      const tagTracks = await Engine.getTagTracks(tag, 5);
+      candidates.push(...tagTracks);
+    }
+    const cur = DJ.queue[DJ.trackIndex];
+    if (cur && cur.type === 'online') {
+      const sim = await Engine.getSimilarTracks(cur.artist, cur.title, 5);
+      candidates.push(...sim);
+    }
+    candidates = candidates.filter(c => {
+      if (!c.artist || !c.title) return false;
+      const key = `${dedupKey(c.artist)}::${dedupKey(c.title)}`;
+      if (DJ.usedTracks.has(key)) return false;
+      if (isRecentlyPlayed(c.artist, c.title)) return false;
+      if (isInQueue(c.artist, c.title)) return false;
+      return true;
+    }).sort(() => Math.random() - 0.5);
+    let added = 0;
+    for (const t of candidates) {
+      if (added >= 4) break;
+      if (await enqueueOnlineTrack(t)) added++;
+    }
+    if (added > 0) { renderQueue(); setStatus(`Queued ${added} new track${added!==1?'s':''}`); }
+  } catch(e) { setStatus('Discovery error: ' + e.message); }
+  finally { DJ.discovering = false; }
+}
+
+async function enqueueOnlineTrack(t) {
+  if (!t.artist || !t.title) return false;
+  const key = `${dedupKey(t.artist)}::${dedupKey(t.title)}`;
+  if (DJ.usedTracks.has(key)) return false;
+  if (isRecentlyPlayed(t.artist, t.title)) return false;
+  if (isInQueue(t.artist, t.title)) return false;
+  setStatus(`Searching: ${t.title} — ${t.artist}`);
+  const result = await Engine.searchVideo(t.artist, t.title);
+  if (!result || !result.videoId) { setStatus(`No source for: ${t.artist} — ${t.title}`); return false; }
+  let info = { tags: [], album: '', image: '', duration: 0 };
+  if (DJ.hasLastfm) { try { info = await Engine.getTrackInfo(t.artist, t.title); } catch(e) {} }
+  DJ.usedTracks.add(key);
+  const fromSearch = result.lengthSeconds != null ? normalizeClientDuration(result.lengthSeconds) : 0;
+  const maxMin = parseInt(document.getElementById('cfg-max-track')?.value) || 0;
+  const durSec = info.duration || t.duration || fromSearch || 0;
+  if (maxMin > 0 && durSec > maxMin * 60) { setStatus(`Skipped (${durSec}s limit): ${t.title}`); return false; }
+  const track = {
+    type: 'online', youtubeId: result.videoId,
+    _source: result._source || '', _instance: result._instance || '',
+    title: t.title, artist: t.artist,
+    album: info.album || '', tags: info.tags || [],
+    duration: info.duration || t.duration || fromSearch || 0,
+    image: info.image || '', artwork: info.image || ''
+  };
+  DJ.queue.push(track);
+  if (!DJ.knownArtists.includes(t.artist)) DJ.knownArtists.push(t.artist);
+  (info.tags||[]).forEach(tag => { if (!DJ.seedTags.includes(tag)) DJ.seedTags.push(tag); });
+  renderQueue();
+  return true;
+}
+
+// ─── Unified Search ─────────────────────────────────
+async function unifiedQueueSearch() {
+  const inp = document.getElementById('queue-search-inp');
+  const box = document.getElementById('unified-search-results');
+  const q = inp?.value.trim();
+  if (!q || !box) return;
+  box.innerHTML = '<div class="text-[0.6875rem] text-[#555] p-2">Searching…</div>';
+  try {
+    const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`);
+    const results = await r.json();
+    if (!Array.isArray(results) || !results.length) {
+      box.innerHTML = '<div class="text-[0.6875rem] text-[#555] p-2">No results</div>';
+      return;
+    }
+    box.innerHTML = results.map(it => {
+      const payload = encodeURIComponent(JSON.stringify({
+        videoId: it.videoId, title: it.title,
+        author: it.author || it.uploader || it.channel || '',
+        uploader: it.uploader, _source: it._source, _instance: it._instance,
+        artwork: it.artwork, lengthSeconds: it.lengthSeconds
+      }));
+      const art = it.artwork || '';
+      return `<div class="flex items-center gap-2 p-2 border-b border-[#1e1e1e] text-[0.6875rem]">
+        ${art ? `<img src="${art}" class="w-8 h-8 rounded object-cover flex-shrink-0">` : '<div class="w-8 h-8 rounded bg-[#1a1a1a] flex-shrink-0"></div>'}
+        <div class="flex-1 min-w-0">
+          <div class="text-white truncate font-medium">${escHtml(it.title || '—')}</div>
+          <div class="text-[#888] truncate">${escHtml(it.author || it.uploader || '')}</div>
+        </div>
+        <button class="btn btn-xs btn-signal" data-add="${payload}">+ Queue</button>
+      </div>`;
+    }).join('');
+    box.querySelectorAll('[data-add]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        try {
+          const p = JSON.parse(decodeURIComponent(btn.getAttribute('data-add')));
+          if (!p || !p.videoId) return;
+          const ytKey = `yt:${p.videoId}`;
+          if (DJ.usedTracks.has(ytKey)) { setStatus('Already played this session'); return; }
+          const dur = p.lengthSeconds != null ? normalizeClientDuration(p.lengthSeconds) : 0;
+          DJ.queue.push({ type: 'online', youtubeId: p.videoId, title: p.title || 'Unknown', artist: p.author || p.uploader || 'Unknown', _source: p._source || '', _instance: p._instance || '', artwork: p.artwork || '', duration: dur });
+          renderQueue();
+          setStatus(`Queued: ${p.title || p.videoId}`);
+          box.innerHTML = '';
+          document.getElementById('queue-search-inp').value = '';
+        } catch(err) {}
+      });
+    });
+  } catch(e) {
+    box.innerHTML = `<div class="text-[0.6875rem] text-signal p-2">${escHtml(e.message)}</div>`;
+  }
+}
+
+// ─── Discover Search ────────────────────────────────
+async function discoverSearch() {
+  const q = document.getElementById('discover-search')?.value.trim();
+  const box = document.getElementById('discovery-results');
+  if (!q || !box) return;
+  box.innerHTML = '<div class="col-span-full text-center py-8"><span class="spinner"></span> Searching...</div>';
+  try {
+    const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`);
+    const results = await r.json();
+    if (!Array.isArray(results) || !results.length) {
+      box.innerHTML = '<div class="col-span-full text-center text-[0.75rem] text-[#555] py-8">No results</div>';
+      return;
+    }
+    box.innerHTML = results.map(it => `
+      <div class="album-card">
+        ${it.artwork ? `<img src="${it.artwork}" class="w-full aspect-square object-cover" alt="">` : '<div class="w-full aspect-square bg-[#1a1a1a] flex items-center justify-center text-[#555]">♪</div>'}
+        <div class="p-2">
+          <div class="text-[0.6875rem] text-white truncate font-medium">${escHtml(it.title || '—')}</div>
+          <div class="text-[0.5625rem] text-[#888] truncate">${escHtml(it.author || it.uploader || '')}</div>
+        </div>
+        <div class="overlay">
+          <button class="btn btn-xs btn-signal" onclick="quickQueue('${encodeURIComponent(JSON.stringify({videoId:it.videoId,title:it.title,author:it.author||it.uploader||'',_source:it._source,_instance:it._instance,artwork:it.artwork,lengthSeconds:it.lengthSeconds}))}')">▶ Play</button>
+          <button class="btn btn-xs btn-flow" onclick="quickQueueB('${encodeURIComponent(JSON.stringify({videoId:it.videoId,title:it.title,author:it.author||it.uploader||'',_source:it._source,_instance:it._instance,artwork:it.artwork,lengthSeconds:it.lengthSeconds}))}')">Cue B</button>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    box.innerHTML = `<div class="col-span-full text-center text-signal py-8">${escHtml(e.message)}</div>`;
+  }
+}
+
+function quickQueue(payload) {
+  try { const p = JSON.parse(decodeURIComponent(payload)); DJ.queue.push({type:'online',youtubeId:p.videoId,title:p.title||'Unknown',artist:p.author||'Unknown',_source:p._source||'',_instance:p._instance||'',artwork:p.artwork||'',duration:p.lengthSeconds?normalizeClientDuration(p.lengthSeconds):0}); renderQueue(); setStatus(`Queued: ${p.title}`); } catch(e) {}
+}
+function quickQueueB(payload) {
+  quickQueue(payload);
+}
+
+function setMood(mood) {
+  const inp = document.getElementById('ai-mood');
+  const moods = { chill: 'late night chill, lo-fi vibes', energy: 'high energy, dance floor bangers', deep: 'deep house, ambient, minimal techno' };
+  if (inp) inp.value = moods[mood] || mood;
+}
+
+// ─── AI ─────────────────────────────────────────────
+async function aiAnalyzeAndRecommend() {
+  if (!DJ.hasAI) { setStatus('Configure an AI key in Settings first'); return; }
+  const el = document.getElementById('ai-result');
+  el.innerHTML = '<span class="text-[#555]"><span class="spinner"></span> Consulting AI...</span>';
+  try {
+    const cur = DJ.queue[DJ.trackIndex];
+    const recs = await Engine.aiRecommend(cur, DJ.history, DJ.seedTags, document.getElementById('ai-mood')?.value);
+    el.innerHTML = (Array.isArray(recs) ? recs : []).map(r =>
+      `<div class="mb-2 pb-2 border-b border-[#1e1e1e] last:border-0">
+        <div class="text-white text-[0.75rem] font-medium">${r.title} — ${r.artist}</div>
+        <div class="text-flow text-[0.625rem]">${r.reason||''}</div>
+        <button class="btn btn-xs btn-signal mt-1" onclick="enqueueAITrack('${r.artist.replace(/'/g,"\\'")}','${r.title.replace(/'/g,"\\'")}')">+ Queue</button>
+      </div>`).join('') || '<span class="text-[#555]">No recommendations returned</span>';
+  } catch(e) { el.innerHTML = `<span class="text-signal">Error: ${e.message}</span>`; }
+}
+
+async function enqueueAITrack(artist, title) {
+  const result = await Engine.searchVideo(artist, title);
+  if (result?.videoId) {
+    DJ.queue.push({type:'online',youtubeId:result.videoId,_source:result._source||'',_instance:result._instance||'',title,artist,tags:DJ.seedTags.slice(0,3)});
+    renderQueue(); setStatus(`Queued: ${title}`);
+  } else setStatus(`Not found: ${title}`);
+}
+
+async function aiRefillQueue() {
+  if (!DJ.hasAI) { setStatus('Configure an AI key first'); return; }
+  setStatus('AI refilling queue...');
+  try {
+    const recs = await Engine.aiRecommend(DJ.queue[DJ.trackIndex], DJ.history, DJ.seedTags, document.getElementById('ai-mood')?.value||'');
+    let added = 0;
+    for (const r of (Array.isArray(recs)?recs:[])) {
+      const result = await Engine.searchVideo(r.artist, r.title);
+      if (result?.videoId) { DJ.queue.push({type:'online',youtubeId:result.videoId,_source:result._source||'',_instance:result._instance||'',title:r.title,artist:r.artist,tags:[]}); added++; }
+    }
+    renderQueue(); setStatus(`AI added ${added} tracks`);
+  } catch(e) { setStatus('AI error: '+e.message); }
+}
+
+// ─── Pre-download ahead ─────────────────────────────
+async function preDownloadAhead() {
+  const count = parseInt(document.getElementById('cfg-predownload')?.value) || 5;
+  const pending = [];
+  for (let i = DJ.trackIndex + 1; i < DJ.queue.length && pending.length < count; i++) {
+    const t = DJ.queue[i];
+    if (t.type === 'online' && t.youtubeId && !t._downloadStarted) {
+      pending.push(t); t._downloadStarted = true;
+    }
+  }
+  if (!pending.length) return;
+  try {
+    const r = await fetch('/api/cache/downloadBatch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tracks: pending.map(t => ({ videoId: t.youtubeId, title: t.title, artist: t.artist, _source: t._source || '', _instance: t._instance || '' })) })
+    });
+    const data = await r.json();
+    if (data.results) { const ok = data.results.filter(r => r.ok).length; if (ok > 0) console.debug(`Pre-downloaded ${ok}/${data.results.length}`); }
+  } catch(e) {}
+}
+
+// ─── System Stats ───────────────────────────────────
+function fmtBytes(b) { if (!b) return '0 B'; const k=1024, s=['B','KB','MB','GB','TB']; const i=Math.floor(Math.log(b)/Math.log(k)); return (b/Math.pow(k,i)).toFixed(1)+' '+s[i]; }
+function fmtUptime(s) { const h=Math.floor(s/3600), m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; }
+
+async function updateSystemStats() {
+  try {
+    const s = await (await fetch('/api/system/stats')).json();
+    const set = (id, val) => { const e=document.getElementById(id); if(e) e.textContent=val; };
+    const setW = (id, pct) => { const e=document.getElementById(id); if(e) e.style.width=(pct||0)+'%'; };
+    const cpuPct = s.cpu?.percent;
+    set('stat-cpu', cpuPct != null ? cpuPct + '%' : '—');
+    set('stat-cpu-sub', `${s.cpu?.cores ?? '—'} cores`);
+    setW('stat-cpu-bar', cpuPct != null ? cpuPct : 0);
+    const ramPct = s.ram?.percent ?? 0;
+    set('stat-ram', ramPct+'%');
+    set('stat-ram-sub', `${fmtBytes(s.ram?.used||0)} / ${fmtBytes(s.ram?.total||0)}`);
+    setW('stat-ram-bar', ramPct);
+    const diskPct = s.disk?.percent ?? 0;
+    set('stat-disk', diskPct+'%');
+    set('stat-disk-sub', `${fmtBytes(s.disk?.free||0)} free`);
+    setW('stat-disk-bar', s.disk?.total ? diskPct : 0);
+    const tf = s.temp?.files ?? 0;
+    set('stat-temp', String(tf));
+    set('stat-temp-sub', `${fmtBytes(s.temp?.size||0)} · up ${fmtUptime(s.uptime||0)}`);
+    setW('stat-temp-bar', tf>0?100:5);
+    const sdur = s.sessionDuration || DJ.config?.sessionDuration || 0;
+    if (sdur > 0 && s.sessionActive && s.sessionStart) {
+      const elapsed = (Date.now() - (typeof s.sessionStart === 'number' ? s.sessionStart : new Date(s.sessionStart).getTime())) / 3600000;
+      const remain = Math.max(0, sdur - elapsed);
+      set('stat-session', remain > 1 ? `${Math.floor(remain)}h ${Math.floor((remain%1)*60)}m` : `${Math.floor(remain*60)}m`);
+      set('stat-session-sub', `${sdur}h limit`);
+    } else if (sdur > 0) { set('stat-session', `${sdur}h`); set('stat-session-sub', 'not started'); }
+    else { set('stat-session', '∞'); set('stat-session-sub', 'no limit'); }
+    const qlen = s.queueLength ?? DJ.queue?.length ?? 0;
+    set('stat-queue', String(qlen));
+    set('stat-queue-sub', 'tracks');
+    // Sidebar mini stats
+    set('stat-cpu-small', cpuPct != null ? cpuPct+'%' : '—');
+    set('stat-latency', s.latency ? s.latency+'ms' : '—');
+    if (s.listeners != null) set('stat-listeners', s.listeners);
+  } catch(e) {}
+}
+
+// ─── Listeners ──────────────────────────────────────
+async function fetchListeners() {
+  try {
+    const r = await fetch('/api/listeners');
+    const d = await r.json();
+    if (d.count != null) document.getElementById('stat-listeners').textContent = d.count;
+  } catch(e) {}
+}
+
+// ─── Messages ──────────────────────────────────────
+function renderMessages() {
+  const list = document.getElementById('msg-list');
+  if (!list) return;
+  list.innerHTML = DJ.messages.map((m,i)=>`<div class="flex items-center gap-2 py-1 border-b border-[#1e1e1e] text-[0.6875rem]"><span class="flex-1">${m}</span><button class="text-[#555] hover:text-signal" onclick="removeMessage(${i})">×</button></div>`).join('');
+}
+function addMessage() {
+  const inp = document.getElementById('new-msg');
+  const val = inp?.value.trim(); if (!val) return;
+  DJ.messages.push(val); inp.value='';
+  renderMessages(); Engine.broadcastNowPlaying({messages:DJ.messages});
+}
+function removeMessage(i) { DJ.messages.splice(i,1); renderMessages(); Engine.broadcastNowPlaying({messages:DJ.messages}); }
+
+// ─── Source Priority Drag ──────────────────────────
+function setupSourcePriorityDrag() {
+  const list = document.getElementById('source-priority-list');
+  if (!list) return;
+  let dragSrc = null;
+  list.addEventListener('dragstart', (e) => { const item = e.target.closest('.src-prio-item'); if (!item) return; dragSrc = item; item.classList.add('opacity-40'); e.dataTransfer.effectAllowed = 'move'; });
+  list.addEventListener('dragend', (e) => { e.target.closest('.src-prio-item')?.classList.remove('opacity-40'); document.querySelectorAll('.src-prio-item').forEach(el => el.classList.remove('border-signal')); dragSrc = null; });
+  list.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; const target = e.target.closest('.src-prio-item'); if (!target || target === dragSrc) return; target.classList.add('border-signal'); });
+  list.addEventListener('dragleave', (e) => { e.target.closest('.src-prio-item')?.classList.remove('border-signal'); });
+  list.addEventListener('drop', (e) => { e.preventDefault(); const target = e.target.closest('.src-prio-item'); if (!target || !dragSrc || target === dragSrc) return; target.classList.remove('border-signal'); const rect = target.getBoundingClientRect(); if (e.clientY < rect.top + rect.height / 2) { list.insertBefore(dragSrc, target); } else { list.insertBefore(dragSrc, target.nextSibling); } });
+}
+function readSourcePriority() { return Array.from(document.querySelectorAll('#source-priority-list .src-prio-item')).map(el => el.dataset.src); }
+function renderSourcePriority(priority) {
+  const list = document.getElementById('source-priority-list');
+  if (!list || !Array.isArray(priority)) return;
+  const items = Array.from(list.querySelectorAll('.src-prio-item'));
+  const ordered = priority.map(s => items.find(el => el.dataset.src === s)).filter(Boolean);
+  const remaining = items.filter(el => !priority.includes(el.dataset.src));
+  list.replaceChildren(...ordered, ...remaining);
+}
+
+// ─── Logs ──────────────────────────────────────────
+async function fetchLogs() {
+  const container = document.getElementById('log-entries');
+  if (!container) return;
+  const level = document.getElementById('log-filter-level')?.value || '';
+  try {
+    const r = await fetch(`/api/logs?level=${level}`);
+    const data = await r.json();
+    const entries = data.entries || [];
+    if (!entries.length) { container.innerHTML = '<div class="text-center text-[#555] py-4">No log entries</div>'; return; }
+    container.innerHTML = entries.map(e => {
+      const ts = new Date(e.ts).toLocaleTimeString('en-US', { hour12: false });
+      const lc = e.level === 'error' ? 'text-signal' : e.level === 'warn' ? 'text-[#fbbf24]' : 'text-[#555]';
+      return `<div class="flex gap-2 py-0.5 border-b border-[#1e1e1e]"><span class="text-[#555] flex-shrink-0">${ts}</span><span class="${lc} flex-shrink-0">[${e.tag}]</span><span class="text-[#ccc]">${escHtml(e.message)}</span></div>`;
+    }).join('');
+    container.scrollTop = container.scrollHeight;
+  } catch(e) { container.innerHTML = `<div class="text-signal py-4">Error: ${escHtml(e.message)}</div>`; }
+}
+async function clearLogs() {
+  await fetch('/api/logs', { method: 'DELETE' });
+  const container = document.getElementById('log-entries');
+  if (container) container.innerHTML = '<div class="text-center text-[#555] py-4">Logs cleared</div>';
+}
+
+// ─── Test Sources ──────────────────────────────────
+async function testSources() {
+  const out = document.getElementById('src-test-out');
+  if (!out) return;
+  out.textContent = 'Testing…';
+  try {
+    const d = await (await fetch('/api/test/sources')).json();
+    const lines = [];
+    lines.push(`Up ${d.summary?.up ?? 0} / ${d.summary?.total ?? 0}`);
+    for (const [type, arr] of Object.entries(d.results || {})) {
+      const upc = (arr || []).filter(x => x.ok).length;
+      lines.push(`${type}: ${upc}/${(arr || []).length}`);
+    }
+    out.textContent = lines.join(' · ');
+  } catch(e) { out.textContent = 'Error: ' + e.message; }
+}
+
+// ─── WebRTC ─────────────────────────────────────────
+async function toggleWebRTC() {
+  const btn = document.getElementById('share-audio-btn');
+  if (DJ._webrtcActive) {
+    Engine.stopWebRTCBroadcast();
+    if (DJ._webrtcReceiver) { clearInterval(DJ._webrtcReceiver.poll); DJ._webrtcReceiver.pc.close(); DJ._webrtcReceiver = null; }
+    DJ._webrtcActive = false;
+    if (btn) btn.textContent = '🔊 Share';
+    setStatus('Audio sharing stopped');
+    return;
+  }
+  try {
+    await Engine.startWebRTCBroadcast();
+    DJ._webrtcActive = true;
+    if (btn) btn.textContent = '🔇 Stop';
+    setStatus('Sharing audio');
+  } catch(e) { setStatus('Failed: ' + e.message); }
+}
+
+// ─── Helpers ────────────────────────────────────────
+function fmt(s) {
+  if (!s || isNaN(s) || s < 0) return '0:00';
+  const sec = Math.round(s);
+  if (sec <= 0) return '0:00';
+  const m = Math.floor(sec / 60);
+  const secs = sec % 60;
+  if (m >= 60) return `${Math.floor(m/60)}:${(m%60).toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
+  return `${m}:${secs.toString().padStart(2,'0')}`;
+}
+function setStatus(msg) {
+  const el = document.getElementById('status');
+  if (el) el.textContent = '⟡ ' + msg;
+  console.log('[AutoDJ]', msg);
+}
+function escHtml(str) {
+  const e = document.createElement('span');
+  e.textContent = str == null ? '' : String(str);
+  return e.innerHTML;
+}
+function dedupKey(s) { return String(s).toLowerCase().trim().replace(/\s+/g, ' '); }
+function isRecentlyPlayed(artist, title) { const key = `${dedupKey(artist)}::${dedupKey(title)}`; return DJ.recentlyPlayed && DJ.recentlyPlayed.includes(key); }
+function isInQueue(artist, title) { const key = `${dedupKey(artist)}::${dedupKey(title)}`; return DJ.queue.some(t => { const tk = `${dedupKey(t.artist)}::${dedupKey(t.title)}`; return tk === key || (t.youtubeId && t.youtubeId === artist); }); }
+function addToRecentlyPlayed(artist, title) { if (!DJ.recentlyPlayed) DJ.recentlyPlayed = []; DJ.recentlyPlayed.push(`${dedupKey(artist)}::${dedupKey(title)}`); if (DJ.recentlyPlayed.length > 20) DJ.recentlyPlayed.shift(); }
+function updateMediaSession(track) {
+  if (!track || !('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({ title: track.title || '', artist: track.artist || '', album: track.album || '', artwork: track.artwork ? [{ src: track.artwork, sizes: '512x512', type: 'image/jpeg' }] : [] });
+    navigator.mediaSession.setActionHandler('play', () => deckPlay(DJ.currentDeck));
+    navigator.mediaSession.setActionHandler('pause', () => deckPause(DJ.currentDeck));
+    navigator.mediaSession.setActionHandler('nexttrack', () => forceSkipNext());
+  } catch(e) {}
+}
+function forceSkipNext() { getDeckAudio(DJ.currentDeck).pause(); void advanceQueue(); }
+function pruneUsedTracks() { if (DJ.usedTracks && DJ.usedTracks.size > 200) { const arr = [...DJ.usedTracks]; DJ.usedTracks = new Set(arr.slice(arr.length - 150)); } }
+
+// ─── Temp Upload (simplified) ──────────────────────
+async function uploadTempFiles(fileList) {
+  if (!fileList?.length) return;
+  const fd = new FormData();
+  for (const f of fileList) {
+    if (f.type.startsWith('audio/') || f.name.match(/\.(mp3|flac|wav|ogg|m4a|aac|opus|wma)$/i)) fd.append('files',f);
+  }
+  try {
+    const r = await fetch('/api/temp/upload',{method:'POST',body:fd});
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error||'Upload failed');
+    for (const f of data.files) {
+      const track = { type:'temp', url:f.url, title:f.title, artist:f.artist||'Unknown', album:'', duration:0, tags:[], storedName:f.storedName };
+      DJ.queue.push(track);
+      if (!DJ.started && DJ.queue.length === 1) { DJ.trackIndex = 0; startPlayback(); }
+    }
+    renderQueue();
+    setStatus(`Temp: ${data.count} files queued`);
+  } catch(e) { setStatus('Upload error: ' + e.message); }
+}
+
+// ─── Session Timer ─────────────────────────────────
+let sessionStartTime = null;
+setInterval(() => {
+  const el = document.getElementById('session-timer');
+  if (!el) return;
+  if (!DJ.started) { el.textContent = '00:00:00'; return; }
+  if (!sessionStartTime) sessionStartTime = Date.now();
+  const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+  const h = Math.floor(elapsed / 3600);
+  const m = Math.floor((elapsed % 3600) / 60);
+  const s = elapsed % 60;
+  el.textContent = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+}, 1000);
+
+console.log('⟡ AutoDJ v6 — Signal & Flow Control Room initialized');
+</script>
 </body>
 </html>
