@@ -2501,6 +2501,15 @@ app.get('/api/listeners', (req, res) => {
   }
   res.json({ count: sseClients.size, listeners });
 });
+app.post('/api/visualizer', (req, res) => {
+  const bands = req.body?.bands;
+  if (!Array.isArray(bands) || bands.length !== 6 || bands.some(v => typeof v !== 'number' || !Number.isFinite(v))) {
+    return res.status(400).json({ error: 'Expected six finite audio levels' });
+  }
+  sharedState.visualizer = { bands: bands.map(v => Math.max(0, Math.min(1, v))) };
+  broadcastEvent('visualizer', sharedState.visualizer);
+  res.json({ ok: true });
+});
 app.post('/api/nowplaying/update', (req, res) => {
   const b = req.body || {};
   if (b.nowPlaying) {

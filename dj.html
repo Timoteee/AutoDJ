@@ -2208,6 +2208,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ─── Render Loop ────────────────────────────────────
 function startRenderLoop() {
+  // Independent of metadata: never overlap slow requests or build a stale backlog.
+  let visualizerBusy = false;
+  setInterval(async () => {
+    if (!DJ.started || visualizerBusy) return;
+    visualizerBusy = true;
+    try {
+      const a = getDeckAudio('a').paused ? Array(6).fill(0) : Engine.getVULevel('a');
+      const b = getDeckAudio('b').paused ? Array(6).fill(0) : Engine.getVULevel('b');
+      await fetch('/api/visualizer', { method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({bands:a.map((v,i)=>Math.min(1,v+b[i]))}), signal:AbortSignal.timeout(1000) });
+    } catch { /* A missed frame is replaced by the next current sample. */ }
+    finally { visualizerBusy = false; }
+  }, 100);
   const canvases = { a: document.getElementById('wave-a'), b: document.getElementById('wave-b') };
   Object.entries(canvases).forEach(([k, c]) => { if (c) c.width = c.offsetWidth || 400; });
   window.addEventListener('resize', () => { Object.values(canvases).forEach(c => { if (c) c.width = c.offsetWidth; }); });

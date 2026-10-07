@@ -324,7 +324,7 @@ body {
   border-radius: 2px 2px 0 0;
   background: linear-gradient(to top, var(--signal), var(--flow));
   height: 2px; min-height: 2px;
-  transition: height 0.06s ease, opacity 0.12s ease;
+  transition: opacity 0.12s ease;
   opacity: 0.3;
 }
 .vu-bar.playing { opacity: 0.7; }
@@ -825,6 +825,14 @@ function setRelayStream(url, shouldPlay) {
 // ─── SSE ──────────────────────────────────────────────────────────────────────
 function connectSSE() {
   const es = new EventSource('/api/nowplaying/stream');
+  es.addEventListener('visualizer', e => {
+    try {
+      const data = JSON.parse(e.data);
+      if (!Array.isArray(data.bands) || data.bands.length !== 6) return;
+      state.visualizer = data;
+      visualSignalAt = Date.now();
+    } catch { /* Ignore malformed frames without disturbing playback. */ }
+  });
   es.onmessage = e => { try { applyState(JSON.parse(e.data)); } catch (error) { console.warn('State update:', error.message); } };
   es.onopen = () => fetch('/api/nowplaying').then(r => r.json()).then(applyState).catch(() => {});
 }
@@ -1063,8 +1071,10 @@ wideDisplay.addEventListener('change',positionDeckCues);
 positionDeckCues();
 
 // ─── VU Meter animation ───────────────────────────────────────────────────────
-let vuAnimId = null;
-function animateVUMeter() {
+let vuAnimId = null, visualFrameAt = 0;
+function animateVUMeter(now = performance.now()) {
+  const dt = Math.min(50, Math.max(0, now - (visualFrameAt || now - 16.67)));
+  visualFrameAt = now;
   const container = document.getElementById('vu-container');
   if (!container) return;
   const bars = container.children;
@@ -1072,23 +1082,24 @@ function animateVUMeter() {
   const signal = state.visualizer?.bands || [];
   for (let i=0;i<6;i++) {
     const target = playing ? Math.max(0,Math.min(1,Number(signal[i]) || 0)) : 0;
-    visualBands[i] += (target-visualBands[i]) * (target > visualBands[i] ? .09 : .045);
+    const tau = target > visualBands[i] ? 90 : 220;
+    visualBands[i] += (target-visualBands[i]) * (1-Math.exp(-dt/tau));
   }
-  smoothedBass += ((playing ? visualBands[0] : 0)-smoothedBass) * .15;
-  bassBaseline += (smoothedBass-bassBaseline) * .008;
+  smoothedBass += (visualBands[0]-smoothedBass) * (1-Math.exp(-dt/110));
+  bassBaseline += (smoothedBass-bassBaseline) * (1-Math.exp(-dt/2000));
   const pulse = Math.max(0,smoothedBass-bassBaseline);
   const glow = document.getElementById('album-art-glow');
   glow.style.setProperty('--backlight-opacity',reducedMotion.matches ? '.32' : String(Math.min(.8,.32 + smoothedBass * .32 + pulse * .25)));
   glow.style.animationPlayState = playing ? 'running' : 'paused';
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i];
-    if (playing && !reducedMotion.matches) {
+    if (!reducedMotion.matches) {
       const position = i / Math.max(1,bars.length-1) * 5;
       const low = Math.floor(position), high = Math.min(5,low+1);
       const level = visualBands[low] + (visualBands[high]-visualBands[low]) * (position-low);
-      const height = 2 + Math.sqrt(level) * 36;
+      const height = 2 + level * 36;
       b.style.height = height + 'px';
-      b.classList.add('playing');
+      b.classList.toggle('playing', playing);
     } else {
       b.style.height = '2px';
       b.classList.remove('playing');
