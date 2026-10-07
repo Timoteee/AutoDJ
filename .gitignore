@@ -1,4 +1,7 @@
 node_modules/
+.npm-cache/
+.tools/
+ui-*.png
 cache/
 music/
 config.json
@@ -11,3 +14,9 @@ HANDOFF.md
 .DS_Store
 Thumbs.db
 @eaDir
+
+.test-state/
+
+listening.json
+listening.json.tmp
+brag-output/

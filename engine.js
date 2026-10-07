@@ -47,6 +47,7 @@ const Engine = (() => {
     d.source.connect(d.gain);
     d.gain.connect(d.analyser);
     d.analyser.connect(audioCtx.destination);
+    if (relayDestination) { d.analyser.connect(relayDestination); d.relayConnected = true; }
     d.gain.gain.value = 1.0;
   }
 
@@ -169,39 +170,31 @@ const Engine = (() => {
   }
 
   // ─── Smart Fade Point ────────────────────────────────────────────────────────
+  const analyses = new Map();
+  async function analyzeTrack(url) {
+    if (analyses.has(url)) return analyses.get(url);
+    const job = (async () => {
+      const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+      if (!response.ok) throw new Error('Audio analysis HTTP ' + response.status);
+      const bytes = await response.arrayBuffer();
+      if (bytes.byteLength > 80000000) throw new Error('Audio too large for analysis');
+      const decoded = await audioCtx.decodeAudioData(bytes);
+      return AudioTransitions.analyze(decoded.getChannelData(0), decoded.sampleRate);
+    })();
+    analyses.set(url, job);
+    if (analyses.size > 6) analyses.delete(analyses.keys().next().value);
+    try { return await job; } catch (error) { analyses.delete(url); return null; }
+  }
   async function detectFadePoint(url, duration) {
-    const dur = Number(duration);
-    if (!url || !Number.isFinite(dur) || dur < 20) {
-      return Number.isFinite(dur) ? Math.max(dur - 8, dur * 0.8) : null;
-    }
-    try {
-      // Try to fetch the last ~20% of the file
-      const resp = await fetch(url, { headers: { Range: 'bytes=800000-1200000' } });
-      if (!resp.ok) return dur - 10;
-      const buf = await resp.arrayBuffer();
-      if (buf.byteLength < 1000) return dur - 10;
-      const decoded = await audioCtx.decodeAudioData(buf);
-      const data = decoded.getChannelData(0);
-      const chunkSec = 0.5;
-      const chunkSize = Math.round(decoded.sampleRate * chunkSec);
-      const startTime = dur * 0.7;
-      const chunks = [];
-      for (let i = 0; i < data.length - chunkSize; i += chunkSize) {
-        let rms = 0;
-        for (let j = i; j < i+chunkSize; j++) rms += data[j]*data[j];
-        chunks.push({ rms: Math.sqrt(rms/chunkSize), time: startTime + (i/decoded.sampleRate) });
-      }
-      chunks.sort((a,b) => a.rms - b.rms);
-      const quiet = chunks.slice(0,5).find(c => c.time > dur*0.65 && c.time < dur - 4);
-      return quiet ? quiet.time : dur - 10;
-    } catch(e) { return dur - 10; }
+    const profile = await analyzeTrack(url);
+    return AudioTransitions.plan(profile, null, duration).start;
   }
 
   // ─── Crossfade ───────────────────────────────────────────────────────────────
   let fadeRaf = null;
   let isFading = false;
 
-  function crossfade(fromDeck, toDeck, durationSec, onComplete) {
+  async function crossfade(fromDeck, toDeck, durationSec, onComplete) {
     if (isFading) return;
     isFading = true;
 
@@ -210,39 +203,37 @@ const Engine = (() => {
 
     ensureDeckConnected(toDeck);
     if (to.gain) to.gain.gain.value = 0;
-    if (to.audio?.paused) to.audio.play().catch(() => {});
+    try { await to.audio.play(); } catch (error) { isFading = false; throw error; }
 
     const startTime = audioCtx.currentTime;
     const endTime = startTime + durationSec;
 
-    // Use AudioContext scheduler for sample-accurate fade
-    if (from.gain) {
-      from.gain.gain.setValueAtTime(1, startTime);
-      from.gain.gain.linearRampToValueAtTime(0, endTime);
+    const outgoing = new Float32Array(128), incoming = new Float32Array(128);
+    for (let i = 0; i < 128; i++) { const [a, b] = AudioTransitions.gains(i / 127); outgoing[i] = a; incoming[i] = b; }
+    for (const [deck, curve] of [[from, outgoing], [to, incoming]]) {
+      if (deck.gain) { deck.gain.gain.cancelScheduledValues(startTime); deck.gain.gain.setValueCurveAtTime(curve, startTime, durationSec); }
     }
-    if (to.gain) {
-      to.gain.gain.setValueAtTime(0, startTime);
-      to.gain.gain.linearRampToValueAtTime(1, endTime);
-    }
-
     // Poll for crossfader UI + completion
     const poll = () => {
       const now = audioCtx.currentTime;
       const t = Math.min((now - startTime) / durationSec, 1);
       const xf = document.getElementById('crossfader');
       if (xf) xf.value = fromDeck === 'a' ? t : 1 - t;
+      const mx = document.getElementById('mixer-xfader'); if (mx && xf) mx.value = xf.value;
 
       if (t >= 1) {
+        clearInterval(fadeRaf);
         isFading = false;
+        const completedPlayback = { currentTime: from.audio?.currentTime || 0, duration: from.audio?.duration || 0 };
         if (from.audio) { from.audio.pause(); from.audio.currentTime = 0; }
         if (from.gain) from.gain.gain.value = 0;
         if (to.gain) to.gain.gain.value = 1;
-        if (onComplete) onComplete();
+        if (onComplete) onComplete(completedPlayback);
         return;
       }
-      fadeRaf = requestAnimationFrame(poll);
+
     };
-    fadeRaf = requestAnimationFrame(poll);
+    fadeRaf = setInterval(poll, 50);
   }
 
   // ─── VU Meters ───────────────────────────────────────────────────────────────
@@ -329,7 +320,7 @@ const Engine = (() => {
     try { const d = await lfm({method:'track.getinfo',artist,track});
       const info = d.track;
       return { tags:(info?.toptags?.tag||[]).slice(0,6).map(t=>t.name.toLowerCase()),
-        duration:parseInt(info?.duration)||0, album:info?.album?.title||'',
+        duration:Math.round((parseInt(info?.duration)||0) / 1000), album:info?.album?.title||'',
         image:(info?.album?.image||[]).find(i=>i.size==='extralarge')?.['#text']||'' }; }
     catch(e) { return {tags:[],duration:0,album:'',image:''}; }
   }
@@ -360,8 +351,9 @@ const Engine = (() => {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({currentTrack, history, tags, mood})
     });
-    if (!r.ok) throw new Error('AI request failed');
-    return r.json();
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'AI request failed');
+    return data;
   }
 
   // ─── SSE Broadcast ───────────────────────────────────────────────────────────
@@ -375,57 +367,43 @@ const Engine = (() => {
   }
 
   // ─── WebRTC Broadcast ─────────────────────────────────────────────────────────
-  let webrtcPC = null;
-  let webrtcLocalStream = null;
-  let webrtcPollTimer = null;
-
+  let relayDestination = null, relayTimer = null, relayBusy = false;
+  const relayPeers = new Map();
   async function startWebRTCBroadcast() {
-    if (!audioCtx) initAudioCtx();
-    if (webrtcPC) return;
-    try {
-      // Create a MediaStream from the AudioContext output
-      const dest = audioCtx.createMediaStreamDestination();
-      audioCtx.destination.disconnect();
-      audioCtx.destination.connect(dest);
-      webrtcLocalStream = dest.stream;
-
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-      webrtcPC = pc;
-      webrtcLocalStream.getTracks().forEach(t => pc.addTrack(t, webrtcLocalStream));
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await fetch('/api/webrtc/offer', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
-      });
-
-      // Poll for answer
-      webrtcPollTimer = setInterval(async () => {
-        try {
-          const r = await fetch('/api/webrtc/answer');
-          const ans = await r.json();
-          if (ans && ans.sdp && pc.remoteDescription === null) {
-            await pc.setRemoteDescription(new RTCSessionDescription(ans));
-            clearInterval(webrtcPollTimer);
-            webrtcPollTimer = null;
+    initAudioCtx();
+    if (relayTimer) return;
+    if (!relayDestination) relayDestination = audioCtx.createMediaStreamDestination();
+    for (const deck of Object.values(decks)) {
+      if (deck.analyser && !deck.relayConnected) { deck.analyser.connect(relayDestination); deck.relayConnected = true; }
+    }
+    const tick = async () => {
+      if (relayBusy) return; relayBusy = true;
+      try {
+        const response = await fetch('/api/audio/peers'); if (!response.ok) return;
+        const listeners = await response.json();
+        for (const [id, local] of relayPeers) if (!listeners.some(p => p.id === id)) { local.pc.close(); relayPeers.delete(id); }
+        for (const listener of listeners) {
+          let local = relayPeers.get(listener.id);
+          const url = '/api/audio/peers/' + listener.id;
+          if (!local) {
+            const pc = new RTCPeerConnection({ iceServers: [] }); local = { pc, ice: 0 }; relayPeers.set(listener.id, local);
+            relayDestination.stream.getTracks().forEach(track => pc.addTrack(track, relayDestination.stream));
+            const offer = await pc.createOffer();
+            await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ offer }) });
+            pc.onicecandidate = event => { if (event.candidate) fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'sender', candidate: event.candidate }) }).catch(() => {}); };
+            await pc.setLocalDescription(offer);
+            continue; // Wait for an answer to this offer, not the previous publisher's answer.
           }
-          // Poll for ICE candidates
-          const cr = await fetch('/api/webrtc/ice');
-          const cands = await cr.json();
-          for (const c of cands) {
-            if (c.candidate) pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
-          }
-        } catch (e) {}
-      }, 1000);
-    } catch (e) { console.warn('[WebRTC] broadcast start:', e); }
+          if (listener.answer && !local.pc.remoteDescription) await local.pc.setRemoteDescription(listener.answer);
+          if (local.pc.remoteDescription) for (; local.ice < listener.receiverIce.length; local.ice++) await local.pc.addIceCandidate(listener.receiverIce[local.ice]).catch(() => {});
+        }
+      } catch (error) { console.warn('[Audio relay]', error.message); } finally { relayBusy = false; }
+    };
+    relayTimer = setInterval(tick, 1000); void tick();
   }
-
   function stopWebRTCBroadcast() {
-    if (webrtcPollTimer) { clearInterval(webrtcPollTimer); webrtcPollTimer = null; }
-    if (webrtcPC) { webrtcPC.close(); webrtcPC = null; }
-    webrtcLocalStream = null;
-    fetch('/api/webrtc', { method: 'DELETE' }).catch(() => {});
+    clearInterval(relayTimer); relayTimer = null;
+    for (const local of relayPeers.values()) local.pc.close(); relayPeers.clear();
   }
 
   async function startWebRTCReceive(audioEl) {
@@ -475,7 +453,7 @@ const Engine = (() => {
   return {
     decks, initAudioCtx, setupDeckAudio, ensureDeckConnected, connectDeckAudio,
     readFileMetadata, extractID3,
-    analyzeBPM, detectFadePoint,
+    analyzeBPM, analyzeTrack, detectFadePoint,
     crossfade, getVULevel, drawWaveform,
     searchVideo,
     lfm, getSimilarArtists, getTopTracks, getSimilarTracks, getTagTracks, getTrackInfo, getArtistInfo,

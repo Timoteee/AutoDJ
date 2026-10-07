@@ -29,7 +29,12 @@ describe('SourcePipeline', () => {
     const calls = [];
     vi.stubGlobal('fetch', async (url) => {
       calls.push(String(url));
-      return { ok: true };
+      return { ok: true, json: async () => {
+        if (String(url).includes('/api/v1/search')) return [];
+        if (String(url).includes('audius')) return { data: [] };
+        if (String(url).includes('filter=videos')) return { items: [] };
+        return { results: [] };
+      }, text: async () => 'var ytInitialData = {"contents":[]};' };
     });
     const pipeline = new SourcePipeline({ sourcePriority: [] });
     await pipeline.testAll();
@@ -44,5 +49,20 @@ describe('SourcePipeline', () => {
     const report = pipeline.getHealthReport();
     expect(report.sources.invidious.total).toBeGreaterThan(0);
     expect(report.instances.some(row => row.source === 'piped' && row.url && row.status)).toBe(true);
+  });
+  test('manual tests retry open circuits and reject HTML API responses', async () => {
+    const pipeline = new SourcePipeline({});
+    const url = pipeline.getHealthyInstances('invidious')[0];
+    for (let i = 0; i < 3; i++) pipeline.markInstance(url, false);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => { throw new Error('HTML instead of JSON'); }, text: async () => '<html>Access denied</html>' }));
+    const report = await pipeline.testAll({ force: true });
+    expect(report.invidious[url].status).toBe('failed');
+    expect(report.invidious[url].error).toContain('HTML');
+    expect(fetch.mock.calls.some(([request]) => String(request).startsWith(url))).toBe(true);
+  });
+  test('untested instances are not reported as up', () => {
+    const report = new SourcePipeline({}).getHealthReport();
+    expect(report.sources.youtube.healthy).toBe(0);
+    expect(report.instances.find(row => row.source === 'youtube').status).toBe('untested');
   });
 });

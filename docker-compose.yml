@@ -23,10 +23,12 @@ services:
     volumes:
       - ./music:/music:ro
       - ./cache:/app/cache
+      - autodj_state:/app/state
       - ./config.json:/app/config.json
       - metube_downloads:/metube-downloads:ro
     environment:
       - PORT=3000
+      - STATE_DIR=/app/state
       - MUSIC_DIR=/music
       - METUBE_URL=http://metube:8081
       - METUBE_DOWNLOADS_DIR=/metube-downloads
@@ -39,6 +41,7 @@ services:
       - autodj-net
 
 volumes:
+  autodj_state:
   metube_downloads:
 
 networks:
