@@ -2325,7 +2325,7 @@ function playQueueTrack(idx) {
   Engine.initAudioCtx();
   DJ.started = true;
   const audio = getDeckAudio(DJ.currentDeck);
-  if (audio) { audio.pause(); audio.src = ''; }
+  if (audio) audio.pause();
   DJ.trackIndex = idx;
   Engine.cancelCrossfade();
   syncCrossfaderToDeck(DJ.currentDeck);
@@ -2568,21 +2568,35 @@ async function discoverSearch() {
           <div>${sourceBadge(it._source)}${it._source === 'youtube' ? ' · Audio via MeTube / worker / proxy' : ''}</div>
         </div>
         <div class="overlay">
-          <button class="btn btn-xs btn-signal" onclick="quickQueue('${payload}')">▶ Play</button>
-          <button class="btn btn-xs btn-flow" onclick="quickQueueB('${payload}')">Cue B</button>
+          <button class="btn btn-xs btn-signal" data-discovery-play="${payload}">▶ Play</button>
+          <button class="btn btn-xs btn-flow" data-discovery-cue="${payload}">Cue B</button>
         </div>
       </div>`;
     }).join('');
+    box.querySelectorAll('[data-discovery-play]').forEach(button => button.addEventListener('click', () => quickQueue(button.dataset.discoveryPlay, true)));
+    box.querySelectorAll('[data-discovery-cue]').forEach(button => button.addEventListener('click', () => quickQueueB(button.dataset.discoveryCue)));
   } catch(e) {
     box.innerHTML = `<div class="col-span-full text-center text-signal py-8">${escHtml(e.message)}</div>`;
   }
 }
 
-function quickQueue(payload) {
-  try { const p = JSON.parse(decodeURIComponent(payload)); DJ.queue.push({type:'online',youtubeId:p.videoId,videoId:p.videoId,title:p.title||'Unknown',artist:p.author||'Unknown',_source:p._source||'',_instance:p._instance||'',artwork:p.artwork||'',duration:p.lengthSeconds?normalizeClientDuration(p.lengthSeconds):0,_badDuration:!!p._badDuration}); renderQueue(); setStatus(`Queued: ${p.title}`); } catch(e) {}
+function quickQueue(payload, play = false) {
+  try {
+    const p = JSON.parse(decodeURIComponent(payload));
+    if (!p.videoId) throw new Error('Search result has no audio source');
+    let index = DJ.queue.findIndex(track => track.youtubeId === p.videoId);
+    if (index < 0) {
+      DJ.queue.push({type:'online',youtubeId:p.videoId,videoId:p.videoId,title:p.title||'Unknown',artist:p.author||'Unknown',_source:p._source||'',_instance:p._instance||'',artwork:p.artwork||'',duration:p.lengthSeconds?normalizeClientDuration(p.lengthSeconds):0,_badDuration:!!p._badDuration});
+      index = DJ.queue.length - 1;
+    }
+    if (play) playQueueTrack(index);
+    else { renderQueue(); setStatus(`Queued: ${p.title}`); }
+    return index;
+  } catch(e) { setStatus('Cannot queue song: ' + e.message); return -1; }
 }
 function quickQueueB(payload) {
-  quickQueue(payload);
+  const index = quickQueue(payload);
+  if (index >= 0) void cueQueueTrack('b', index);
 }
 
 function setMood(mood) {
