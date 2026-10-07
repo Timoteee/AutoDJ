@@ -11,6 +11,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <title>AutoDJ — Now Playing</title>
+<link rel="stylesheet" href="/css/shared.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Syncopate:wght@400;700&family=DM+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
 <style>
@@ -54,8 +55,10 @@
   --glow-r: rgba(231,76,60,0.1);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { height: 100%; overflow: hidden; background: var(--bg); }
-body { font-family: 'DM Mono', monospace; display: flex; flex-direction: column; height: 100vh; position: relative; }
+html, body { height: 100%; background: var(--bg); }
+body { font-family: 'DM Mono', monospace; display: flex; flex-direction: column; min-height: 100vh; position: relative; overflow-y: auto; overflow-x: hidden; }
+body::-webkit-scrollbar { width: 4px; }
+body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 *, *::before, *::after { transition: background-color var(--transition), color var(--transition), border-color var(--transition), box-shadow var(--transition); }
 /* BG */
@@ -70,7 +73,8 @@ body { font-family: 'DM Mono', monospace; display: flex; flex-direction: column;
 @keyframes drift { from { transform: translate(0,0) scale(1); } to { transform: translate(40px,30px) scale(1.1); } }
 
 /* Layout */
-.display { position: relative; z-index: 11; display: flex; flex-direction: column; height: 100vh; padding: 36px 56px 80px; }
+.display { position: relative; z-index: 11; display: flex; flex-direction: column; min-height: 100vh; padding: 36px 56px 80px; }
+@media (max-width: 900px) { .display { padding: 24px 24px 60px; } }
 
 /* Header */
 .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0; }
@@ -117,9 +121,12 @@ body { font-family: 'DM Mono', monospace; display: flex; flex-direction: column;
   background: var(--bg);
 }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.art-inner { animation: spin-rev 30s linear infinite; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-@keyframes spin-rev { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
-#art-img { width: 100%; height: 100%; object-fit: cover; display: none; }
+.art-inner { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: relative; border-radius: 50%; overflow: hidden; }
+#art-img { width: 100%; height: 100%; object-fit: cover; display: none; position: relative; z-index: 1; }
+/* Vinyl label effect: small circle hint in center */
+#art-img[style*="block"] ~ .vinyl-label { display: block; }
+.vinyl-label { display: none; position: absolute; width: 30%; height: 30%; border-radius: 50%; background: var(--bg); border: 2px solid rgba(255,255,255,0.06); top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 2; pointer-events: none; }
+.vinyl-label::after { content: ''; position: absolute; width: 28%; height: 28%; border-radius: 50%; background: var(--surface); top: 50%; left: 50%; transform: translate(-50%,-50%); }
 .no-art-rings { position: absolute; inset: 0; }
 .ring { position: absolute; border: 1px solid rgba(0,229,255,0.08); border-radius: 50%; }
 
@@ -162,9 +169,9 @@ body { font-family: 'DM Mono', monospace; display: flex; flex-direction: column;
 .marquee-bar { position: fixed; bottom: 0; left: 0; right: 0;
   background: linear-gradient(to right, rgba(0,229,255,0.08), rgba(255,51,102,0.08));
   border-top: 1px solid rgba(255,255,255,0.06); padding: 10px 0; overflow: hidden; z-index: 10; height: 38px; }
-.marquee-track { display: flex; gap: 80px; animation: marquee 40s linear infinite; white-space: nowrap; }
+.marquee-track { display: flex; gap: 80px; animation: marquee 40s linear infinite; white-space: nowrap; will-change: transform; transform: translateZ(0); }
 .marquee-track:hover { animation-play-state: paused; }
-@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes marquee { from { transform: translate3d(0,0,0); } to { transform: translate3d(-50%,0,0); } }
 .marquee-msg { font-size: 12px; color: var(--text); letter-spacing: 1px; flex-shrink: 0; }
 .marquee-msg span { color: var(--accent); margin-right: 4px; }
 
@@ -178,6 +185,10 @@ body { font-family: 'DM Mono', monospace; display: flex; flex-direction: column;
 #lyrics-content .lrc-line { transition: color 0.2s, opacity 0.2s; opacity: 0.55; }
 #lyrics-content .lrc-line.active { color: var(--green); opacity: 1; text-shadow: 0 0 12px rgba(0,255,136,0.35); }
 
+/* ─── Tablet ─────────────────────────────── */
+@media (max-width: 1100px) {
+  .art-area { width: min(180px, 18vw); right: 24px; }
+}
 /* ─── Mobile Responsive ────────────────────────── */
 @media (max-width: 768px) {
   .display { padding: 16px 20px 60px; }
@@ -186,8 +197,6 @@ body { font-family: 'DM Mono', monospace; display: flex; flex-direction: column;
   .big-artist { font-size: clamp(14px, 3vw, 20px); }
   .big-album { font-size: clamp(11px, 2vw, 14px); }
   .art-area { position: relative; right: auto; top: auto; transform: none; width: 120px; margin: 0 auto 16px; }
-  .art-circle { animation: none; }
-  .art-inner { animation: none; }
   .header { flex-direction: column; align-items: center; text-align: center; }
   .current-time { font-size: 18px; }
   .next-up-block { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
@@ -213,6 +222,7 @@ body { font-family: 'DM Mono', monospace; display: flex; flex-direction: column;
   <div class="art-circle" id="art-circle">
     <div class="art-inner">
       <img id="art-img" alt="Album Art">
+      <div class="vinyl-label"></div>
       <div class="no-art-rings" id="no-art-rings">
         <div class="ring" style="inset:8%"></div>
         <div class="ring" style="inset:22%"></div>
@@ -388,12 +398,6 @@ relayAudio.addEventListener('canplay', () => {
   if (audioEnabled && relayNeedsSeek && state.isPlaying) {
     relayNeedsSeek = false;
     seekRelayToBaseline();
-  }
-});
-relayAudio.addEventListener('canplay', () => {
-  if (audioEnabled && relayNeedsSeek && state.isPlaying) {
-    relayNeedsSeek = false;
-    seekRelayToBaseline();
     relayAudio.play().catch(() => {});
   }
 });
@@ -449,13 +453,13 @@ function applyState(data) {
   if (data.command === 'play') {
     const url = data.url || (data.nowPlaying?.youtubeId ? `/api/cache/stream/${encodeURIComponent(data.nowPlaying.youtubeId)}` : '');
     if (url) {
-      currentStreamUrl = url;
-      setRelayStream(url, true);
       if (!audioEnabled) {
         audioEnabled = true;
         const btn = document.getElementById('audio-listen-btn');
         if (btn) { btn.textContent = '🔊 Audio On'; btn.classList.add('playing'); }
       }
+      currentStreamUrl = url;
+      setRelayStream(url, true);
     }
   } else if (data.command === 'stop') {
     relayAudio.pause();
@@ -465,12 +469,14 @@ function applyState(data) {
     audioEnabled = false;
   } else if (!data.command && data.sessionActive && data.nowPlaying && data.nowPlaying.youtubeId && !relayAudio.src) {
     // Initial load when server has active session — auto-start audio
+    if (!audioEnabled) {
+      audioEnabled = true;
+      const btn = document.getElementById('audio-listen-btn');
+      if (btn) { btn.textContent = '🔊 Audio On'; if (data.isPlaying) btn.classList.add('playing'); }
+    }
     const url = `/api/cache/stream/${encodeURIComponent(data.nowPlaying.youtubeId)}`;
     currentStreamUrl = url;
     setRelayStream(url, data.isPlaying);
-    audioEnabled = true;
-    const btn = document.getElementById('audio-listen-btn');
-    if (btn) { btn.textContent = '🔊 Audio On'; if (data.isPlaying) btn.classList.add('playing'); }
   }
 
   // Derive nowPlaying from audible deck if null but deck data exists
@@ -626,7 +632,11 @@ setInterval(updateProgress, 300);
 // ─── Marquee ──────────────────────────────────────────────────────────────────
 let builtMessages = [];
 let rssItems = [];
+let rssFetchTimer = 0;
 async function fetchRssItems() {
+  const now = Date.now();
+  if (now - rssFetchTimer < 120000) return; // throttle: max once per 2 min
+  rssFetchTimer = now;
   try {
     const cfg = state.config || {};
     const url = cfg.rssFeedUrl || '';
@@ -750,16 +760,17 @@ function updateLrcHighlight(elapsed) {
       el.style.opacity = '';
     }
   });
-  // Auto-scroll to active line
+  // Auto-scroll to active line (panel-relative, no page scroll stealing)
   if (active >= 0 && lines[active]) {
     const panel = document.getElementById('lyrics-panel');
     if (panel) {
-      const lineTop = lines[active].offsetTop;
-      const panelScrollTop = panel.scrollTop;
-      const panelHeight = panel.clientHeight;
-      const lineHeight = lines[active].offsetHeight || 24;
-      if (lineTop < panelScrollTop + lineHeight || lineTop > panelScrollTop + panelHeight - lineHeight * 2) {
-        lines[active].scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const panelRect = panel.getBoundingClientRect();
+      const lineRect = lines[active].getBoundingClientRect();
+      const lineH = lines[active].offsetHeight || 24;
+      const relTop = lineRect.top - panelRect.top + panel.scrollTop;
+      const centerTarget = relTop - (panel.clientHeight / 2) + (lineH / 2);
+      if (Math.abs(panel.scrollTop - centerTarget) > lineH) {
+        panel.scrollTop = Math.max(0, centerTarget);
       }
     }
   }
@@ -774,7 +785,7 @@ async function fetchLyrics(artist, title, duration, youtubeId) {
   try {
     let url = `/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
     let d = duration ? Math.round(parseFloat(duration)) : 0;
-    if (d > 120 && d < 1e12) d = Math.round(d / 1000);
+      if (d > 1e11) d = Math.round(d / 1000);
     if (d < 10) d = 0;
     if (d) url += `&duration=${d}`;
     const r = await fetch(url);

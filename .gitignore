@@ -3,6 +3,7 @@ cache/
 music/
 config.json
 queue.json
+HANDOFF.md
 *.log
 .DS_Store
 Thumbs.db
