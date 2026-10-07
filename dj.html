@@ -748,7 +748,7 @@ input[type=range].xfader::-webkit-slider-thumb {
             <div class="deck-label deck-a-color flex items-center gap-2">
               <span class="live-dot a" id="live-dot-a" style="display:none"></span>
               <span>⬡ Deck A</span>
-              <span class="ml-auto text-[0.5rem] text-[var(--text-secondary)]" id="pitch-a">+0.0%</span>
+              <span class="ml-auto text-[0.5rem] text-[var(--text-secondary)]" id="pitch-a" title="Playback pitch adjustment; Smart Fade preserves pitch">Pitch +0.0%</span>
             </div>
             <div class="track-meta mb-3">
               <div class="flex gap-3">
@@ -819,7 +819,7 @@ input[type=range].xfader::-webkit-slider-thumb {
             <div class="deck-label deck-b-color flex items-center gap-2">
               <span class="live-dot b" id="live-dot-b" style="display:none"></span>
               <span>⬡ Deck B</span>
-              <span class="ml-auto text-[0.5rem] text-[var(--text-secondary)]" id="pitch-b">+0.0%</span>
+              <span class="ml-auto text-[0.5rem] text-[var(--text-secondary)]" id="pitch-b" title="Playback pitch adjustment; Smart Fade preserves pitch">Pitch +0.0%</span>
             </div>
             <div class="track-meta mb-3">
               <div class="flex gap-3">
@@ -1781,13 +1781,16 @@ async function broadcastDeckState(extra = {}) {
 }
 
 let playbackStartPromise = null;
+let sessionGeneration = 0;
 function startPlayback() {
   Engine.initAudioCtx();
   if (playbackStartPromise) return playbackStartPromise;
-  playbackStartPromise = runClientPlaybackStart().finally(() => { playbackStartPromise = null; });
+  const generation = sessionGeneration;
+  playbackStartPromise = runClientPlaybackStart().finally(() => { if (generation === sessionGeneration) playbackStartPromise = null; });
   return playbackStartPromise;
 }
 async function runClientPlaybackStart() {
+  const generation = sessionGeneration;
   Engine.initAudioCtx();
   Engine.ensureDeckConnected('a');
   Engine.ensureDeckConnected('b');
@@ -1803,6 +1806,7 @@ async function runClientPlaybackStart() {
       });
       const r = await fetch('/api/playback/start', { method: 'POST' });
       const data = await r.json();
+      if (generation !== sessionGeneration) return;
       DJ.waitingForPreload = false;
       if (!r.ok || data.error) {
         setStatus(data.error || 'Could not start playback');
@@ -1844,6 +1848,7 @@ function waitForAudioReady(audio, timeoutMs = 30000) {
 
 async function loadTrackOnDeck(deck, track, opts = {}) {
   if (!track) return;
+  const generation = sessionGeneration;
   track._listenEventId = AutoDJUI.createEventId();
   track._listeningRecorded = false;
   Engine.decks[deck].track = track;
@@ -1865,6 +1870,7 @@ async function loadTrackOnDeck(deck, track, opts = {}) {
         body: JSON.stringify({ videoId: track.youtubeId, title: track.title, artist: track.artist, _source: track._source || '', _instance: track._instance || '' })
       });
       const data = await r.json();
+      if (generation !== sessionGeneration || Engine.decks[deck].track !== track) return false;
       if (r.ok && data.url) {
         track._failed = false;
         streamUrl = data.url;
@@ -1907,9 +1913,11 @@ async function loadTrackOnDeck(deck, track, opts = {}) {
   void Engine.startWebRTCBroadcast();
   applyXfaderGains();
   try { await waitForAudioReady(audio); } catch (error) {
+    if (generation !== sessionGeneration) return false;
     track._failed = true; if (!opts.prepareOnly) DJ.started = false;
     setStatus('Audio unavailable: ' + error.message + '. Track kept for retry.'); renderQueue(); return false;
   }
+  if (generation !== sessionGeneration || Engine.decks[deck].track !== track) return false;
   if (!opts.prepareOnly) {
     const playPromise = audio.play();
     if (playPromise) playPromise.then(() => updateMediaSession(track)).catch(e => {
@@ -2125,12 +2133,13 @@ function updateDeckUI(deck) {
 // ─── Crossfade ──────────────────────────────────────
 let preparingNext = null;
 async function prepareUpcomingDeck() {
+  const generation = sessionGeneration;
   if (!DJ.started || preparingNext || Engine.isFading || DJ.fadeLock) return;
   const next = DJ.queue[DJ.trackIndex + 1]; if (!next || next._failed) return;
   const deck = getNextDeck();
   if (Engine.decks[deck].track === next && getDeckAudio(deck).readyState >= 3) return;
   preparingNext = next;
-  try { await loadTrackOnDeck(deck, next, { prepareOnly: true }); } finally { preparingNext = null; }
+  try { await loadTrackOnDeck(deck, next, { prepareOnly: true }); } finally { if (generation === sessionGeneration) preparingNext = null; }
 }
 async function triggerCrossfade(plan) {
   if (Engine.isFading || DJ.fadeLock) return;
@@ -2318,7 +2327,7 @@ function playQueueTrack(idx) {
   const audio = getDeckAudio(DJ.currentDeck);
   if (audio) { audio.pause(); audio.src = ''; }
   DJ.trackIndex = idx;
-  Engine.isFading = false;
+  Engine.cancelCrossfade();
   syncCrossfaderToDeck(DJ.currentDeck);
   loadTrackOnDeck(DJ.currentDeck, DJ.queue[idx]);
   renderQueue();
@@ -2355,15 +2364,32 @@ function clearQueue() {
 }
 function clearAllAndReset() {
   if (!confirm('Reset everything?')) return;
-  deckStop('a'); deckStop('b');
+  sessionGeneration++;
+  Engine.cancelCrossfade();
+  clearTimeout(_persistTimer); clearTimeout(autoQueueTimer); autoQueueTimer = null;
+  playbackStartPromise = null; preparingNext = null;
+  DJ.fadeLock = false; DJ.discovering = false; DJ.waitingForPreload = false;
+  document.getElementById('fade-btn').classList.remove('opacity-50');
+  for (const deck of ['a','b']) {
+    const audio = getDeckAudio(deck);
+    audio.pause(); audio.removeAttribute('src'); audio.load();
+    Object.assign(Engine.decks[deck], { track:null, cuePoint:0, fadePoint:null, bpm:null });
+    document.getElementById('title-' + deck).textContent = '—';
+    document.getElementById('artist-' + deck).textContent = '—';
+    document.getElementById('tags-' + deck).textContent = '';
+    document.getElementById('bpm-display-' + deck).textContent = '—';
+    updateDeckArtwork(deck, null); setDeckLive(deck, false);
+  }
   DJ.queue = [];
   DJ.trackIndex = -1;
   DJ.history = [];
   DJ.usedTracks = new Set();
   DJ.started = false;
   DJ.currentDeck = 'a';
+  syncCrossfaderToDeck('a');
   fetch('/api/queue/clear', { method: 'POST' }).catch(() => {});
   renderQueue();
+  void broadcastDeckState();
   setStatus('Session reset');
 }
 
@@ -2392,6 +2418,7 @@ async function startAutoDiscover() {
 }
 async function fetchMoreOnline() {
   if (DJ.discovering) return;
+  const generation = sessionGeneration;
   const seed = discoverySeed();
   if (!seed.artist) { setStatus('Queue a track or choose an artist for suggestions'); return; }
   DJ.discovering = true;
@@ -2399,16 +2426,18 @@ async function fetchMoreOnline() {
     const response = await AutoDJUI.requestJSON('/api/discovery/recommendations?' + new URLSearchParams({ ...seed, count: 8 }), { signal: AbortSignal.timeout(25000) });
     let added = 0;
     for (const candidate of response.recommendations || []) {
+      if (generation !== sessionGeneration) return;
       if (added >= 4 || (DJ.config.queueLimit > 0 && DJ.queue.length >= DJ.config.queueLimit)) break;
       if (await enqueueOnlineTrack(candidate)) added++;
     }
     setStatus(added ? 'Autoqueue added ' + added + ' tracks (' + response.source + ')' : 'No new suggestions after duplicate filtering');
     renderQueue();
   } catch (error) { setStatus('Autoqueue failed: ' + error.message); }
-  finally { DJ.discovering = false; }
+  finally { if (generation === sessionGeneration) DJ.discovering = false; }
 }
 
 async function enqueueOnlineTrack(t) {
+  const generation = sessionGeneration;
   if (!t.artist || !t.title) return false;
   const key = `${dedupKey(t.artist)}::${dedupKey(t.title)}`;
   if (DJ.usedTracks.has(key)) return false;
@@ -2416,9 +2445,11 @@ async function enqueueOnlineTrack(t) {
   if (isInQueue(t.artist, t.title)) return false;
   setStatus(`Searching: ${t.title} — ${t.artist}`);
   const result = await Engine.searchVideo(t.artist, t.title);
+  if (generation !== sessionGeneration) return false;
   if (!result || !result.videoId) { setStatus(`No source for: ${t.artist} — ${t.title}`); return false; }
   let info = { tags: [], album: '', image: '', duration: 0 };
   if (DJ.hasLastfm) { try { info = await Engine.getTrackInfo(t.artist, t.title); } catch(e) {} }
+  if (generation !== sessionGeneration) return false;
   const fromSearch = result.lengthSeconds != null ? normalizeClientDuration(result.lengthSeconds) : 0;
   const maxMin = parseInt(document.getElementById('cfg-max-track')?.value) || 0;
   const durSec = info.duration || t.duration || fromSearch || 0;

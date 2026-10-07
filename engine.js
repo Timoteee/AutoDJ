@@ -193,10 +193,19 @@ const Engine = (() => {
   // ─── Crossfade ───────────────────────────────────────────────────────────────
   let fadeRaf = null;
   let isFading = false;
+  let fadeGeneration = 0;
+  function cancelCrossfade() {
+    fadeGeneration++;
+    clearInterval(fadeRaf); fadeRaf = null; isFading = false;
+    for (const deck of Object.values(decks)) {
+      if (deck.gain && audioCtx) deck.gain.gain.cancelScheduledValues(audioCtx.currentTime);
+    }
+  }
 
   async function crossfade(fromDeck, toDeck, durationSec, onComplete) {
     if (isFading) return;
     isFading = true;
+    const generation = ++fadeGeneration;
 
     const from = decks[fromDeck];
     const to = decks[toDeck];
@@ -204,6 +213,7 @@ const Engine = (() => {
     ensureDeckConnected(toDeck);
     if (to.gain) to.gain.gain.value = 0;
     try { await to.audio.play(); } catch (error) { isFading = false; throw error; }
+    if (generation !== fadeGeneration) return;
 
     const startTime = audioCtx.currentTime;
     const endTime = startTime + durationSec;
@@ -454,7 +464,7 @@ const Engine = (() => {
     decks, initAudioCtx, setupDeckAudio, ensureDeckConnected, connectDeckAudio,
     readFileMetadata, extractID3,
     analyzeBPM, analyzeTrack, detectFadePoint,
-    crossfade, getVULevel, drawWaveform,
+    crossfade, cancelCrossfade, getVULevel, drawWaveform,
     searchVideo,
     lfm, getSimilarArtists, getTopTracks, getSimilarTracks, getTagTracks, getTrackInfo, getArtistInfo,
     aiRecommend, broadcastNowPlaying,
