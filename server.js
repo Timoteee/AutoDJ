@@ -2510,7 +2510,7 @@ app.post('/api/nowplaying/update', (req, res) => {
     if (el < 2) log('NP', b.primaryDeck || '—', `▶ ${b.nowPlaying.title || ''}`);
     else if (dur > 0 && dur - el < 3) log('NP', b.primaryDeck || '—', `■ ${b.nowPlaying.title || ''}`);
   }
-  for (const key of ['nowPlaying', 'nextUp', 'primaryDeck', 'decks', 'genre', 'isPlaying', 'isFading', 'messages']) if (Object.hasOwn(b, key)) sharedState[key] = b[key];
+  for (const key of ['nowPlaying', 'nextUp', 'primaryDeck', 'decks', 'genre', 'isPlaying', 'isFading', 'messages', 'visualizer']) if (Object.hasOwn(b, key)) sharedState[key] = b[key];
   broadcastState();
   res.json({ok:true});
 });

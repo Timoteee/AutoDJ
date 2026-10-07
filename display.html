@@ -208,15 +208,18 @@ body {
   position: relative;
   width: min(300px, 28vw, 40vh);
   aspect-ratio: 1; border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow: visible; isolation: isolate;
 }
 .album-art-glow {
   position: absolute; inset: -40px; z-index: -1;
   border-radius: 50%; filter: blur(60px);
-  background: var(--flow-glow);
-  opacity: 0; transition: opacity 1.2s ease;
+  background: radial-gradient(ellipse at 25% 35%, rgb(var(--art-color-a, 166 230 255) / .75), transparent 65%), radial-gradient(ellipse at 75% 65%, rgb(var(--art-color-b, 255 179 172) / .65), transparent 65%);
+  opacity: 0; transition: opacity 1.5s ease;
+  pointer-events:none; animation: backlightDrift 18s ease-in-out infinite alternate;
 }
-.album-art-glow.active { opacity: 0.6; }
+.album-art-glow.active { opacity: var(--backlight-opacity, .14); }
+@keyframes backlightDrift { from { transform: translate(-2%, -1%) rotate(-4deg); } to { transform: translate(2%, 1%) rotate(4deg); } }
+@media(prefers-reduced-motion:reduce) { .album-art-glow { animation:none; transition:none; } .bg-orb { animation:none; } }
 #album-art {
   width: 100%; height: 100%; object-fit: cover;
   display: block; border-radius: var(--radius-lg);
@@ -235,7 +238,7 @@ body {
 
 /* ─── Track info ───────────────────────────────────────────────────────── */
 .track-section {
-  flex: 1; max-width: 560px;
+  flex: 1; min-width:0; max-width: 640px;
   display: flex; flex-direction: column; justify-content: center;
 }
 .genre-tag {
@@ -256,9 +259,9 @@ body {
 #track-title {
   font-family: 'Space Grotesk', sans-serif;
   font-size: clamp(28px, 4vw, 56px); font-weight: 700;
-  color: var(--text-primary); line-height: 1.05;
-  margin-bottom: 6px; letter-spacing: -0.02em;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-primary); line-height: 1.15; flex-shrink:0;
+  margin-bottom: 6px; padding-bottom:6px; letter-spacing: -0.02em;
+  white-space: normal; overflow-wrap:anywhere;
   text-shadow: 0 2px 20px rgba(0,0,0,0.3);
 }
 #track-artist {
@@ -487,6 +490,11 @@ body {
 #audio-main { display: none; }
 
 /* ─── Responsive tweaks ────────────────────────────────────────────────── */
+@media(max-width:900px), (max-height:700px) {
+  body { overflow-y:auto; }
+  .app { height:auto; min-height:100dvh; overflow:visible; }
+  .main-area { margin:20px 0; }
+}
 @media (max-width: 860px) {
   .main-area { flex-direction: column; gap: 20px; }
   .art-section { order: -1; }
@@ -811,6 +819,7 @@ function connectSSE() {
 connectSSE();
 
 function applyState(data) {
+  if (data.visualizer) visualSignalAt = Date.now();
   const prevTrackId = currentTrackId;
   state = { ...state, ...data };
   
@@ -884,6 +893,7 @@ function applyState(data) {
 
   if (np) {
     setText('track-title', np.title || '—');
+    requestAnimationFrame(fitTrackTitle);
     setText('track-artist', np.artist || '—');
     setText('track-album', np.album || '');
     // Listener count
@@ -900,6 +910,7 @@ function applyState(data) {
     if (artwork) {
       artImg.onerror = () => { artImg.style.display = 'none'; placeholder.classList.add('visible'); glow.classList.remove('active'); };
       artImg.src = artwork;
+      void sampleArtworkColors(artwork);
       artImg.style.display = 'block';
       placeholder.classList.remove('visible');
       glow.classList.add('active');
@@ -997,17 +1008,58 @@ function updateProgress() {
 
 setInterval(updateProgress, 300);
 
+// ─── Palette and measured mixer energy ───────────────────────────────────────
+let paletteRequest = 0, visualSignalAt = 0, smoothedBass = 0;
+const visualBands = new Array(6).fill(0);
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+async function sampleArtworkColors(url) {
+  const request = ++paletteRequest;
+  try {
+    const image = new Image(); image.src = '/api/artwork/proxy?url=' + encodeURIComponent(url);
+    await image.decode(); if (request !== paletteRequest) return;
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 16;
+    const context = canvas.getContext('2d', { willReadFrequently:true });
+    context.drawImage(image,0,0,16,16);
+    const pixels = context.getImageData(0,0,16,16).data, buckets = new Map();
+    for (let i=0;i<pixels.length;i+=4) {
+      const rgb = [pixels[i],pixels[i+1],pixels[i+2]];
+      if (Math.max(...rgb)<35 || Math.min(...rgb)>235) continue;
+      const key = rgb.map(v=>Math.floor(v/48)).join(',');
+      const bucket = buckets.get(key) || { count:0, sum:[0,0,0] };
+      bucket.count++; rgb.forEach((v,j)=>bucket.sum[j]+=v); buckets.set(key,bucket);
+    }
+    const colors = [...buckets.values()].sort((a,b)=>b.count-a.count).slice(0,2).map(b=>b.sum.map(v=>Math.round(v/b.count)).join(' '));
+    const glow = document.getElementById('album-art-glow');
+    glow.style.setProperty('--art-color-a',colors[0] || '166 230 255');
+    glow.style.setProperty('--art-color-b',colors[1] || colors[0] || '255 179 172');
+  } catch { /* Keep the neutral palette if artwork cannot be sampled. */ }
+}
+function fitTrackTitle() {
+  const title = document.getElementById('track-title'); title.style.fontSize = '';
+  let size = parseFloat(getComputedStyle(title).fontSize);
+  while (size > 16 && title.getBoundingClientRect().height > size * 1.15 * 3.2) { size--; title.style.fontSize = size + 'px'; }
+}
+new ResizeObserver(fitTrackTitle).observe(document.querySelector('.track-section'));
+document.fonts.ready.then(fitTrackTitle);
+
 // ─── VU Meter animation ───────────────────────────────────────────────────────
 let vuAnimId = null;
 function animateVUMeter() {
   const container = document.getElementById('vu-container');
   if (!container) return;
   const bars = container.children;
-  const playing = state.isPlaying;
+  const playing = state.isPlaying && Date.now() - visualSignalAt < 2500 && !document.hidden;
+  const signal = state.visualizer?.bands || [];
+  for (let i=0;i<6;i++) {
+    const target = playing ? Math.max(0,Math.min(1,Number(signal[i]) || 0)) : 0;
+    visualBands[i] += (target-visualBands[i]) * .08;
+  }
+  smoothedBass += ((playing ? visualBands[0] : 0)-smoothedBass) * .025;
+  document.getElementById('album-art-glow').style.setProperty('--backlight-opacity',reducedMotion.matches ? '.14' : String(.12 + smoothedBass * .2));
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i];
-    if (playing) {
-      const height = Math.random() * 28 + 4;
+    if (playing && !reducedMotion.matches) {
+      const height = 2 + visualBands[Math.min(5,Math.floor(i / Math.ceil(bars.length/6)))] * 26;
       b.style.height = height + 'px';
       b.classList.add('playing');
     } else {
@@ -1066,18 +1118,6 @@ buildMarquee(['🎵 AutoDJ warming up...', '🔊 Open DJ Console to begin', '�
 setInterval(async () => { await fetchRssItems(); buildMarquee(state.messages || []); }, 300000);
 
 // ─── Art pulse on track change ────────────────────────────────────────────────
-let lastTitle = '';
-setInterval(() => {
-  const title = state.nowPlaying?.title || '';
-  if (title !== lastTitle) {
-    lastTitle = title;
-    const glow = document.getElementById('album-art-glow');
-    if (glow) {
-      glow.style.opacity = '0.9';
-      setTimeout(() => glow.classList.contains('active') && (glow.style.opacity = ''), 800);
-    }
-  }
-}, 1000);
 
 // ─── Fallback poll ────────────────────────────────────────────────────────────
 setInterval(async () => {

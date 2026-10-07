@@ -653,6 +653,7 @@ input[type=range].xfader::-webkit-slider-thumb {
         <svg width="20" height="20" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg>
         For You
       </a>
+      <a href="#" class="sidebar-link" data-page="liked"><svg width="20" height="20" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg>Liked Songs</a>
       <a href="#" class="sidebar-link" data-page="downloads">
         <svg width="20" height="20" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;min-width:0;max-width:20px;min-height:0;max-height:20px;flex:0 0 20px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Downloads <span id="dl-count-sidebar" class="dl-badge-count" style="display:none">0</span>
@@ -952,6 +953,11 @@ input[type=range].xfader::-webkit-slider-thumb {
         <p class="text-[var(--text-secondary)] mb-4">Music inspired by what you finish listening to.</p>
         <button class="btn mb-4" onclick="loadListeningRecommendations()">Refresh suggestions</button>
         <div id="listening-recommendations" aria-live="polite"></div>
+      </section>
+      <section id="page-liked" class="page-section p-4">
+        <div class="section-title">Liked Songs</div>
+        <p class="text-[var(--text-secondary)] mb-4">Your saved favorites, ready to play again.</p>
+        <div id="liked-songs-list" aria-live="polite"></div>
       </section>
       <section id="page-discovery" class="page-section p-4">
         <!-- Hero Search -->
@@ -1272,6 +1278,7 @@ function showPage(name) {
   if (name === 'settings') { fetchLogs(); refreshV7Status(); }
   if (name === 'failed') { refreshFailed(); }
   if (name === 'recommendations') { void loadListeningRecommendations(); }
+  if (name === 'liked') { void loadLikedSongs(); }
 }
 
 let listeningRecommendations = [];
@@ -1759,6 +1766,8 @@ async function broadcastDeckState(extra = {}) {
   const dur = t ? (t.duration || audio?.duration || 0) : 0;
   const elapsed = audio?.currentTime || 0;
   const playing = DJ.started && isAnyDeckPlaying();
+  const vuA = getDeckAudio('a').paused ? new Array(6).fill(0) : Engine.getVULevel('a');
+  const vuB = getDeckAudio('b').paused ? new Array(6).fill(0) : Engine.getVULevel('b');
   const payload = {
     nowPlaying: t ? {
       title: t.title, artist: t.artist, album: t.album,
@@ -1774,6 +1783,7 @@ async function broadcastDeckState(extra = {}) {
     genre: genre ? genre.charAt(0).toUpperCase() + genre.slice(1) : '',
     isPlaying: playing,
     isFading: !!Engine.isFading,
+    visualizer: { bands: vuA.map((level,i) => Math.min(1,level + vuB[i])) },
     messages: DJ.messages,
     ...extra
   };
@@ -2838,6 +2848,32 @@ function forceSkipNext() {
   getDeckAudio(DJ.currentDeck).pause(); void advanceQueue();
 }
 let likedSongs = [];
+async function loadLikedSongs() {
+  const box = document.getElementById('liked-songs-list');
+  box.textContent = 'Loading favorites…';
+  try {
+    const data = await AutoDJUI.requestJSON('/api/listening/likes'); likedSongs = data.likes || [];
+    renderLikedSongs();
+  } catch { box.textContent = 'Could not load favorites. Try opening this page again.'; }
+}
+function renderLikedSongs() {
+  const box = document.getElementById('liked-songs-list');
+  if (!box) return;
+  box.style.display = 'grid'; box.style.gap = '12px';
+  if (!likedSongs.length) { box.textContent = 'No liked songs yet. Tap Like on a song to save it here.'; return; }
+  box.innerHTML = likedSongs.map((t,i)=>`<article class="recommendation-card"><div class="recommendation-details"><div class="recommendation-title">${escHtml(t.title)}</div><div class="recommendation-artist">${escHtml(t.artist)}</div></div><div class="q-actions"><button class="btn" data-liked-play="${i}">Play</button><button class="btn" data-liked-queue="${i}">+ Queue</button><button class="btn" data-liked-remove="${i}" aria-label="Unlike ${escHtml(t.title)}">Unlike</button></div></article>`).join('');
+  for (const action of ['play','queue','remove']) box.querySelectorAll('[data-liked-'+action+']').forEach(button=>button.onclick=async()=>{
+    const track = likedSongs[Number(button.getAttribute('data-liked-'+action))]; if (!track) return;
+    if (action === 'remove') { await toggleSongLike(track); renderLikedSongs(); return; }
+    button.disabled = true;
+    try {
+      let videoId = track.videoId || track.youtubeId;
+      if (!videoId) { const result = await Engine.searchVideo(track.artist,track.title); videoId = result?.videoId; }
+      if (!videoId) { setStatus('Could not find audio for this favorite'); return; }
+      quickQueue(encodeURIComponent(JSON.stringify({videoId,title:track.title,author:track.artist})),action==='play');
+    } finally { button.disabled = false; }
+  });
+}
 function isSongLiked(track) { return !!track && likedSongs.some(t => dedupKey(t.artist) === dedupKey(track.artist) && dedupKey(t.title) === dedupKey(track.title)); }
 function updateLikeButton() {
   const button = document.getElementById('like-current'), liked = isSongLiked(DJ.queue[DJ.trackIndex]);
