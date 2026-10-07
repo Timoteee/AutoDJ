@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>AutoDJ — iPod Nano</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; background: #1a1a1a; color: #eee; font-family: 'Share Tech Mono', monospace; overflow: hidden; }
+body { display: flex; align-items: center; justify-content: center; }
+.nano-wrap { position: relative; width: 340px; height: 540px; background: linear-gradient(145deg, #c0c0c0, #e8e8e8 40%, #d0d0d0); border-radius: 40px; padding: 25px 15px 15px; box-shadow: 0 20px 60px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.5); display: flex; flex-direction: column; align-items: center; }
+
+/* Screen */
+.nano-screen { width: 290px; height: 220px; background: #000; border-radius: 8px; padding: 10px 12px; box-shadow: inset 0 0 20px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.3); position: relative; overflow: hidden; display: flex; flex-direction: column; }
+.screen-bg { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0.15; transition: background-image 0.5s; }
+.screen-content { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100%; }
+.nano-art { display: flex; justify-content: center; padding: 3px 0; }
+.nano-art img { width: 70px; height: 70px; border-radius: 4px; object-fit: cover; }
+.nano-art .placeholder { width: 70px; height: 70px; border-radius: 4px; background: #222; display: flex; align-items: center; justify-content: center; font-size: 28px; color: #555; }
+.nano-track { text-align: center; flex: 1; min-height: 0; overflow: hidden; }
+.nano-track .ntitle { color: #0ae; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1px; }
+.nano-track .nartist { color: #aaa; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nano-track .nalbum { color: #666; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+.nano-progress { height: 3px; background: #222; border-radius: 2px; margin: 4px 0 2px; }
+.nano-progress-fill { height: 100%; background: #0ae; border-radius: 2px; transition: width 0.5s linear; width: 0%; }
+.nano-times { display: flex; justify-content: space-between; font-size: 8px; color: #666; letter-spacing: 0.5px; }
+.nano-lyrics { font-size: 9px; color: #555; text-align: center; margin-top: 2px; line-height: 1.4; overflow: hidden; max-height: 40px; }
+
+/* Click Wheel */
+.nano-wheel { width: 240px; height: 240px; margin-top: 15px; position: relative; }
+.wheel-border { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 0deg, #d0d0d0, #b8b8b8, #c8c8c8, #d5d5d5, #b8b8b8); box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 2px rgba(255,255,255,0.6); }
+.wheel-inner { position: absolute; inset: 8px; border-radius: 50%; background: radial-gradient(circle, #e0e0e0, #b0b0b0); }	
+.wheel-btn { position: absolute; font-family: inherit; border: none; cursor: pointer; z-index: 2; background: transparent; font-size: 10px; letter-spacing: 1px; color: #444; font-weight: 600; }
+.wheel-btn:hover { color: #000; }
+.wheel-menu { top: 18px; left: 50%; transform: translateX(-50%); }
+.wheel-next { top: 50%; right: 18px; transform: translateY(-50%); }
+.wheel-prev { top: 50%; left: 18px; transform: translateY(-50%); }
+.wheel-play { bottom: 18px; left: 50%; transform: translateX(-50%); }
+.wheel-center { position: absolute; inset: 58px; border-radius: 50%; background: radial-gradient(circle, #d8d8d8, #b0b0b0); box-shadow: inset 0 1px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(255,255,255,0.4); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 3; }
+.wheel-center:hover { background: radial-gradient(circle, #e8e8e8, #b8b8b8); }
+.wheel-center-inner { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(145deg, #c8c8c8, #a8a8a8); display: flex; align-items: center; justify-content: center; color: #555; font-size: 16px; }
+
+/* Footer */
+.nano-footer { width: 100%; padding: 8px 10px 0; display: flex; justify-content: space-between; font-size: 8px; color: #888; letter-spacing: 1px; }
+
+@media (max-width:400px) {
+  .nano-wrap { transform: scale(0.85); }
+}
+</style>
+</head>
+<body>
+
+<div class="nano-wrap">
+  <!-- Screen -->
+  <div class="nano-screen">
+    <div class="screen-bg" id="nano-bg"></div>
+    <div class="screen-content">
+      <div class="nano-art">
+        <div class="placeholder" id="nano-art-placeholder">♪</div>
+        <img id="nano-art-img" src="" style="display:none" alt="">
+      </div>
+      <div class="nano-track">
+        <div class="ntitle" id="nano-title">—</div>
+        <div class="nartist" id="nano-artist">—</div>
+        <div class="nalbum" id="nano-album"></div>
+      </div>
+      <div class="nano-progress"><div class="nano-progress-fill" id="nano-prog"></div></div>
+      <div class="nano-times">
+        <span id="nano-elapsed">0:00</span>
+        <span id="nano-remaining">-0:00</span>
+      </div>
+      <div class="nano-lyrics" id="nano-lyrics"></div>
+    </div>
+  </div>
+
+  <!-- Click Wheel -->
+  <div class="nano-wheel" id="nano-wheel">
+    <div class="wheel-border"></div>
+    <div class="wheel-inner"></div>
+    <button class="wheel-btn wheel-menu" onclick="togglePlayPause()" title="Play/Pause">▶||</button>
+    <button class="wheel-btn wheel-next" onclick="nextTrack()" title="Next">▷▷</button>
+    <button class="wheel-btn wheel-prev" onclick="prevTrack()" title="Prev">◁◁</button>
+    <button class="wheel-btn wheel-play" onclick="togglePlayPause()" title="Play/Pause">▶</button>
+    <div class="wheel-center" onclick="togglePlayPause()">
+      <div class="wheel-center-inner">⏎</div>
+    </div>
+  </div>
+
+  <div class="nano-footer">
+    <span id="nano-listener-count">0</span>
+    <span id="nano-clock">00:00</span>
+  </div>
+</div>
+
+<script>
+let ns = { title: '—', artist: '—', album: '', artwork: '', elapsed: 0, duration: 0, isPlaying: false, youtubeId: null };
+let lrcLines = [];
+
+function fmt(s) { if(!s||isNaN(s)||s<0)return'0:00'; const sec=Math.round(s); if(sec<=0)return'0:00'; const m=Math.floor(sec/60), ss=sec%60; return m>=60?`${Math.floor(m/60)}:${(m%60).toString().padStart(2,'0')}:${ss.toString().padStart(2,'0')}`:`${m}:${ss.toString().padStart(2,'0')}`; }
+
+// SSE
+const evt = new EventSource('/api/sse');
+evt.onmessage = e => {
+  try {
+    const d = JSON.parse(e.data);
+    const np = d.nowPlaying || {};
+    ns.title = np.title || '—';
+    ns.artist = np.artist || '—';
+    ns.album = np.album || '';
+    ns.artwork = np.artwork || '';
+    ns.elapsed = np.elapsed || 0;
+    ns.duration = np.duration || 0;
+    ns.youtubeId = np.youtubeId || null;
+    document.getElementById('nano-title').textContent = ns.title;
+    document.getElementById('nano-artist').textContent = ns.artist;
+    document.getElementById('nano-album').textContent = ns.album;
+    if (ns.artwork) {
+      document.getElementById('nano-art-img').src = ns.artwork;
+      document.getElementById('nano-art-img').style.display = 'block';
+      document.getElementById('nano-art-placeholder').style.display = 'none';
+      document.getElementById('nano-bg').style.backgroundImage = `url(${ns.artwork})`;
+    } else {
+      document.getElementById('nano-art-img').style.display = 'none';
+      document.getElementById('nano-art-placeholder').style.display = 'flex';
+      document.getElementById('nano-bg').style.backgroundImage = '';
+    }
+    if (d.listenerCount !== undefined) document.getElementById('nano-listener-count').textContent = d.listenerCount + (d.listenerCount === 1 ? ' listener' : ' listeners');
+    if (d.command === 'play') { ns.isPlaying = true; document.querySelector('.wheel-play').textContent = '▶'; }
+    if (d.command === 'pause') { ns.isPlaying = false; document.querySelector('.wheel-play').textContent = '‖'; }
+    fetchLyrics(ns.artist, ns.title, ns.duration);
+  } catch(e) {}
+};
+
+// Elapsed interpolation
+setInterval(() => {
+  if (ns.duration <= 0) return;
+  const pct = Math.min(99, (ns.elapsed / (ns.duration || 1)) * 100);
+  document.getElementById('nano-prog').style.width = pct + '%';
+  document.getElementById('nano-elapsed').textContent = fmt(ns.elapsed);
+  document.getElementById('nano-remaining').textContent = '-' + fmt(ns.duration - ns.elapsed);
+}, 1000);
+
+// Clock
+setInterval(() => {
+  const d = new Date();
+  document.getElementById('nano-clock').textContent = d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+}, 10000);
+
+// Lyrics
+async function fetchLyrics(artist, title, duration) {
+  if (!title) return;
+  try {
+    const r = await fetch(`/api/lyrics?artist=${encodeURIComponent(artist||'')}&title=${encodeURIComponent(title)}&duration=${duration||0}`);
+    if (!r.ok) { document.getElementById('nano-lyrics').textContent = ''; return; }
+    const d = await r.json();
+    if (d.synced && d.synced.length) {
+      lrcLines = d.synced;
+      updateLyrics(0);
+    } else if (d.plain) {
+      document.getElementById('nano-lyrics').textContent = d.plain.split('\n')[0] || '';
+    } else {
+      document.getElementById('nano-lyrics').textContent = '';
+    }
+  } catch(e) {}
+}
+
+function updateLyrics(elapsed) {
+  if (!lrcLines.length) return;
+  let line = '';
+  for (let i = lrcLines.length - 1; i >= 0; i--) {
+    if (lrcLines[i].time <= elapsed) { line = lrcLines[i].text; break; }
+  }
+  document.getElementById('nano-lyrics').textContent = line || '';
+}
+
+// Actions
+function togglePlayPause() {
+  fetch('/api/playback/' + (ns.isPlaying ? 'pause' : 'resume'), { method: 'POST' }).catch(()=>{});
+}
+function nextTrack() { fetch('/api/queue/next', { method: 'POST' }).catch(()=>{}); }
+function prevTrack() { fetch('/api/queue/prev', { method: 'POST' }).catch(()=>{}); }
+</script>
+</body>
+</html>

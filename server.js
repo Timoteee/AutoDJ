@@ -23,7 +23,7 @@ function log(tag, ...args) {
   if (logRing.length > MAX_LOG_ENTRIES) logRing.splice(0, logRing.length - MAX_LOG_ENTRIES);
 }
 
-const MAX_REASONABLE_TRACK_SEC = 6 * 3600;
+const MAX_REASONABLE_TRACK_SEC = 600; // 10 min max for a music track
 /** Normalize a possibly-millisecond duration to seconds, clamped to MAX_REASONABLE_TRACK_SEC. */
 /** Parse various duration formats to seconds. Handles MM:SS, HH:MM:SS, ms, and raw seconds. */
 function parseDurationToSeconds(raw) {
@@ -159,6 +159,21 @@ let config = {
 };
 if (fs.existsSync(CONFIG_FILE)) { try { Object.assign(config, JSON.parse(fs.readFileSync(CONFIG_FILE,'utf8'))); } catch(e) { log('Config', `WARNING: Failed to parse config.json — ${e.message}. Using defaults.`); } }
 if (!Array.isArray(config.squidProxies)) config.squidProxies = [];
+// Auto-set default RSS feed from geolocation if none configured
+if (!config.rssFeedUrl) {
+  (async () => {
+    try {
+      const ip = ''; // server's own IP
+      const geo = await fetch(`http://ip-api.com/json/?fields=status,countryCode,city`, { signal: AbortSignal.timeout(4000) }).then(r => r.json()).catch(() => ({}));
+      if (geo.status === 'success') {
+        const cc = (geo.countryCode || 'US').toLowerCase();
+        config.rssFeedUrl = `https://news.google.com/rss?hl=${cc === 'us' ? 'en-US' : `en-${cc.toUpperCase()}`}&gl=${cc.toUpperCase()}&ceid=${cc.toUpperCase()}:en`;
+        sharedState.config.rssFeedUrl = config.rssFeedUrl;
+        log('Config', `Auto-set RSS feed: ${config.rssFeedUrl}`);
+      }
+    } catch(e) { log('Config', `Geo RSS auto-set failed: ${e.message}`); }
+  })();
+}
 function saveConfig() { fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2)); }
 
 /** Safe on-disk filename for cache entries (preserves logical id in audioCache[].id). */
@@ -177,8 +192,8 @@ let sharedState = {
 };
 const sseClients = new Map();
 let sseIdCounter = 0;
-function broadcastState() { const d = JSON.stringify(sharedState); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
-function broadcastCommand(cmd, extra = {}) { const d = JSON.stringify({ ...sharedState, command: cmd, ...extra }); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastState() { const b = { ...sharedState, listenerCount: sseClients.size }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
+function broadcastCommand(cmd, extra = {}) { const b = { ...sharedState, listenerCount: sseClients.size, command: cmd, ...extra }; const d = JSON.stringify(b); for (const [id, c] of sseClients) { try { c.res.write(`data: ${d}\n\n`); } catch(e) { sseClients.delete(id); } } }
 
 let playbackTimer = null;
 function clearPlaybackTimer() { if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; } }
@@ -224,13 +239,35 @@ async function advanceTrack() {
   sharedState.nextUp = sharedState.queue[sharedState.trackIndex + 1] || null;
   sharedState.isPlaying = true;
 
-  // Build stream URL
+  // Build stream URL — prefer cache, fall back to source stream
   let streamUrl = '';
   if (track.type === 'local' || track.type === 'temp') {
     streamUrl = track.url || '';
   } else if (track.youtubeId) {
     const cached = audioCache.find(e => e.id === track.youtubeId);
-    if (cached?.filepath) streamUrl = `/api/cache/stream/${encodeURIComponent(track.youtubeId)}`;
+    if (cached?.filepath) {
+      streamUrl = `/api/cache/stream/${encodeURIComponent(track.youtubeId)}`;
+    }
+  }
+  // When no cache yet, trigger immediate download and temporarily fetch a stream URL
+  if (!streamUrl && track.youtubeId && (track._source === 'invidious' || track._source === 'piped')) {
+    try {
+      const host = `http://127.0.0.1:${PORT}`;
+      // Trigger cache download in background (won't block playback)
+      fetch(`${host}/api/cache/download`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: track.youtubeId, title: track.title, artist: track.artist, _source: track._source || '', _instance: track._instance || '' })
+      }).catch(() => {});
+      // Meanwhile, fetch a temporary stream URL from video info
+      const viRes = await fetch(`${host}/api/piped/streams?videoId=${encodeURIComponent(track.youtubeId)}`, { signal: AbortSignal.timeout(8000) });
+      if (viRes.ok) {
+        const vi = await viRes.json();
+        if (vi.audioStreams?.length) {
+          streamUrl = vi.audioStreams[0].url;
+          log('Playback', `Stream fallback: ${track.youtubeId}`);
+        }
+      }
+    } catch (e) { log('Playback', `Stream fallback failed: ${e.message}`); }
   }
 
   log('Playback', `▶ ${track.title} (track ${sharedState.trackIndex + 1}/${sharedState.queue.length})`);
@@ -242,7 +279,7 @@ async function advanceTrack() {
   if (sseClients.size === 0) {
     const dur = (track.duration && Number.isFinite(track.duration) && track.duration > 0) ? track.duration : 0;
     if (dur > 5) {
-      const fadeSec = 8;
+      const fadeSec = Math.min(config.crossfadeSeconds || 3, 8);
       const advIn = Math.max(1, dur - fadeSec) * 1000;
       playbackTimer = setTimeout(async () => {
         await preCacheNextTrack();
@@ -563,13 +600,19 @@ async function metubeAddAndWaitFile(videoId) {
     log('Cache', `MeTube /add HTTP ${ar.status}`, tx.slice(0, 160));
     return null;
   }
-  const deadline = Date.now() + 200000;
+  // Check for error in the response body (MeTube may return 200 with error field)
+  const addBody = await ar.json().catch(() => ({}));
+  if (addBody.error) {
+    log('Cache', `MeTube /add returned error for ${videoId}: ${addBody.error}`);
+    return null;
+  }
+  const deadline = Date.now() + 120000; // 2 min max wait (down from 3.3 min)
   while (Date.now() < deadline) {
     const candidates = [];
     walkMetubeCandidates(METUBE_DOWNLOADS_DIR, prefix, started - 5000, candidates);
     candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
     const pick = candidates[0];
-      if (pick && pick.size > 50000) {
+      if (pick && pick.size > 15000) {
       let last = pick.size;
       let stable = 0;
       for (let i = 0; i < 4; i++) {
@@ -682,22 +725,71 @@ async function tryMetubeDownload(videoId, title, artist) {
         else return null;
       }
       const sz = fs.statSync(fp).size;
-      if (sz > 1000) {
-        audioCache.push({ id: videoId, filepath: fp, title: title || videoId, artist: artist || '', downloadedAt: Date.now(), playedAt: null, size: sz, source: 'metube' });
-        log('Cache', `MeTube OK: ${title} (${(sz / 1048576).toFixed(1)}MB)`);
-        return { ok: true, url: `/api/cache/stream/${encodeURIComponent(videoId)}`, title: title || videoId, source: 'metube', size: sz };
+      // SMALL FILE CHECK + AUDIO VALIDATION
+      if (sz < 3000) {
+        fs.unlinkSync(fp);
+        log('Cache', `MeTube too small: ${title} (${sz}B) — marking failed`);
+        markDownloadFailed(videoId);
+        return null;
       }
+      if (!isValidAudioFile(fp)) {
+        fs.unlinkSync(fp);
+        log('Cache', `MeTube invalid: ${title} (${sz}B) — likely locked/placeholder — marking failed`);
+        markDownloadFailed(videoId);
+        return null;
+      }
+      audioCache.push({ id: videoId, filepath: fp, title: title || videoId, artist: artist || '', downloadedAt: Date.now(), playedAt: null, size: sz, source: 'metube' });
+      log('Cache', `MeTube OK: ${title} (${(sz / 1048576).toFixed(1)}MB)`);
+      return { ok: true, url: `/api/cache/stream/${encodeURIComponent(videoId)}`, title: title || videoId, source: 'metube', size: sz };
     }
-  } catch (e) { log('Cache', `MeTube ${videoId}: ${e.message}`); }
+  } catch (e) { log('Cache', `MeTube ${videoId}: ${e.message}`); markDownloadFailed(videoId); }
   return null;
 }
 
 // Download dedup set — prevent concurrent downloads of the same videoId
 const downloadingIds = new Set();
 
+// Track permanently-failed videoIds so we don't waste time retrying.
+const failedIds = new Set();
+const FAILED_RETRY_MS = 30 * 60 * 1000; // 30 min cooldown before retry
+
+/** Check if a downloaded file contains valid audio (not HTML/error placeholder). */
+function isValidAudioFile(filepath) {
+  try {
+    const fd = fs.openSync(filepath, 'r');
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+    // MP3: ID3 tag or FF FB/FE FF (MPEG sync)
+    if (buf.slice(0, 3).toString() === 'ID3') return true;
+    if (buf[0] === 0xFF && (buf[1] & 0xE0) === 0xE0) return true;
+    // Ogg/Opus: OggS header
+    if (buf.slice(0, 4).toString() === 'OggS') return true;
+    // FLAC: fLaC
+    if (buf.slice(0, 4).toString() === 'fLaC') return true;
+    // WAV: RIFF
+    if (buf.slice(0, 4).toString() === 'RIFF') return true;
+    // MP4/M4A: ftyp box
+    if (buf.slice(4, 8).toString() === 'ftyp') return true;
+    // WebM: EBML header
+    if (buf.slice(0, 4).toString() === '\x1aE\xdf\xa3') return true;
+    // If the first 200 bytes look like HTML, it's an error page
+    const text = buf.slice(0, 200).toString('utf8').toLowerCase();
+    if (/^\s*</.test(text) && /<(!doctype|html|head|body)/i.test(text)) return false;
+    return false;
+  } catch { return false; }
+}
+
+/** Mark a download as failed so we skip it for FAILED_RETRY_MS. */
+function markDownloadFailed(videoId) {
+  failedIds.add(videoId);
+  setTimeout(() => failedIds.delete(videoId), FAILED_RETRY_MS);
+  log('Cache', `Marked ${videoId} as failed (retry in ${FAILED_RETRY_MS / 1000}s)`);
+}
+
 // Download + cache a track for reliable playback
 app.post('/api/cache/download', rateLimit(20), async (req, res) => {
-  const{videoId,title,artist,_source,_instance}=req.body;
+  const{videoId,title,artist,_source,_instance,altIds}=req.body;
   if(!videoId) return res.status(400).json({error:'Missing track ID'});
 
   // Dedup: reject if already downloading
@@ -719,6 +811,23 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
   const existing=audioCache.find(e=>e.id===videoId);
   if(existing?.filepath&&fs.existsSync(existing.filepath)) return res.json({ok:true,cached:true,url:`/api/cache/stream/${encodeURIComponent(videoId)}`,title:existing.title,source:'cache'});
   if(existing) audioCache=audioCache.filter(e=>e.id!==videoId);
+
+  // Skip videoIds recently marked as failed
+  if (failedIds.has(videoId)) {
+    log('Cache', `Skipping ${videoId} — recently failed (retry in ~30m)`);
+    // Try alternative IDs if provided
+    if (Array.isArray(altIds) && altIds.length > 0) {
+      for (const altId of altIds) {
+        if (altId === videoId) continue;
+        if (failedIds.has(altId)) continue;
+        const existingAlt = audioCache.find(e => e.id === altId);
+        if (existingAlt?.filepath && fs.existsSync(existingAlt.filepath)) {
+          downloadingIds.delete(videoId);
+          return res.json({ok:true,cached:true,alt:true,url:`/api/cache/stream/${encodeURIComponent(altId)}`,title:existingAlt.title,source:'cache',altVideoId:altId});
+        }
+      }
+    }
+  }
 
   downloadingIds.add(videoId);
   log('Cache', `Downloading: ${title || videoId} (src=${_source || 'auto'}, id=${videoId})`);
@@ -803,6 +912,13 @@ app.post('/api/cache/download', rateLimit(20), async (req, res) => {
       await pipeline(Readable.fromWeb(ar.body),fs.createWriteStream(fp));
       const sz=fs.statSync(fp).size;
       if(sz<1000){fs.unlinkSync(fp); downloadingIds.delete(videoId); return res.status(502).json({error:`File too small (${sz}B)`});}
+      // Validate audio content for YouTube-sourced files
+      if ((src === 'invidious' || src === 'piped') && !isValidAudioFile(fp)) {
+        fs.unlinkSync(fp);
+        markDownloadFailed(videoId);
+        downloadingIds.delete(videoId);
+        return res.status(502).json({error:'Downloaded file is not valid audio (blocked/placeholder)',failed:true,videoId});
+      }
       audioCache.push({id:videoId,filepath:fp,title:title||videoId,artist:artist||'',downloadedAt:Date.now(),playedAt:null,size:sz,source:src});
       cleanTempAfterDownloads();
       log('Cache', `OK: ${title} (${(sz/1048576).toFixed(1)}MB via ${src})`);
@@ -879,7 +995,6 @@ app.get('/api/test/sources', async (req, res) => {
   const tests=[
     ...SOURCES.dab.map(u=>({url:u,type:'dab',testUrl:`${u}/search?q=test&type=track&limit=1`})),
     ...(config.jamendoClientId ? [{ url: 'https://api.jamendo.com/v3.1', type: 'jamendo', testUrl: `https://api.jamendo.com/v3.1/tracks/?client_id=${encodeURIComponent(config.jamendoClientId)}&format=json&limit=1&search=test` }] : []),
-    ...SOURCES.hifi.slice(0,4).map(u=>({url:u,type:'hifi',testUrl:`${u}/search/?query=test&type=track&limit=1`})),
     ...SOURCES.piped.map(u=>({url:u,type:'piped',testUrl:`${u}/search?q=test&filter=videos`})),
     ...invidiousInstances().map(u=>({url:u,type:'invidious',testUrl:`${u}/api/v1/search?q=test&type=video`})),
   ];
@@ -1052,6 +1167,25 @@ app.get('/api/rss', async (req, res) => {
   }
 });
 
+// ─── Geolocate ─────────────────────────────────────────────────────────────────
+app.get('/api/geolocate', async (req, res) => {
+  try {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
+    // Try ip-api.com (free tier, no key needed)
+    const geo = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,countryCode,city,regionName,lat,lon,org,isp,query`, { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => ({}));
+    if (geo.status === 'success') {
+      res.json({
+        ip: geo.query, city: geo.city, region: geo.regionName, country: geo.country, countryCode: geo.countryCode,
+        lat: geo.lat, lon: geo.lon, org: geo.org, isp: geo.isp
+      });
+    } else {
+      res.json({ ip, error: 'geolocation failed' });
+    }
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 // ─── Song Verification ──────────────────────────────────────────────────────────
 const LYRICS_SIMILARITY_THRESHOLD = 0.7;
 
@@ -1156,8 +1290,17 @@ function loadQueueFromDisk() {
   try {
     if (fs.existsSync(QUEUE_FILE)) {
       const raw = JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf8'));
-      if (Array.isArray(raw)) return { queue: raw, trackIndex: -1 }; // legacy format
-      if (Array.isArray(raw.queue)) return { queue: raw.queue, trackIndex: typeof raw.trackIndex === 'number' ? raw.trackIndex : -1 };
+      // Legacy format: queue was a flat array
+      if (Array.isArray(raw)) {
+        raw.forEach(t => { if (t.duration && Number.isFinite(t.duration) && t.duration > MAX_REASONABLE_TRACK_SEC) t.duration = MAX_REASONABLE_TRACK_SEC; });
+        return { queue: raw, trackIndex: -1 };
+      }
+      if (Array.isArray(raw.queue)) {
+        raw.queue.forEach(t => {
+          if (t.duration && Number.isFinite(t.duration) && t.duration > MAX_REASONABLE_TRACK_SEC) t.duration = MAX_REASONABLE_TRACK_SEC;
+        });
+        return { queue: raw.queue, trackIndex: typeof raw.trackIndex === 'number' ? raw.trackIndex : -1 };
+      }
     }
   } catch (e) { log('Queue', 'Load error: ' + e.message); }
   return { queue: [], trackIndex: -1 };
@@ -1173,6 +1316,8 @@ app.post('/api/queue', (req, res) => {
   const { queue, trackIndex } = req.body;
   if (Array.isArray(queue)) {
     let safe = queue.map(t => {
+      // Normalize duration on save — cap to 600s
+      if (t.duration && Number.isFinite(t.duration) && t.duration > 600) t.duration = Math.min(t.duration, MAX_REASONABLE_TRACK_SEC);
       if (t.type === 'local') return { ...t, filepath: undefined };
       return t;
     });
@@ -1341,6 +1486,7 @@ app.post('/api/nowplaying/clear', (req, res) => {
 app.get('/', (req, res) => res.redirect('/dj'));
 app.get('/dj', (req, res) => res.sendFile(path.join(__dirname, 'dj.html')));
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'display.html')));
+app.get('/display/nano', (req, res) => res.sendFile(path.join(__dirname, 'nano.html')));
 
 const server = app.listen(PORT, () => {
   console.log(`\n🎧 AutoDJ v5.0.0 — http://localhost:${PORT}`);
