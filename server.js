@@ -272,7 +272,13 @@ if (!config.rssFeedUrl) {
   try {
     fs.writeFileSync(tmp, JSON.stringify(config, null, 2));
     fs.writeFileSync(CONFIG_BACKUP_FILE, JSON.stringify(config, null, 2));
-    fs.renameSync(tmp, CONFIG_FILE);
+    try { fs.renameSync(tmp, CONFIG_FILE); }
+    catch (error) {
+      // Docker file bind mounts cannot be replaced by rename.
+      if (error.code !== 'EBUSY') throw error;
+      fs.copyFileSync(tmp, CONFIG_FILE);
+      fs.unlinkSync(tmp);
+    }
   } catch (e) {
     log('Config', `Save error: ${e.message}`);
   }
@@ -546,6 +552,7 @@ function broadcastEvent(eventType, data) {
 }
 
 let playbackTimer = null;
+let playbackRevision = 0;
 let playbackStateAt = Date.now();
 function clearPlaybackTimer() { if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; } }
 
@@ -568,6 +575,7 @@ async function preCacheNextTrack() {
 }
 
 async function advanceTrack() {
+  const revision = ++playbackRevision;
   // Check session expiry
   if (config.sessionDuration > 0 && sharedState.sessionStart) {
     const elapsed = (Date.now() - sharedState.sessionStart) / 3600000;
@@ -588,6 +596,7 @@ async function advanceTrack() {
   const track = sharedState.queue[sharedState.trackIndex];
   sharedState.nowPlaying = { title: track.title || '', artist: track.artist || '', duration: track.duration || 0, elapsed: 0, youtubeId: track.youtubeId || null, artwork: track.artwork || track.image || (/^[A-Za-z0-9_-]{11}$/.test(track.youtubeId || '') ? `https://img.youtube.com/vi/${track.youtubeId}/hqdefault.jpg` : ''), album: track.album || '', tags: track.tags || [], _source: track._source || '' };
   sharedState.nextUp = sharedState.queue[sharedState.trackIndex + 1] || null;
+  const pendingNowPlaying = sharedState.nowPlaying;
   sharedState.isPlaying = true;
 
   // Build stream URL — prefer cache, fall back to source stream
@@ -611,6 +620,7 @@ async function advanceTrack() {
       streamUrl = downloaded.url;
     } catch (error) { log('Playback', 'Cannot play ' + track.title + ': ' + error.message); }
   }
+  if (revision !== playbackRevision || sharedState.nowPlaying !== pendingNowPlaying) return false;
   if (!streamUrl) {
     sharedState.isPlaying = false;
     sharedState.sessionActive = false;
@@ -719,6 +729,7 @@ async function runStartPlayback() {
 }
 
 function stopPlayback() {
+  playbackRevision++;
   clearPlaybackTimer();
   sharedState.isPlaying = false;
   sharedState.sessionActive = false;

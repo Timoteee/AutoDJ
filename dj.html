@@ -437,6 +437,14 @@ input[type=range].xfader::-webkit-slider-thumb {
   transition: background 0.15s;
 }
 .qitem:last-child { border-bottom: none; }
+#listening-recommendations { display:grid; gap:12px; margin-top:16px; }
+.recommendation-card { display:flex; align-items:center; gap:16px; padding:16px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-panel); }
+.recommendation-details { flex:1; min-width:0; overflow-wrap:anywhere; }
+.recommendation-title { font-weight:600; font-size:14px; }
+.recommendation-artist { margin-top:4px; color:var(--text-secondary); font-size:13px; }
+.recommendation-reason { margin:8px 0 0; color:var(--text-muted); font-size:12px; line-height:1.5; }
+.recommendation-card > .btn { flex:none; }
+@media(max-width:600px) { .recommendation-card { align-items:flex-start; flex-direction:column; gap:12px; } }
 .qitem > * { min-width: 0; }
 .q-details { overflow: hidden; }
 .q-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -641,7 +649,10 @@ input[type=range].xfader::-webkit-slider-thumb {
         <svg width="20" height="20" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;min-width:0;max-width:20px;min-height:0;max-height:20px;flex:0 0 20px"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
         Discovery
       </a>
-      <a href="#" class="sidebar-link" data-page="recommendations">♡ For You</a>
+      <a href="#" class="sidebar-link" data-page="recommendations">
+        <svg width="20" height="20" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg>
+        For You
+      </a>
       <a href="#" class="sidebar-link" data-page="downloads">
         <svg width="20" height="20" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;min-width:0;max-width:20px;min-height:0;max-height:20px;flex:0 0 20px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Downloads <span id="dl-count-sidebar" class="dl-badge-count" style="display:none">0</span>
@@ -1273,7 +1284,7 @@ async function loadListeningRecommendations() {
       box.textContent = data.listeningCount ? 'No new suggestions right now. Try again after a few more tracks.' : 'Play a few tracks to build your recommendations.';
       return;
     }
-    box.innerHTML = listeningRecommendations.map((t,i) => `<div class="qitem"><div class="flex-1 min-w-0"><div>${escHtml(t.title)}</div><div class="text-[var(--text-secondary)] text-xs">${escHtml(t.artist)}</div><div class="text-[var(--text-secondary)] text-xs">${escHtml(t.reason)}</div></div><button class="btn" onclick="enqueueOnlineTrack(listeningRecommendations[${i}])">+ Queue</button></div>`).join('');
+    box.innerHTML = listeningRecommendations.map((t,i) => `<article class="recommendation-card"><div class="recommendation-details"><div class="recommendation-title">${escHtml(t.title)}</div><div class="recommendation-artist">${escHtml(t.artist)}</div><p class="recommendation-reason">${escHtml(t.reason || '')}</p></div><button class="btn" onclick="enqueueOnlineTrack(listeningRecommendations[${i}])" aria-label="Queue ${escHtml(t.title)}">+ Queue</button></article>`).join('');
   } catch { box.textContent = 'Suggestions are temporarily unavailable. Your listening activity is saved.'; }
 }
 
@@ -1832,7 +1843,7 @@ function waitForAudioReady(audio, timeoutMs = 30000) {
 
 async function loadTrackOnDeck(deck, track, opts = {}) {
   if (!track) return;
-  track._listenEventId = crypto.randomUUID();
+  track._listenEventId = AutoDJUI.createEventId();
   track._listeningRecorded = false;
   Engine.decks[deck].track = track;
   Engine.decks[deck].cuePoint = 0;
