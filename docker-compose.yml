@@ -1,0 +1,46 @@
+services:
+  metube:
+    image: ghcr.io/alexta69/metube:latest
+    container_name: metube
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - DOWNLOAD_DIR=/downloads
+    volumes:
+      - metube_downloads:/downloads
+    networks:
+      - autodj-net
+
+  autodj:
+    build: .
+    container_name: autodj
+    restart: unless-stopped
+    depends_on:
+      - metube
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./music:/music:ro
+      - ./cache:/app/cache
+      - ./config.json:/app/config.json
+      - metube_downloads:/metube-downloads:ro
+    environment:
+      - PORT=3000
+      - MUSIC_DIR=/music
+      - METUBE_URL=http://metube:8081
+      - METUBE_DOWNLOADS_DIR=/metube-downloads
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    networks:
+      - autodj-net
+
+volumes:
+  metube_downloads:
+
+networks:
+  autodj-net:
+    driver: bridge

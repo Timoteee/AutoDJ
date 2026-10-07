@@ -1,0 +1,19 @@
+{
+  "name": "AutoDJ",
+  "short_name": "AutoDJ",
+  "description": "Automated music DJ with persistent playback",
+  "start_url": "/dj",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#1db954",
+  "orientation": "any",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "categories": ["music", "entertainment"],
+  "lang": "en-US",
+  "dir": "ltr"
+}
