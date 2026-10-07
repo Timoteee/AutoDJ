@@ -437,11 +437,16 @@ body {
   border-radius: var(--radius-sm);
 }
 #deck-cues.visible { display: block; }
+@media(min-width:1151px) {
+  .art-section #deck-cues { width:100%; max-width:300px; margin-top:28px; }
+  .art-section .deck-cues-grid { grid-template-columns:minmax(0,1fr); }
+}
 .deck-cues-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;
   margin-top: 6px;
 }
 .deck-cue {
+  min-width:0;
   padding: 8px 10px; border-radius: var(--radius-sm);
   background: var(--surface-2);
 }
@@ -1048,6 +1053,14 @@ function fitTrackTitle() {
 }
 new ResizeObserver(fitTrackTitle).observe(document.querySelector('.track-section'));
 document.fonts.ready.then(fitTrackTitle);
+const wideDisplay = window.matchMedia('(min-width:1151px)');
+function positionDeckCues() {
+  const cues = document.getElementById('deck-cues');
+  const parent = document.querySelector(wideDisplay.matches ? '.art-section' : '.track-section');
+  if (cues.parentElement !== parent) parent.append(cues);
+}
+wideDisplay.addEventListener('change',positionDeckCues);
+positionDeckCues();
 
 // ─── VU Meter animation ───────────────────────────────────────────────────────
 let vuAnimId = null;
