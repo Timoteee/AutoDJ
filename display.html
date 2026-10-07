@@ -1072,13 +1072,13 @@ function animateVUMeter() {
   const signal = state.visualizer?.bands || [];
   for (let i=0;i<6;i++) {
     const target = playing ? Math.max(0,Math.min(1,Number(signal[i]) || 0)) : 0;
-    visualBands[i] += (target-visualBands[i]) * .2;
+    visualBands[i] += (target-visualBands[i]) * (target > visualBands[i] ? .09 : .045);
   }
   smoothedBass += ((playing ? visualBands[0] : 0)-smoothedBass) * .15;
   bassBaseline += (smoothedBass-bassBaseline) * .008;
   const pulse = Math.max(0,smoothedBass-bassBaseline);
   const glow = document.getElementById('album-art-glow');
-  glow.style.setProperty('--backlight-opacity',reducedMotion.matches ? '.22' : String(Math.min(.65,.2 + smoothedBass * .3 + pulse * .35)));
+  glow.style.setProperty('--backlight-opacity',reducedMotion.matches ? '.32' : String(Math.min(.8,.32 + smoothedBass * .32 + pulse * .25)));
   glow.style.animationPlayState = playing ? 'running' : 'paused';
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i];

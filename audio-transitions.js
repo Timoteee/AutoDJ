@@ -29,9 +29,15 @@
     }
     if (Math.max(...onset) < rms * .03) best = 0;
     const beatPeriod = lag * .05;
+    const waveform = [];
+    const chunk = Math.max(1,Math.ceil(energy.length/1200));
+    for (let i=0;i<energy.length;i+=chunk) {
+      const slice = energy.slice(i,i+chunk);
+      waveform.push(Math.sqrt(slice.reduce((sum,v)=>sum+v*v,0)/slice.length));
+    }
     let phase = 0, peak = 0;
     for (let i = 0; i < Math.min(onset.length, 200); i++) if (onset[i] > peak) { peak = onset[i]; phase = i * .05; }
-    return { duration, intro, end, rms, tailRms, beatPeriod, beatPhase: phase, beatConfidence: best };
+    return { duration, intro, end, rms, tailRms, beatPeriod, beatPhase: phase, beatConfidence: best, waveform };
   }
   function plan(outgoing, incoming, duration, fallback = 6) {
     const end = Math.min(duration, outgoing?.end || duration);

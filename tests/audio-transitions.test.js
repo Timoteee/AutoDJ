@@ -1,5 +1,15 @@
 const { analyze, plan, gains } = require('../audio-transitions');
 const { DownloadQueue } = require('../lib/download-queue');
+test('waveform covers the full track with a bounded, deterministic amplitude envelope', () => {
+  const sr=1000, samples=new Float32Array(sr*120);
+  for(let i=sr*30;i<sr*90;i++) samples[i]=Math.sin(i*.2)*.3;
+  const profile=analyze(samples,sr);
+  expect(profile.waveform.length).toBeLessThanOrEqual(1200);
+  expect(profile.waveform[0]).toBe(0);
+  expect(profile.waveform.at(-1)).toBe(0);
+  expect(profile.waveform[Math.floor(profile.waveform.length/2)]).toBeGreaterThan(.1);
+  expect(analyze(samples,sr).waveform).toEqual(profile.waveform);
+});
 test('detects bounded leading/trailing silence from actual PCM', () => {
   const sr = 1000, samples = new Float32Array(sr * 30);
   for (let i = sr * 2; i < sr * 28; i++) samples[i] = Math.sin(i * .1) * .2;

@@ -262,7 +262,8 @@ const Engine = (() => {
 
   // ─── Waveform ────────────────────────────────────────────────────────────────
   function drawWaveform(deck, canvas, progress) {
-    if (!canvas || canvas.width === 0) {
+    if (!canvas) return;
+    if (canvas.width === 0) {
       canvas.width = canvas.offsetWidth || 300;
     }
     const ctx2 = canvas.getContext('2d');
@@ -274,19 +275,37 @@ const Engine = (() => {
     const d = decks[deck];
     if (!d.analyser) return;
 
-    const buf = new Uint8Array(d.analyser.frequencyBinCount);
-    d.analyser.getByteFrequencyData(buf);
-
-    const barW = Math.max(1, (w / buf.length) * 2);
     const playedX = w * progress;
-
-    for (let i = 0; i < buf.length; i++) {
-      const barH = Math.max(1, (buf[i] / 255) * h);
-      const x = i * barW;
-      const played = x < playedX;
-      ctx2.fillStyle = played ? '#00e5ff' : '#1e2a40';
-      ctx2.fillRect(x, h - barH, barW - 0.5, barH);
+    const waveform = d.track?._analysis?.waveform;
+    if (waveform?.length) {
+      if (!d.track._analysis.waveformReference) {
+        const sorted = [...waveform].sort((a,b)=>a-b);
+        d.track._analysis.waveformReference = Math.max(.01,sorted[Math.floor(sorted.length*.95)]);
+      }
+      const reference = d.track._analysis.waveformReference;
+      const count = Math.max(1,Math.floor(w/3));
+      for (let i=0;i<count;i++) {
+        const start = Math.floor(i/count*waveform.length);
+        const end = Math.max(start+1,Math.floor((i+1)/count*waveform.length));
+        let sum=0; for(let j=start;j<end;j++) sum+=waveform[j] || 0;
+        const level = Math.min(1,sum/(end-start)/reference);
+        const height = Math.max(1,level*(h-12));
+        const x = i/count*w;
+        ctx2.fillStyle = x < playedX ? '#ffb3ac' : '#a6e6ff88';
+        ctx2.fillRect(x,(h-height)/2,2,height);
+      }
+    } else {
+      // A true time-domain trace while the full-track analysis is preparing.
+      const samples = new Float32Array(d.analyser.fftSize);
+      d.analyser.getFloatTimeDomainData(samples);
+      ctx2.strokeStyle='#a6e6ff88'; ctx2.lineWidth=1.5; ctx2.beginPath();
+      for(let i=0;i<samples.length;i++) {
+        const x=i/(samples.length-1)*w, y=h/2+samples[i]*(h*.4);
+        if(i===0)ctx2.moveTo(x,y);else ctx2.lineTo(x,y);
+      }
+      ctx2.stroke();
     }
+    ctx2.fillStyle='#ffb3ac'; ctx2.fillRect(playedX,0,1,h);
 
     // Fade point marker
     if (d.fadePoint && d.audio?.duration && Number.isFinite(d.audio.duration) && d.audio.duration > 0) {
