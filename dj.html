@@ -974,13 +974,14 @@ input[type=range].xfader::-webkit-slider-thumb {
             <div class="panel-header"><span class="panel-title">🎛️ Mood Engine</span></div>
             <div class="panel-body space-y-2">
               <div class="field"><label>Vibe</label>
-                <input type="text" id="ai-mood" placeholder="e.g. late night driving, beach sunset..." class="w-full">
+                <input type="text" id="ai-mood" placeholder="e.g. late night driving, beach sunset..." class="w-full" onkeydown="if(event.key === 'Enter') { event.preventDefault(); searchMood(); }">
               </div>
               <div class="flex gap-2">
                 <button class="btn btn-sm btn-flow flex-1" onclick="setMood('chill')">Chill</button>
                 <button class="btn btn-sm btn-signal flex-1" onclick="setMood('energy')">Energy</button>
                 <button class="btn btn-sm flex-1" onclick="setMood('deep')">Deep</button>
               </div>
+              <button class="btn btn-signal w-full" id="mood-search-btn" onclick="searchMood()">Find tracks for this vibe</button>
             </div>
           </div>
           <!-- AI Recommendation Card -->
@@ -2557,6 +2558,18 @@ function setMood(mood) {
   const inp = document.getElementById('ai-mood');
   const moods = { chill: 'late night chill, lo-fi vibes', energy: 'high energy, dance floor bangers', deep: 'deep house, ambient, minimal techno' };
   if (inp) inp.value = moods[mood] || mood;
+}
+
+async function searchMood() {
+  const mood = document.getElementById('ai-mood').value.trim();
+  if (!mood) { document.getElementById('ai-mood').focus(); setStatus('Enter a vibe or choose a preset first'); return; }
+  const button = document.getElementById('mood-search-btn');
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = 'Finding tracks…';
+  document.getElementById('discover-search').value = mood;
+  try { await discoverSearch(); }
+  finally { button.disabled = false; button.textContent = 'Find tracks for this vibe'; }
 }
 
 // ─── AI ─────────────────────────────────────────────
