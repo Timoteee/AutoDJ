@@ -386,7 +386,7 @@ body {
   height: 36px; backdrop-filter: blur(6px);
 }
 .marquee-track {
-  display: flex; gap: 64px;
+  display: flex; gap: 0; width: max-content;
   animation: marqueeScroll 50s linear infinite;
   white-space: nowrap; will-change: transform;
 }
@@ -398,6 +398,7 @@ body {
 #marquee-text {
   display: flex; gap: 64px; flex-shrink: 0;
 }
+.marquee-group { display:flex; gap:64px; flex-shrink:0; padding-right:64px; }
 .marquee-msg {
   font-family: 'Inter', sans-serif;
   font-size: 12px; color: var(--text-secondary); letter-spacing: 0.3px;
@@ -715,8 +716,8 @@ function updateClock() {
   const now = new Date();
   const config = window.DJ?.config || {};
   const use12Hour = config.use12HourClock !== false;
-  document.getElementById('clock').textContent = now.toLocaleTimeString('en-US',{hour12: use12Hour, timeZone: config.timezone});
-  document.getElementById('date-display').textContent = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric', timeZone: config.timezone});
+  document.getElementById('clock').textContent = now.toLocaleTimeString('en-US',{hour12: use12Hour});
+  document.getElementById('date-display').textContent = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
 }
 setInterval(updateClock, 1000); updateClock();
 
@@ -725,6 +726,7 @@ let state = { nowPlaying: null, nextUp: null, queue: [], primaryDeck: 'a', decks
 let baseElapsed = 0;
 let baseTime = 0;
 let currentTrackId = '';
+let stateUpdateRevision = 0, currentArtwork = '';
 let deckCueTime = 0;
 
 // ─── Audio Main ───────────────────────────────────────────────────────────────
@@ -834,11 +836,12 @@ function connectSSE() {
     } catch { /* Ignore malformed frames without disturbing playback. */ }
   });
   es.onmessage = e => { try { applyState(JSON.parse(e.data)); } catch (error) { console.warn('State update:', error.message); } };
-  es.onopen = () => fetch('/api/nowplaying').then(r => r.json()).then(applyState).catch(() => {});
+  es.onopen = () => void refreshDisplayState();
 }
 connectSSE();
 
 function applyState(data) {
+  stateUpdateRevision++;
   if (data.visualizer) visualSignalAt = Date.now();
   const prevTrackId = currentTrackId;
   state = { ...state, ...data };
@@ -860,7 +863,7 @@ function applyState(data) {
 
   // Derive nowPlaying from audible deck if null but deck data exists
   let np = state.nowPlaying;
-  if (!np && state.decks) {
+  if (!np && state.isPlaying && state.decks) {
     const audibleDeck = state.primaryDeck || 'a';
     const d = state.decks[audibleDeck];
     if (d && d.title && d.title !== '—') {
@@ -927,18 +930,32 @@ function applyState(data) {
     const placeholder = document.getElementById('art-placeholder');
     const glow = document.getElementById('album-art-glow');
     const artwork = np.artwork && np.artwork !== 'undefined' ? np.artwork : (/^[A-Za-z0-9_-]{11}$/.test(np.youtubeId || '') ? `https://img.youtube.com/vi/${np.youtubeId}/hqdefault.jpg` : '');
-    if (artwork) {
-      artImg.onerror = () => { artImg.style.display = 'none'; placeholder.classList.add('visible'); glow.classList.remove('active'); };
+    if (artwork && artwork !== currentArtwork) {
+      currentArtwork = artwork;
+      const expected = artwork;
+      artImg.style.display = 'none';
+      placeholder.classList.add('visible');
+      artImg.onload = () => {
+        if (currentArtwork !== expected) return;
+        artImg.style.display = 'block'; placeholder.classList.remove('visible'); glow.classList.add('active');
+      };
+      artImg.onerror = () => { if (currentArtwork !== expected) return; artImg.style.display = 'none'; placeholder.classList.add('visible'); glow.classList.remove('active'); };
       artImg.src = artwork;
       void sampleArtworkColors(artwork);
-      artImg.style.display = 'block';
-      placeholder.classList.remove('visible');
-      glow.classList.add('active');
-    } else {
+    } else if (!artwork) {
+      currentArtwork = ''; paletteRequest++;
       artImg.style.display = 'none';
       placeholder.classList.add('visible');
       glow.classList.remove('active');
     }
+  } else {
+    setText('track-title','Waiting for music'); setText('track-artist','—'); setText('track-album','');
+    currentArtwork = ''; paletteRequest++;
+    const image = document.getElementById('album-art'); image.removeAttribute('src'); image.style.display = 'none';
+    document.getElementById('art-placeholder').classList.add('visible');
+    document.getElementById('album-art-glow').classList.remove('active');
+    currentLyricsKey = ''; document.getElementById('lyrics-content').textContent = 'Lyrics appear when a song plays';
+    document.getElementById('lyrics-source').textContent = '';
   }
 
   // Next up (queue)
@@ -952,8 +969,8 @@ function applyState(data) {
   }
 
   if (data.genre) setText('genre-display', data.genre);
-  if (data.messages?.length) buildMarquee(data.messages);
-  if (data.config) { state.config = data.config; fetchRssItems(); }
+  if (data.config) { state.config = data.config; void fetchRssItems(); }
+  if (data.messages || data.config) buildMarquee(state.messages || []);
   document.getElementById('xfade-ind').classList.toggle('visible', !!data.isFading);
 
   const deckPanel = document.getElementById('deck-cues');
@@ -1113,18 +1130,23 @@ animateVUMeter();
 let builtMessages = [];
 let rssItems = [];
 let rssFetchTimer = 0;
+let rssFeedKey = '', rssRequest = 0;
 async function fetchRssItems() {
   const now = Date.now();
+  const url = state.config?.rssFeedUrl || '';
+  if (url !== rssFeedKey) { rssFeedKey = url; rssFetchTimer = 0; }
   if (now - rssFetchTimer < 120000) return;
   rssFetchTimer = now;
+  const request = ++rssRequest;
   try {
-    const cfg = state.config || {};
-    const url = cfg.rssFeedUrl || '';
-    if (!url) { rssItems = []; return; }
+    if (!url) { rssItems = []; buildMarquee(state.messages || []); return; }
     const r = await fetch(`/api/rss?url=${encodeURIComponent(url)}`);
+    if (!r.ok) throw new Error('News feed unavailable');
     const d = await r.json();
-    rssItems = (d.items || []).map(i => i.title);
-  } catch (e) { rssItems = []; }
+    if (request !== rssRequest) return;
+    const items = (d.items || []).map(i => i.title).filter(Boolean);
+    if (items.length) { rssItems = items; buildMarquee(state.messages || []); }
+  } catch { /* Keep the last headlines during a temporary feed outage. */ }
 }
 function buildMarquee(messages) {
   const cfg = state.config || {};
@@ -1132,7 +1154,7 @@ function buildMarquee(messages) {
   let combined = [];
   if (mode === 'rss' || mode === 'both') {
     if (rssItems.length) {
-      const picks = [...rssItems].sort(() => Math.random() - 0.5).slice(0, 5);
+      const picks = rssItems.slice(0, 5);
       combined.push(...picks);
     }
   }
@@ -1147,9 +1169,9 @@ function buildMarquee(messages) {
 
   const track = document.getElementById('marquee-track');
   if (!track) return;
-  const html = combined.map(m => `<span class="marquee-msg">${m}</span>`).join('');
+  const html = combined.map(m => `<span class="marquee-msg">${escapeHtml(m)}</span>`).join('');
   // Duplicate for seamless loop
-  track.innerHTML = html + html;
+  track.innerHTML = `<div class="marquee-group">${html}</div><div class="marquee-group" aria-hidden="true">${html}</div>`;
   track.style.animationDuration = Math.max(30, Math.max(combined.length, 1) * 6) + 's';
 }
 buildMarquee(['🎵 AutoDJ warming up...', '🔊 Open DJ Console to begin', '🎧 Connect speakers and press play']);
@@ -1158,8 +1180,15 @@ setInterval(async () => { await fetchRssItems(); buildMarquee(state.messages || 
 // ─── Art pulse on track change ────────────────────────────────────────────────
 
 // ─── Fallback poll ────────────────────────────────────────────────────────────
+async function refreshDisplayState() {
+  const revision = stateUpdateRevision;
+  try {
+    const data = await (await fetch('/api/nowplaying')).json();
+    if (revision === stateUpdateRevision) applyState(data);
+  } catch { /* SSE continues while polling is unavailable. */ }
+}
 setInterval(async () => {
-  try { applyState(await (await fetch('/api/nowplaying')).json()); } catch(e) {}
+  await refreshDisplayState();
   try {
     const lr = await (await fetch('/api/listeners')).json();
     document.getElementById('listener-count').textContent = lr.count;

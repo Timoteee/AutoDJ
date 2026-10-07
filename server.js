@@ -254,10 +254,10 @@ if (!config.rssFeedUrl) {
   (async () => {
     try {
       const ip = ''; // server's own IP
-      const geo = await fetch(`http://ip-api.com/json/?fields=status,countryCode,city`, { signal: AbortSignal.timeout(4000) }).then(r => r.json()).catch(() => ({}));
+      const geo = await fetch(`http://ip-api.com/json/?fields=status,country,countryCode,city`, { signal: AbortSignal.timeout(4000) }).then(r => r.json()).catch(() => ({}));
       if (geo.status === 'success') {
         const cc = (geo.countryCode || 'US').toLowerCase();
-        config.rssFeedUrl = `https://news.google.com/rss?hl=${cc === 'us' ? 'en-US' : `en-${cc.toUpperCase()}`}&gl=${cc.toUpperCase()}&ceid=${cc.toUpperCase()}:en`;
+        config.rssFeedUrl = `https://news.google.com/rss/search?q=${encodeURIComponent((geo.country || geo.city || cc.toUpperCase()) + ' when:2d')}&hl=en-US&gl=US&ceid=US:en`;
         sharedState.config.rssFeedUrl = config.rssFeedUrl;
         log('Config', `Auto-set RSS feed: ${config.rssFeedUrl}`);
       }
