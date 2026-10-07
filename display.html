@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-/* ─── Signal & Flow Design System — AutoDJ v7.0.0 ─────────────────────── */
+/* ─── Signal & Flow Design System — AutoDJ v8.0.0 ─────────────────────── */
 :root {
   /* Primary palette */
   --signal: #ffb3ac;
@@ -53,6 +53,13 @@
   --transition: 250ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
+:root[data-theme="light"] {
+  --bg: #f5f2ef; --bg-lowest: #fffaf6;
+  --surface-1: #ffffff; --surface-2: #ece7e3; --surface-3: #ded8d3; --surface-4: #d2cbc5;
+  --text-primary: #24201e; --text-secondary: #514b47; --text-muted: #625b55; --text-dim: #746b63;
+  --border-dim: rgba(30,20,15,.08); --border: rgba(30,20,15,.15); --border-bright: rgba(30,20,15,.25);
+  --signal: #9c3029; --flow: #12617e; --green: #137d38;
+}
 /* ─── Reset ────────────────────────────────────────────────────────────── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; background: var(--bg); color: var(--text-primary); }
@@ -509,6 +516,8 @@ body {
   #next-artist { font-size: 9px; }
 }
 </style>
+<link rel="stylesheet" href="/css/shared.css">
+<script src="/ui-resilience.js"></script>
 </head>
 <body>
 
@@ -664,7 +673,7 @@ body {
 <script>
 // ─── Theme ────────────────────────────────────────────────────────────────────
 (function(){
-  const saved = localStorage.getItem('autodj-theme');
+  const saved = AutoDJUI.readPreference('autodj-theme');
   const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
   const theme = saved || (prefersLight ? 'light' : 'dark');
   document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
@@ -675,7 +684,7 @@ body {
       const cur = document.documentElement.getAttribute('data-theme');
       const next = cur === 'light' ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('autodj-theme', next);
+      AutoDJUI.writePreference('autodj-theme', next);
       btn.textContent = next === 'light' ? 'Dark' : 'Light';
     });
   }
@@ -684,9 +693,10 @@ body {
 // ─── Clock ────────────────────────────────────────────────────────────────────
 function updateClock() {
   const now = new Date();
-  const use12Hour = (window.DJ && DJ.config && DJ.config.use12HourClock) !== false;
-  document.getElementById('clock').textContent = now.toLocaleTimeString('en-US',{hour12: use12Hour, timeZone: DJ.config?.timezone});
-  document.getElementById('date-display').textContent = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric', timeZone: DJ.config?.timezone});
+  const config = window.DJ?.config || {};
+  const use12Hour = config.use12HourClock !== false;
+  document.getElementById('clock').textContent = now.toLocaleTimeString('en-US',{hour12: use12Hour, timeZone: config.timezone});
+  document.getElementById('date-display').textContent = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric', timeZone: config.timezone});
 }
 setInterval(updateClock, 1000); updateClock();
 
@@ -700,6 +710,7 @@ let deckCueTime = 0;
 // ─── Audio Main ───────────────────────────────────────────────────────────────
 const audioMain = document.getElementById('audio-main');
 let audioEnabled = false;
+let mixerAudio = null, mixerConnected = false;
 let currentStreamUrl = '';
 let relayNeedsSeek = true;
 const RELAY_SEEK_DRIFT_SEC = 1.6;
@@ -721,6 +732,7 @@ function seekRelayToBaseline() {
 }
 
 audioMain.addEventListener('ended', () => {
+  if (mixerConnected || !audioEnabled || !state.isPlaying) return;
   const np = state.nowPlaying;
   if (np && np.duration > 0) {
     const sinceUpdate = (Date.now() - baseTime) / 1000;
@@ -733,7 +745,7 @@ audioMain.addEventListener('ended', () => {
       return;
     }
   }
-  fetch('/api/playback/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'ended' }) }).catch(() => {});
+  fetch('/api/playback/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'ended', trackId: state.nowPlaying?.youtubeId || state.nowPlaying?.title }) }).catch(() => {});
 });
 audioMain.addEventListener('error', () => {
   console.warn('[AutoDJ][audio-main] stream error — will retry');
@@ -748,7 +760,7 @@ audioMain.addEventListener('loadedmetadata', () => {
   if (audioEnabled && state.isPlaying) seekRelayToBaseline();
 });
 audioMain.addEventListener('canplay', () => {
-  if (audioEnabled && relayNeedsSeek && state.isPlaying) {
+  if (audioEnabled && !mixerConnected && relayNeedsSeek && state.isPlaying) {
     relayNeedsSeek = false;
     seekRelayToBaseline();
     audioMain.play().catch(() => {});
@@ -761,7 +773,9 @@ function toggleAudio() {
     audioEnabled = true;
     btn.textContent = '🔊 Audio On';
     btn.classList.add('playing');
-    if (currentStreamUrl) {
+    void tryConnectWebRTC();
+    if (mixerAudio?.srcObject) mixerAudio.play().catch(() => { mixerConnected = false; });
+    if (currentStreamUrl && !mixerConnected) {
       audioMain.src = currentStreamUrl;
       audioMain.load();
       if (state.isPlaying) {
@@ -781,7 +795,7 @@ function setRelayStream(url, shouldPlay) {
   if (!url || url === currentStreamUrl) return;
   currentStreamUrl = url;
   relayNeedsSeek = true;
-  if (audioEnabled) {
+  if (audioEnabled && !mixerConnected) {
     audioMain.src = url;
     audioMain.load();
     if (shouldPlay !== false) audioMain.play().catch(() => {});
@@ -791,8 +805,8 @@ function setRelayStream(url, shouldPlay) {
 // ─── SSE ──────────────────────────────────────────────────────────────────────
 function connectSSE() {
   const es = new EventSource('/api/nowplaying/stream');
-  es.onmessage = e => applyState(JSON.parse(e.data));
-  es.onerror = () => setTimeout(connectSSE, 3000);
+  es.onmessage = e => { try { applyState(JSON.parse(e.data)); } catch (error) { console.warn('State update:', error.message); } };
+  es.onopen = () => fetch('/api/nowplaying').then(r => r.json()).then(applyState).catch(() => {});
 }
 connectSSE();
 
@@ -806,33 +820,13 @@ function applyState(data) {
   if (data.timezone) window.DJ.config.timezone = data.timezone;
   if (data.use12HourClock !== undefined) window.DJ.config.use12HourClock = data.use12HourClock;
 
-  // Handle playback commands
+  // Sharing starts automatically; audible playback still respects the listener's gesture.
   if (data.command === 'play') {
-    const url = data.url || (data.nowPlaying?.youtubeId ? `/api/cache/stream/${encodeURIComponent(data.nowPlaying.youtubeId)}` : '');
-    if (url) {
-      if (!audioEnabled) {
-        audioEnabled = true;
-        const btn = document.getElementById('audio-listen-btn');
-        if (btn) { btn.textContent = '🔊 Audio On'; btn.classList.add('playing'); }
-      }
-      currentStreamUrl = url;
-      setRelayStream(url, true);
-    }
+    const url = data.url || data.nowPlaying?.streamUrl || '';
+    if (url) setRelayStream(url, true);
   } else if (data.command === 'stop') {
-    audioMain.pause();
-    audioMain.src = '';
-    const btn = document.getElementById('audio-listen-btn');
-    if (btn) btn.classList.remove('playing');
-    audioEnabled = false;
-  } else if (!data.command && data.sessionActive && data.nowPlaying && data.nowPlaying.youtubeId && !audioMain.src) {
-    if (!audioEnabled) {
-      audioEnabled = true;
-      const btn = document.getElementById('audio-listen-btn');
-      if (btn) { btn.textContent = '🔊 Audio On'; if (data.isPlaying) btn.classList.add('playing'); }
-    }
-    const url = `/api/cache/stream/${encodeURIComponent(data.nowPlaying.youtubeId)}`;
-    currentStreamUrl = url;
-    setRelayStream(url, data.isPlaying);
+    audioMain.pause(); mixerAudio?.pause();
+    audioMain.removeAttribute('src'); currentStreamUrl = '';
   }
 
   // Derive nowPlaying from audible deck if null but deck data exists
@@ -852,6 +846,7 @@ function applyState(data) {
     }
   }
 
+  if (np?.streamUrl) setRelayStream(np.streamUrl, state.isPlaying);
   // Detect track change — reset interpolation baseline
   const trackId = np ? `${np.youtubeId || ''}::${np.title}::${np.artist}` : '';
   if (trackId !== prevTrackId) {
@@ -863,7 +858,7 @@ function applyState(data) {
   } else if (np && np.elapsed !== undefined) {
     baseElapsed = np.elapsed;
     baseTime = Date.now();
-    if (audioEnabled && audioMain.src && state.isPlaying) {
+    if (audioEnabled && !mixerConnected && audioMain.src && state.isPlaying) {
       const cap = (np.duration && Number.isFinite(np.duration)) ? np.duration : (audioMain.duration && Number.isFinite(audioMain.duration) ? audioMain.duration : null);
       let target = np.elapsed;
       if (cap) target = Math.min(target, cap - 0.12);
@@ -881,7 +876,7 @@ function applyState(data) {
     if (!data.isPlaying) {
       audioMain.pause();
       document.getElementById('audio-listen-btn')?.classList.remove('playing');
-    } else if (audioEnabled && audioMain.src) {
+    } else if (audioEnabled && !mixerConnected && audioMain.src) {
       document.getElementById('audio-listen-btn')?.classList.add('playing');
       if (audioMain.paused) audioMain.play().catch(() => {});
     }
@@ -901,8 +896,10 @@ function applyState(data) {
     const artImg = document.getElementById('album-art');
     const placeholder = document.getElementById('art-placeholder');
     const glow = document.getElementById('album-art-glow');
-    if (np.artwork && np.artwork !== 'undefined' && np.artwork !== '') {
-      artImg.src = np.artwork;
+    const artwork = np.artwork && np.artwork !== 'undefined' ? np.artwork : (/^[A-Za-z0-9_-]{11}$/.test(np.youtubeId || '') ? `https://img.youtube.com/vi/${np.youtubeId}/hqdefault.jpg` : '');
+    if (artwork) {
+      artImg.onerror = () => { artImg.style.display = 'none'; placeholder.classList.add('visible'); glow.classList.remove('active'); };
+      artImg.src = artwork;
       artImg.style.display = 'block';
       placeholder.classList.remove('visible');
       glow.classList.add('active');
@@ -1174,6 +1171,9 @@ async function fetchLyrics(artist, title, duration, youtubeId) {
   const panel = document.getElementById('lyrics-panel');
   const content = document.getElementById('lyrics-content');
   const src = document.getElementById('lyrics-source');
+  if (panel) panel.style.display = 'block';
+  if (content) content.textContent = 'Looking for lyrics…';
+  if (src) src.textContent = '';
   try {
     let url = `/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
     let d = duration ? Math.round(parseFloat(duration)) : 0;
@@ -1182,6 +1182,7 @@ async function fetchLyrics(artist, title, duration, youtubeId) {
     if (d) url += `&duration=${d}`;
     const r = await fetch(url);
     const data = await r.json();
+    if (currentLyricsKey !== key) return;
     if (data.synced || data.plain) {
       if (panel) panel.style.display = 'block';
       if (content) {
@@ -1198,55 +1199,58 @@ async function fetchLyrics(artist, title, duration, youtubeId) {
       }
       if (src) src.textContent = `♪ lyrics via ${data.source || 'lrclib'}`;
     } else {
-      if (panel) panel.style.display = 'none';
+      if (content) content.textContent = 'Lyrics unavailable for this track';
     }
-  } catch(e) { if (panel) panel.style.display = 'none'; }
+  } catch(e) { if (currentLyricsKey === key && content) content.textContent = 'Lyrics temporarily unavailable'; }
 }
 
 // ─── WebRTC Receive ──────────────────────────────────────────────────────────
-let _webrtcState = null;
+let _webrtcState = null, receiverBusy = false;
 async function tryConnectWebRTC() {
-  if (_webrtcState) return;
-  const audioEl = document.getElementById('webrtc-audio') || (() => {
-    const el = document.createElement('audio');
-    el.id = 'webrtc-audio';
-    el.autoplay = true;
-    el.style.display = 'none';
-    document.body.appendChild(el);
-    return el;
-  })();
+  if (receiverBusy) return; receiverBusy = true;
   try {
-    const r = await fetch('/api/webrtc/offer');
-    const offer = await r.json();
-    if (!offer || !offer.sdp) return;
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-    _webrtcState = { pc };
-    let stream = null;
-    pc.ontrack = (e) => {
-      stream = e.streams[0];
-      if (stream && audioEl) {
-        audioEl.srcObject = stream;
-        audioEl.play().catch(() => {});
-      }
-    };
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    await fetch('/api/webrtc/answer', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
-    });
-    pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        fetch('/api/webrtc/ice', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ candidate: e.candidate.candidate, sdpMid: e.candidate.sdpMid, sdpMLineIndex: e.candidate.sdpMLineIndex })
-        }).catch(() => {});
-      }
-    };
-  } catch (e) { /* no broadcast available */ }
+    if (!_webrtcState) {
+      const registered = await fetch('/api/audio/peers', { method: 'POST' });
+      if (!registered.ok) return;
+      const { id } = await registered.json();
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      mixerAudio ||= document.createElement('audio');
+      mixerAudio.id = 'mixer-audio'; document.body.appendChild(mixerAudio);
+      _webrtcState = { pc, id, ice: 0, offer: '' };
+      mixerAudio.onplaying = () => { if (pc.connectionState === 'connected') { mixerConnected = true; audioMain.pause(); } };
+      pc.ontrack = event => {
+        mixerAudio.srcObject = event.streams[0] || new MediaStream([event.track]);
+        if (audioEnabled) mixerAudio.play().catch(() => {});
+      };
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'connected' && audioEnabled) { mixerConnected = true; audioMain.pause(); mixerAudio.play().catch(() => { mixerConnected = false; }); }
+        if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
+          mixerConnected = false;
+          if (audioEnabled && state.isPlaying && currentStreamUrl) { audioMain.src = currentStreamUrl; audioMain.load(); audioMain.play().catch(() => {}); }
+          pc.close(); _webrtcState = null;
+        }
+      };
+      pc.onicecandidate = event => { if (event.candidate) fetch('/api/audio/peers/' + id, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'receiver', candidate: event.candidate })
+      }).catch(() => {}); };
+    }
+    const local = _webrtcState, url = '/api/audio/peers/' + local.id;
+    const response = await fetch(url);
+    if (!response.ok) { local.pc.close(); _webrtcState = null; return; }
+    const remote = await response.json();
+    if (remote.offer && remote.offer.sdp !== local.offer) {
+      local.offer = remote.offer.sdp; local.ice = 0;
+      await local.pc.setRemoteDescription(remote.offer);
+      const answer = await local.pc.createAnswer();
+      await local.pc.setLocalDescription(answer);
+      await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer }) });
+    }
+    if (local.pc.remoteDescription) for (; local.ice < remote.senderIce.length; local.ice++) await local.pc.addIceCandidate(remote.senderIce[local.ice]).catch(() => {});
+  } catch (error) { console.warn('Mixer connection:', error.message); }
+  finally { receiverBusy = false; }
 }
-setTimeout(tryConnectWebRTC, 1000);
+setInterval(tryConnectWebRTC, 1000);
+void tryConnectWebRTC();
 </script>
 </body>
 </html>

@@ -7,10 +7,10 @@
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="description" content="AutoDJ v7.0.0 — Signal & Flow Control Room">
+<meta name="description" content="AutoDJ v8.0.0 — Signal & Flow Control Room">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
-<title>AutoDJ v7 — Signal & Flow</title>
+<title>AutoDJ v8 — Signal & Flow</title>
 
 <!-- Icon size lives here, before the Tailwind script, so a blocked or slow
      CDN cannot let the logo SVG grow to the viewport. -->
@@ -41,38 +41,9 @@ svg.brand-mark {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-<!-- TailwindCSS via CDN -->
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-tailwind.config = {
-  darkMode: 'class',
-  theme: {
-    extend: {
-      colors: {
-        signal: { DEFAULT: '#ffb3ac', light: '#ffcdc8', dark: '#e6938c' },
-        flow:   { DEFAULT: '#a6e6ff', light: '#c4eeff', dark: '#7bc0d9' },
-        surface: { DEFAULT: '#131313', light: '#1a1a1a', lighter: '#222222', card: '#0e0e0e', border: 'var(--border-color)', hover: '#353534' },
-        amber:   { dj: '#d97706' },
-      },
-      fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
-        display: ['Space Grotesk', 'sans-serif'],
-      },
-      borderRadius: {
-        'xs': '0.125rem',
-        'sm': '0.25rem',
-        'md': '0.5rem',
-        'xl': '0.75rem',
-      },
-      spacing: {
-        'sidebar': '16rem',
-        'topbar': '4rem',
-      },
-    }
-  }
-}
-</script>
+<!-- Generated locally; no runtime CDN dependency. -->
+<link rel="stylesheet" href="/css/console.css">
+<script src="/ui-resilience.js"></script>
 
 <style>
 /* ─── CSS Custom Properties (Light mode default) ── */
@@ -84,7 +55,7 @@ tailwind.config = {
   --bg-hover: #eaeaea;
   --text-primary: #1a1a1a;
   --text-secondary: #555555;
-  --text-muted: #888888;
+  --text-muted: #666666;
   --border-color: #d4d4d4;
   --border-light: #e0e0e0;
   --signal: #ff6b5e;
@@ -116,7 +87,7 @@ tailwind.config = {
   --bg-hover: #353534;
   --text-primary: #e0e0e0;
   --text-secondary: #999999;
-  --text-muted: #666666;
+  --text-muted: #a0a0a0;
   --border-color: #2a2a2a;
   --border-light: #333333;
   --signal: #ffb3ac;
@@ -458,7 +429,7 @@ input[type=range].xfader::-webkit-slider-thumb {
 /* ─── Queue items ───────────────────────────────── */
 .qitem {
   display: grid;
-  grid-template-columns: 1.5rem auto 1fr 4rem 3rem 1.5rem;
+  grid-template-columns: 1.5rem minmax(0,1fr) auto auto;
   gap: 0.5rem; align-items: center;
   padding: 0.5rem 0.75rem;
   font-size: 0.75rem;
@@ -466,6 +437,11 @@ input[type=range].xfader::-webkit-slider-thumb {
   transition: background 0.15s;
 }
 .qitem:last-child { border-bottom: none; }
+.qitem > * { min-width: 0; }
+.q-details { overflow: hidden; }
+.q-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.q-actions { display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; }
+@media(max-width:600px) { .qitem { grid-template-columns:1.25rem minmax(0,1fr) auto; padding:8px; } .q-badge { display:none; } .q-actions { max-width:108px; } }
 .qitem:hover { background: var(--bg-hover); }
 .qitem.playing { background: var(--signal-dim); border-left: 2px solid var(--signal); }
 .qitem.next { background: var(--flow-dim); border-left: 2px solid var(--flow); }
@@ -557,6 +533,8 @@ input[type=range].xfader::-webkit-slider-thumb {
 .source-badge.source-jamendo { background: #22c55e; color: #fff; }
 .source-badge.source-metube { background: #3b82f6; color: #fff; }
 .source-badge.source-squid { background: #64748b; color: #fff; }
+.source-badge.source-youtube { background: #b91c1c; color: #fff; }
+.source-badge.source-audius { background: #6d28d9; color: #fff; }
 .source-badge.source-local { background: var(--signal); color: #000; }
 .source-badge.source-cache { background: var(--flow); color: #000; }
 
@@ -631,6 +609,7 @@ input[type=range].xfader::-webkit-slider-thumb {
   .status-ticker { max-width: 140px; }
 }
 </style>
+<link rel="stylesheet" href="/css/shared.css">
 </head>
 <body class="dark bg-[var(--bg-page)]">
 
@@ -645,7 +624,7 @@ input[type=range].xfader::-webkit-slider-thumb {
       <span class="brand-name font-display">
         <span class="text-signal">AUTO</span><span class="text-flow">DJ</span>
       </span>
-      <span class="text-[0.5rem] text-[var(--text-secondary)] ml-auto font-mono tracking-wider">v7</span>
+      <span class="text-[0.5rem] text-[var(--text-secondary)] ml-auto font-mono tracking-wider">v8</span>
     </div>
 
     <!-- Nav links -->
@@ -662,6 +641,7 @@ input[type=range].xfader::-webkit-slider-thumb {
         <svg width="20" height="20" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;min-width:0;max-width:20px;min-height:0;max-height:20px;flex:0 0 20px"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
         Discovery
       </a>
+      <a href="#" class="sidebar-link" data-page="recommendations">♡ For You</a>
       <a href="#" class="sidebar-link" data-page="downloads">
         <svg width="20" height="20" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;min-width:0;max-width:20px;min-height:0;max-height:20px;flex:0 0 20px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Downloads <span id="dl-count-sidebar" class="dl-badge-count" style="display:none">0</span>
@@ -674,7 +654,7 @@ input[type=range].xfader::-webkit-slider-thumb {
         <svg width="20" height="20" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:20px;height:20px;min-width:0;max-width:20px;min-height:0;max-height:20px;flex:0 0 20px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         Failed
       </a>
-      <a href="/display" target="_blank" class="sidebar-link">
+      <a href="/display" target="_blank" rel="noopener" class="sidebar-link">
         <svg width="20" height="20" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;min-width:0;max-width:20px;min-height:0;max-height:20px;flex:0 0 20px"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         Display ↗
       </a>
@@ -702,9 +682,10 @@ input[type=range].xfader::-webkit-slider-thumb {
       <button id="menuToggle" class="md:hidden p-1.5 text-[var(--text-muted)] hover:text-white transition-colors" aria-label="Menu">
         <svg width="20" height="20" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:2px;height:2px;min-width:0;max-width:2px;min-height:0;max-height:2px;flex:0 0 2px"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
+      <span id="connection-state" class="connection-state" role="status" data-connected="false">Connecting…</span>
       <div class="status-ticker flex-1 min-w-0">
         <div class="marquee-wrap">
-          <span id="status" class="marquee-inner text-[0.75rem] font-mono text-[var(--text-muted)]">Initializing Signal & Flow...</span>
+          <span id="status" role="status" aria-live="polite" class="marquee-inner text-[0.75rem] font-mono text-[var(--text-muted)]">Initializing Signal & Flow...</span>
         </div>
       </div>
       <div class="clock-display font-mono text-[0.6875rem] text-[var(--text-secondary)] tracking-wider" id="clock">--:--:--</div>
@@ -735,7 +716,9 @@ input[type=range].xfader::-webkit-slider-thumb {
             <span class="text-[0.5rem] text-[var(--text-secondary)] font-mono uppercase tracking-widest">BPM</span>
             <button class="btn btn-xs" id="tap-bpm" title="Tap BPM">TAP</button>
           </div>
-          <button class="btn btn-sm btn-flow" id="smart-fade-btn">⟳ Smart Fade</button>
+          <button class="btn btn-sm btn-flow" id="smart-fade-btn" onclick="triggerCrossfade()">⟳ Smart Fade</button>
+          <button class="btn btn-sm" onclick="forceSkipNext()">Skip →</button>
+          <button class="btn btn-sm" id="like-current" aria-pressed="false" onclick="toggleSongLike(DJ.queue[DJ.trackIndex])">♡ Like</button>
           <span class="font-mono text-[0.6875rem] text-[var(--text-secondary)]">
             <span id="session-timer">00:00:00</span> <span class="text-[0.5rem]">session</span>
           </span>
@@ -818,7 +801,6 @@ input[type=range].xfader::-webkit-slider-thumb {
             </div>
             <label class="flex items-center gap-2 text-[0.625rem] text-[var(--text-muted)]"><input type="checkbox" id="automix" checked class="accent-signal"> Auto-Mix</label>
             <label class="flex items-center gap-2 text-[0.625rem] text-[var(--text-muted)]"><input type="checkbox" id="smart-fade" checked class="accent-signal"> Smart Fade</label>
-            <button class="btn btn-xs btn-success w-full" id="share-audio-btn" onclick="toggleWebRTC()">🔊 Share</button>
           </div>
 
           <!-- Deck B -->
@@ -954,6 +936,12 @@ input[type=range].xfader::-webkit-slider-thumb {
       <!-- ════════════════════════════════════════════ -->
       <!-- PAGE: DISCOVERY                              -->
       <!-- ════════════════════════════════════════════ -->
+      <section id="page-recommendations" class="page-section p-4">
+        <div class="section-title">For You</div>
+        <p class="text-[var(--text-secondary)] mb-4">Music inspired by what you finish listening to.</p>
+        <button class="btn mb-4" onclick="loadListeningRecommendations()">Refresh suggestions</button>
+        <div id="listening-recommendations" aria-live="polite"></div>
+      </section>
       <section id="page-discovery" class="page-section p-4">
         <!-- Hero Search -->
         <div class="relative mb-6">
@@ -1074,7 +1062,7 @@ input[type=range].xfader::-webkit-slider-thumb {
             <div class="panel-body space-y-3">
               <div class="field"><label>Pre-download Ahead</label><input type="number" id="cfg-predownload" value="3" min="1" max="20"></div>
               <div class="field"><label>Max Concurrent Downloads</label><input type="number" id="cfg-max-concurrent" value="3" min="1" max="10"></div>
-              <div class="field"><label>Smart Fade at %</label><input type="number" id="cfg-fade-pct" value="80" min="10" max="100"></div>
+              <div class="field"><label>Adaptive fading</label><p class="text-xs text-[var(--text-secondary)]">Follows track endings with a 3–10 second overlap. No AI required.</p></div>
               <div class="field"><label>Max Track (minutes, 0=unlimited)</label><input type="number" id="cfg-max-track" value="0" min="0" max="120"></div>
               <div class="field"><label>Session Duration (hours)</label><input type="number" id="cfg-session-duration" value="0" min="0" max="168"></div>
               <div class="field"><label>Queue Limit</label><input type="number" id="cfg-queue-limit" value="0" min="0" max="500"></div>
@@ -1084,6 +1072,8 @@ input[type=range].xfader::-webkit-slider-thumb {
               <div class="field"><label>Invidious Redirect</label><input type="url" id="cfg-invidious-redirect" placeholder="https://..."></div>
               <div class="field"><label>Source Priority</label>
                 <div id="source-priority-list" class="space-y-1">
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="youtube">🔍 YouTube search · audio via MeTube / worker</div>
+                  <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="audius">🎵 Audius · full tracks</div>
                   <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="metube">🎬 MeTube</div>
                   <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="invidious">🔍 Invidious</div>
                   <div class="src-prio-item flex items-center gap-2 p-2 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded cursor-grab text-[0.6875rem]" draggable="true" data-src="piped">🔍 Piped</div>
@@ -1183,11 +1173,12 @@ input[type=range].xfader::-webkit-slider-thumb {
 <audio id="audio-b" preload="auto"></audio>
 
 <!-- Engine -->
+<script src="/audio-transitions.js"></script>
 <script src="/engine.js"></script>
 
 <!-- ─── APPLICATION JS ────────────────────────────── -->
 <script>
-/** AutoDJ v7 — Signal & Flow Control Room */
+/** AutoDJ v8 — Signal & Flow Control Room */
 const DJ = {
   queue: [],
   history: [],
@@ -1219,7 +1210,7 @@ const DJ = {
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   setupAudioElements();
-  await loadConfig();
+  const configLoaded = await loadConfig();
   await loadPersistentQueue();
   startClock();
   setupSourcePriorityDrag();
@@ -1236,14 +1227,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   await fetchDownloadStatus();
   if (dlPollTimer) clearInterval(dlPollTimer);
   dlPollTimer = setInterval(fetchDownloadStatus, 3000);
-  setStatus('Signal acquired — ready');
+  setStatus(configLoaded ? 'Signal acquired — ready' : 'Settings unavailable — check the server connection');
   refreshV7Status();
   setTimeout(startRenderLoop, 300);
 });
 
 // ─── Theme ──────────────────────────────────────────
 function initTheme() {
-  const saved = localStorage.getItem('autodj-theme');
+  const saved = AutoDJUI.readPreference('autodj-theme');
   const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
   const theme = saved || (prefersLight ? 'light' : 'dark');
   document.documentElement.classList.toggle('dark', theme !== 'light');
@@ -1252,7 +1243,7 @@ function initTheme() {
     btn.textContent = theme === 'light' ? 'DARK' : 'LIGHT';
     btn.onclick = () => {
       const isDark = document.documentElement.classList.toggle('dark');
-      localStorage.setItem('autodj-theme', isDark ? 'dark' : 'light');
+      AutoDJUI.writePreference('autodj-theme', isDark ? 'dark' : 'light');
       btn.textContent = isDark ? 'LIGHT' : 'DARK';
     };
   }
@@ -1268,6 +1259,22 @@ function showPage(name) {
   // When navigating to discovery, adjust if needed
   if (name === 'settings') { fetchLogs(); refreshV7Status(); }
   if (name === 'failed') { refreshFailed(); }
+  if (name === 'recommendations') { void loadListeningRecommendations(); }
+}
+
+let listeningRecommendations = [];
+async function loadListeningRecommendations() {
+  const box = document.getElementById('listening-recommendations');
+  box.textContent = 'Finding music for you…';
+  try {
+    const data = await AutoDJUI.requestJSON('/api/recommendations/for-you', { signal: AbortSignal.timeout(30000) });
+    listeningRecommendations = data.recommendations || [];
+    if (!listeningRecommendations.length) {
+      box.textContent = data.listeningCount ? 'No new suggestions right now. Try again after a few more tracks.' : 'Play a few tracks to build your recommendations.';
+      return;
+    }
+    box.innerHTML = listeningRecommendations.map((t,i) => `<div class="qitem"><div class="flex-1 min-w-0"><div>${escHtml(t.title)}</div><div class="text-[var(--text-secondary)] text-xs">${escHtml(t.artist)}</div><div class="text-[var(--text-secondary)] text-xs">${escHtml(t.reason)}</div></div><button class="btn" onclick="enqueueOnlineTrack(listeningRecommendations[${i}])">+ Queue</button></div>`).join('');
+  } catch { box.textContent = 'Suggestions are temporarily unavailable. Your listening activity is saved.'; }
 }
 
 document.querySelectorAll('.sidebar-link[data-page]').forEach(link => {
@@ -1294,11 +1301,22 @@ function initSSE() {
   if (sseSource) { sseSource.close(); }
   try {
     sseSource = new EventSource('/api/nowplaying/stream');
+    sseSource.onopen = () => {
+      const indicator = document.getElementById('connection-state');
+      indicator.textContent = 'Live';
+      indicator.dataset.connected = 'true';
+    };
     sseSource.addEventListener('state', (e) => {
       try {
         const data = JSON.parse(e.data);
         if (data.nowPlaying) updateNowPlayingDisplay(data);
-        if (data.queue) { DJ.queue = data.queue; renderQueue(); }
+        if (data.queue) {
+          const identity = t => t.youtubeId || t.videoId || t.url || t.title;
+          if (JSON.stringify(data.queue.map(identity)) !== JSON.stringify(DJ.queue.map(identity))) {
+            const existing = new Map(DJ.queue.map(t => [identity(t), t]));
+            DJ.queue = data.queue.map(t => existing.get(identity(t)) || t); renderQueue();
+          }
+        }
         // V7: Update status bar and preload
         updateStatusBar(data);
         updatePreloadProgress(data.preloadState);
@@ -1333,8 +1351,10 @@ function initSSE() {
       } catch(err) {}
     };
     sseSource.onerror = () => {
-      // Auto-reconnect after 3s
-      setTimeout(initSSE, 3000);
+      const indicator = document.getElementById('connection-state');
+      indicator.textContent = 'Reconnecting…';
+      indicator.dataset.connected = 'false';
+      // EventSource retries itself; avoid parallel reconnect timers.
     };
   } catch(e) {}
 }
@@ -1376,9 +1396,9 @@ function updateDownloadStatus(data) {
   else if (data.videoId) {
     const items = [data, ...(dlData.items || []).filter(i => i.videoId !== data.videoId)];
     dlData = { items: items.slice(0, 50) };
-    if (data.status === 'failed' || data.status === 'exhausted') {
+    if (['completed', 'failed', 'exhausted'].includes(data.status)) {
       const track = DJ.queue.find(q => q.youtubeId === data.videoId || q.videoId === data.videoId);
-      if (track) track._failed = true;
+      if (track) track._failed = data.status !== 'completed';
       renderQueue();
     }
   }
@@ -1419,8 +1439,8 @@ function updateDownloadStatusUI() {
       }
       const ts = i.timestamp ? new Date(i.timestamp).toLocaleTimeString('en-US', { hour12: DJ.config?.use12HourClock !== false, timeZone: DJ.config?.timezone }) : '—';
       return `<tr>
-        <td class="text-white font-medium max-w-[200px] truncate">${escHtml(i.title || '—')}</td>
-        <td>${sourceBadge(i._source || '')}</td>
+        <td class="text-white font-medium max-w-[200px] truncate">${escHtml(i.title || '—')}${i.error ? '<div class="text-xs text-red-400">' + escHtml(i.error) + '</div>' : ''}</td>
+        <td>${sourceBadge(i.source || i._source || '')}</td>
         <td>${statusHtml}</td>
         <td class="text-[var(--text-secondary)] font-mono">${ts}</td>
       </tr>`;
@@ -1458,8 +1478,7 @@ function setupAudioElements() {
 // ─── Config ─────────────────────────────────────────
 async function loadConfig() {
   try {
-    const r = await fetch('/api/config');
-    const cfg = await r.json();
+    const cfg = await AutoDJUI.requestJSON('/api/config');
     DJ.hasLastfm = cfg.hasLastfm;
     DJ.hasJamendo = cfg.hasJamendo;
     DJ.hasSpotify = cfg.hasSpotify;
@@ -1503,7 +1522,11 @@ async function loadConfig() {
     DJ.config.sessionDuration = cfg.sessionDuration || 0;
     DJ.config.queueLimit = cfg.queueLimit || 0;
     updateServiceIndicators();
-  } catch(e) {}
+    return true;
+  } catch(e) {
+    setStatus('Unable to load settings — ' + e.message);
+    return false;
+  }
 }
 
 function updateServiceIndicators() {
@@ -1519,7 +1542,7 @@ function updateServiceIndicators() {
   // Disable AI buttons if no AI
   document.querySelectorAll('.ai-btn').forEach(b => { b.disabled = !DJ.hasAI; b.style.opacity = DJ.hasAI ? '1' : '0.4'; });
   const aiBtn = document.getElementById('ai-recommend-btn');
-  if (aiBtn) { aiBtn.disabled = !DJ.hasAI; aiBtn.style.opacity = DJ.hasAI ? '1' : '0.4'; }
+  if (aiBtn) { aiBtn.disabled = false; aiBtn.style.opacity = '1'; aiBtn.textContent = 'Suggest'; }
 }
 
 async function saveConfig() {
@@ -1550,13 +1573,15 @@ async function saveConfig() {
     sessionDuration: parseInt(document.getElementById('cfg-session-duration')?.value) || 0,
     queueLimit: parseInt(document.getElementById('cfg-queue-limit')?.value) || 0
   };
-  const r = await fetch('/api/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if (r.ok) {
+  try {
+    await AutoDJUI.requestJSON('/api/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     DJ.config.sessionDuration = body.sessionDuration;
     DJ.config.queueLimit = body.queueLimit;
     await loadConfig();
+    setStatus('Configuration saved ✓');
+  } catch (error) {
+    setStatus('Configuration was not saved — ' + error.message);
   }
-  setStatus('Configuration saved ✓');
 }
 
 // ─── Persistence ────────────────────────────────────
@@ -1574,18 +1599,15 @@ function persistQueue() {
 
 async function loadPersistentQueue() {
   try {
-    const [qRes, npRes] = await Promise.all([
-      fetch('/api/queue'),
-      fetch('/api/nowplaying')
+    const [qd, np] = await Promise.all([
+      AutoDJUI.requestJSON('/api/queue'),
+      AutoDJUI.requestJSON('/api/nowplaying')
     ]);
-    const qd = await qRes.json();
     if (Array.isArray(qd.queue) && qd.queue.length > 0) {
       DJ.queue = qd.queue;
       DJ.trackIndex = typeof qd.trackIndex === 'number' ? qd.trackIndex : 0;
-      renderQueue();
       setStatus(`Restored ${qd.queue.length} tracks`);
     }
-    const np = await npRes.json();
     if (Array.isArray(np.playedIds)) {
       np.playedIds.forEach(id => DJ.usedTracks.add(`yt:${id}`));
     }
@@ -1594,6 +1616,9 @@ async function loadPersistentQueue() {
       const track = np.nowPlaying;
       const deck = DJ.currentDeck || 'a';
       const audio = getDeckAudio(deck);
+      Engine.decks[deck].track = track;
+      Engine.initAudioCtx();
+      Engine.ensureDeckConnected(deck);
       if (track.youtubeId) {
         audio.src = `/api/cache/stream/${encodeURIComponent(track.youtubeId)}`;
         audio.load();
@@ -1602,6 +1627,7 @@ async function loadPersistentQueue() {
       document.getElementById(`artist-${deck}`).textContent = track.artist || '—';
       if (np.isPlaying) { audio.play().catch(() => {}); }
     }
+    renderQueue();
   } catch(e) {}
 }
 
@@ -1682,7 +1708,7 @@ function buildDeckPayload(deck) {
     return { title: '', artist: '', album: '', artwork: '', elapsed: 0, duration: 0, streamUrl: '', youtubeId: null, fadePoint: null, tags: [], isAudible: false };
   }
   return {
-    title: track.title, artist: track.artist, album: track.album || '', artwork: track.artwork || track.image || '',
+    title: track.title, artist: track.artist, album: track.album || '', artwork: trackArtwork(track),
     elapsed: cur, duration: dur, fadePoint: Engine.decks[deck]?.fadePoint ?? null,
     tags: track.tags, streamUrl: buildStreamUrlForTrack(track), youtubeId: track.youtubeId || null,
     isAudible: audible === deck
@@ -1726,13 +1752,13 @@ async function broadcastDeckState(extra = {}) {
       title: t.title, artist: t.artist, album: t.album,
       duration: dur, elapsed,
       fadePoint: Engine.decks[audible]?.fadePoint,
-      tags: t.tags, artwork: t.artwork || t.image || '',
+      tags: t.tags, artwork: trackArtwork(t),
       streamUrl: buildStreamUrlForTrack(t),
       youtubeId: t.youtubeId || null
     } : null,
     primaryDeck: audible,
     decks: { a: buildDeckPayload('a'), b: buildDeckPayload('b') },
-    nextUp: next ? { title: next.title || '—', artist: next.artist || '—', artwork: next.artwork || next.image || '' } : null,
+    nextUp: next ? { title: next.title || '—', artist: next.artist || '—', artwork: trackArtwork(next) } : null,
     genre: genre ? genre.charAt(0).toUpperCase() + genre.slice(1) : '',
     isPlaying: playing,
     isFading: !!Engine.isFading,
@@ -1742,15 +1768,27 @@ async function broadcastDeckState(extra = {}) {
   await Engine.broadcastNowPlaying(payload);
 }
 
-async function startPlayback() {
+let playbackStartPromise = null;
+function startPlayback() {
+  Engine.initAudioCtx();
+  if (playbackStartPromise) return playbackStartPromise;
+  playbackStartPromise = runClientPlaybackStart().finally(() => { playbackStartPromise = null; });
+  return playbackStartPromise;
+}
+async function runClientPlaybackStart() {
   Engine.initAudioCtx();
   Engine.ensureDeckConnected('a');
   Engine.ensureDeckConnected('b');
   if (DJ.queue.length === 0) { setStatus('Add some tracks first!'); return; }
   if (DJ.trackIndex < 0) {
     DJ.waitingForPreload = true;
-    setStatus('Preloading upcoming tracks…');
+    setStatus('Preparing the first track…');
     try {
+      clearTimeout(_persistTimer);
+      await AutoDJUI.requestJSON('/api/queue', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queue: DJ.queue, trackIndex: DJ.trackIndex })
+      });
       const r = await fetch('/api/playback/start', { method: 'POST' });
       const data = await r.json();
       DJ.waitingForPreload = false;
@@ -1771,26 +1809,31 @@ async function startPlayback() {
     await loadTrackOnDeck(DJ.currentDeck, DJ.queue[DJ.trackIndex]);
   } else {
     DJ.started = true;
-    getDeckAudio(DJ.currentDeck).play().catch(()=>{});
+    if (!Engine.decks[DJ.currentDeck].track || !getDeckAudio(DJ.currentDeck).getAttribute('src')) {
+      await loadTrackOnDeck(DJ.currentDeck, DJ.queue[DJ.trackIndex]);
+    } else {
+      await getDeckAudio(DJ.currentDeck).play().catch(() => setStatus('Press Play to enable browser audio'));
+    }
     void broadcastDeckState();
   }
 }
 
 function waitForAudioReady(audio, timeoutMs = 30000) {
-  if (!audio) return Promise.resolve();
-  if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => { cleanup(); resolve(); };
-    const t = setTimeout(done, timeoutMs);
-    const cleanup = () => { clearTimeout(t); audio.removeEventListener('canplaythrough', done); audio.removeEventListener('canplay', done); audio.removeEventListener('error', done); };
-    audio.addEventListener('canplaythrough', done, { once: true });
-    audio.addEventListener('canplay', done, { once: true });
-    audio.addEventListener('error', done, { once: true });
+  if (!audio) return Promise.reject(new Error('Missing audio deck'));
+  if (audio.readyState >= 3) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => { clearTimeout(timer); audio.removeEventListener('canplay', ready); audio.removeEventListener('error', failed); };
+    const ready = () => { cleanup(); resolve(); };
+    const failed = () => { cleanup(); reject(new Error('Audio could not be decoded')); };
+    const timer = setTimeout(() => { cleanup(); reject(new Error('Audio load timed out')); }, timeoutMs);
+    audio.addEventListener('canplay', ready, { once: true }); audio.addEventListener('error', failed, { once: true });
   });
 }
 
 async function loadTrackOnDeck(deck, track, opts = {}) {
   if (!track) return;
+  track._listenEventId = crypto.randomUUID();
+  track._listeningRecorded = false;
   Engine.decks[deck].track = track;
   Engine.decks[deck].cuePoint = 0;
   Engine.decks[deck].fadePoint = null;
@@ -1811,6 +1854,7 @@ async function loadTrackOnDeck(deck, track, opts = {}) {
       });
       const data = await r.json();
       if (r.ok && data.url) {
+        track._failed = false;
         streamUrl = data.url;
         track._streamUrl = data.url;
         if (data.title && (!track.title || track.title === '?')) track.title = data.title;
@@ -1819,15 +1863,17 @@ async function loadTrackOnDeck(deck, track, opts = {}) {
         audio.load();
         if (deck === DJ.currentDeck) preDownloadAhead();
       } else {
-        setStatus(`⚠ ${data.error || 'Download failed'}. Removing...`);
-        removeFailedTrack(DJ.queue.indexOf(track));
-        setTimeout(() => advanceQueue(), 2000);
+        track._failed = true;
+        if (!opts.prepareOnly) DJ.started = false;
+        setStatus('Download failed: ' + (data.error || 'Unknown error') + '. Track kept for retry.');
+        renderQueue();
         return;
       }
     } catch(e) {
-      setStatus(`⚠ Error: ${e.message}. Removing...`);
-      removeFailedTrack(DJ.queue.indexOf(track));
-      setTimeout(() => advanceQueue(), 2000);
+      track._failed = true;
+      if (!opts.prepareOnly) DJ.started = false;
+      setStatus('Download failed: ' + e.message + '. Track kept for retry.');
+      renderQueue();
       return;
     }
   } else {
@@ -1846,15 +1892,20 @@ async function loadTrackOnDeck(deck, track, opts = {}) {
     setDeckLive('b', deck==='b');
   }
   Engine.ensureDeckConnected(deck);
+  void Engine.startWebRTCBroadcast();
   applyXfaderGains();
-  await waitForAudioReady(audio);
+  try { await waitForAudioReady(audio); } catch (error) {
+    track._failed = true; if (!opts.prepareOnly) DJ.started = false;
+    setStatus('Audio unavailable: ' + error.message + '. Track kept for retry.'); renderQueue(); return false;
+  }
   if (!opts.prepareOnly) {
     const playPromise = audio.play();
     if (playPromise) playPromise.then(() => updateMediaSession(track)).catch(e => {
       setStatus(`Play blocked (${deck.toUpperCase()}): click ▶ to start`);
     });
   }
-  void broadcastDeckState();
+  if (!opts.prepareOnly) void broadcastDeckState();
+  return true;
 }
 
 function setDeckLive(deck, live) {
@@ -1866,11 +1917,12 @@ function setDeckLive(deck, live) {
   if (dot) dot.style.display = live ? 'inline-block' : 'none';
 }
 
+function trackArtwork(track) { return track?.artwork || track?.image || (/^[A-Za-z0-9_-]{11}$/.test(track?.youtubeId || '') ? 'https://img.youtube.com/vi/' + track.youtubeId + '/hqdefault.jpg' : ''); }
 function updateDeckArtwork(deck, track) {
   const el = document.getElementById(`artwork-${deck}`);
   if (!el) return;
-  if (track.artwork || track.image) {
-    el.src = track.artwork || track.image;
+  if (trackArtwork(track)) {
+    el.src = trackArtwork(track);
     el.style.display = 'block';
   } else {
     el.style.display = 'none';
@@ -1886,19 +1938,16 @@ async function onMetaLoaded(deck) {
     if (dur < 21600) track.duration = dur;
   }
   document.getElementById(`dur-${deck}`).textContent = fmt(dur);
-  if (document.getElementById('smart-fade')?.checked && audio.src && Number.isFinite(dur)) {
-    Engine.detectFadePoint(audio.src, dur).then(fp => {
-      if (fp != null && Number.isFinite(fp)) Engine.decks[deck].fadePoint = fp;
-    });
-  }
-  if (audio.src) {
-    Engine.analyzeBPM(audio.src).then(bpm => {
-      if (bpm) {
-        Engine.decks[deck].bpm = bpm;
-        document.getElementById(`bpm-display-${deck}`).textContent = bpm;
-        updateGlobalBPM();
-      }
-    });
+  if (audio.src && track) {
+    const source = audio.src;
+    const profile = await Engine.analyzeTrack(source);
+    if (Engine.decks[deck].track !== track || audio.src !== source) return;
+    track._analysis = profile;
+    if (profile?.beatConfidence > .75) {
+      Engine.decks[deck].bpm = Math.round(60 / profile.beatPeriod);
+      document.getElementById('bpm-display-' + deck).textContent = Engine.decks[deck].bpm;
+      updateGlobalBPM();
+    }
   }
 }
 
@@ -1912,16 +1961,17 @@ function updateGlobalBPM() {
 }
 
 function onPlayError(deck) {
-  const audible = getAudibleDeck();
-  if (deck === audible || deck === DJ.currentDeck) {
-    setStatus(`⚠ Stream error on ${deck.toUpperCase()} — skipping`);
+  const track = Engine.decks[deck].track;
+  if (track) track._failed = true;
+  if (deck === DJ.currentDeck) {
+    DJ.started = false;
+    setStatus('Audio error: track kept for retry');
     void broadcastDeckState({ streamError: true, errorDeck: deck });
-    setTimeout(() => void advanceQueue(), 1000);
   }
 }
 
 function onTrackEnded(deck) {
-  if (deck !== DJ.currentDeck) return;
+  if (Engine.isFading || DJ.fadeLock || deck !== DJ.currentDeck) return;
   void advanceQueue();
 }
 
@@ -1933,6 +1983,16 @@ function removeFailedTrack(idx) {
   renderQueue();
 }
 
+function recordListening(track, audio) {
+  if (!track || track._listeningRecorded) return;
+  track._listeningRecorded = true;
+  const duration = Number(audio?.duration || track.duration) || 0;
+  const elapsed = Number(audio?.currentTime) || 0;
+  fetch('/api/playback/played', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ eventId: track._listenEventId, videoId: track.youtubeId || track.videoId,
+      title: track.title, artist: track.artist, duration, listenRatio: duration ? Math.min(1,elapsed/duration) : 0,
+      skipped: duration > 45 && elapsed < 30 }) }).catch(() => { track._listeningRecorded = false; });
+}
 async function advanceQueue() {
   DJ.fadeLock = false;
   const justPlayed = DJ.queue[DJ.trackIndex];
@@ -1943,21 +2003,7 @@ async function advanceQueue() {
   }
   DJ.trackIndex++;
   pruneUsedTracks();
-  if (justPlayed?.youtubeId || justPlayed?.videoId) {
-    const audio = getDeckAudio(DJ.currentDeck);
-    const elapsed = audio?.currentTime || 0;
-    const dur = justPlayed.duration || audio?.duration || 0;
-    const listenRatio = dur > 0 ? Math.min(1, elapsed / dur) : 1;
-    fetch('/api/playback/played', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        videoId: justPlayed.youtubeId || justPlayed.videoId,
-        title: justPlayed.title || '',
-        artist: justPlayed.artist || '',
-        duration: dur,
-        listenRatio,
-        skipped: elapsed < 30 && dur > 45
-      }) }).catch(() => {});
-  }
+  recordListening(justPlayed, getDeckAudio(DJ.currentDeck));
   fetch('/api/playback/next', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trackIndex: DJ.trackIndex }) }).catch(() => {});
   if (DJ.trackIndex >= DJ.queue.length) {
     setStatus('Queue ended — fetching more tracks...');
@@ -2016,9 +2062,10 @@ function setVol(deck, val) {
   document.getElementById(`vol-val-${deck}`).textContent = Math.round(val*100)+'%';
 }
 function setXfaderGains(val) {
+  if (Engine.isFading) return;
   const v = parseFloat(val);
-  if (Engine.decks.a.gain) Engine.decks.a.gain.gain.value = 1 - v;
-  if (Engine.decks.b.gain) Engine.decks.b.gain.gain.value = v;
+  if (Engine.decks.a.gain) Engine.decks.a.gain.gain.value = AudioTransitions.gains(v)[0];
+  if (Engine.decks.b.gain) Engine.decks.b.gain.gain.value = AudioTransitions.gains(v)[1];
 }
 function onXfader(val) {
   setXfaderGains(val);
@@ -2050,59 +2097,58 @@ function updateDeckUI(deck) {
   if (deck !== DJ.currentDeck) return;
   if (Engine.isFading || DJ.fadeLock) return;
   if (!Number.isFinite(dur) || dur < 5 || !Number.isFinite(remain) || remain <= 0) return;
+  void prepareUpcomingDeck();
+  const nextTrack = DJ.queue[DJ.trackIndex + 1];
+  if (!nextTrack || nextTrack._failed) return;
   const otherDeck = getNextDeck();
-  const otherTrack = Engine.decks[otherDeck]?.track;
-  if (!otherTrack) return;
-  const fadePct = parseInt(document.getElementById('cfg-fade-pct')?.value) || 80;
-  const pctPlayed = cur / dur * 100;
-  if (pctPlayed >= fadePct && document.getElementById('smart-fade')?.checked) {
-    DJ.fadeLock = true;
-    void triggerCrossfade();
-    return;
-  }
-  if (!document.getElementById('smart-fade')?.checked) {
-    const fadeSec = parseInt(document.getElementById('fade-dur')?.value) || 8;
-    const fp = Engine.decks[deck].fadePoint;
-    const triggerRemain = fp && Number.isFinite(fp) ? (dur - fp) : fadeSec;
-    if (remain <= triggerRemain + 0.5 && remain > 0.5) {
-      DJ.fadeLock = true;
-      void triggerCrossfade();
-    }
-  }
+  if (Engine.decks[otherDeck]?.track !== nextTrack || getDeckAudio(otherDeck).readyState < 3) return;
+  const adaptive = document.getElementById('smart-fade')?.checked;
+  const seconds = parseInt(document.getElementById('fade-dur')?.value) || 6;
+  const plan = adaptive ? AudioTransitions.plan(Engine.decks[deck].track?._analysis, nextTrack._analysis, dur, seconds)
+    : { start: Math.max(0, dur - seconds), overlap: seconds, cue: 0 };
+  if (cur >= plan.start && remain > .1) void triggerCrossfade(plan);
+
 }
 
 // ─── Crossfade ──────────────────────────────────────
-async function triggerCrossfade() {
-  if (Engine.isFading) return;
-  const fromDeck = DJ.currentDeck;
-  const toDeck = getNextDeck();
-  const dur = parseInt(document.getElementById('fade-dur')?.value) || 8;
+let preparingNext = null;
+async function prepareUpcomingDeck() {
+  if (!DJ.started || preparingNext || Engine.isFading || DJ.fadeLock) return;
+  const next = DJ.queue[DJ.trackIndex + 1]; if (!next || next._failed) return;
+  const deck = getNextDeck();
+  if (Engine.decks[deck].track === next && getDeckAudio(deck).readyState >= 3) return;
+  preparingNext = next;
+  try { await loadTrackOnDeck(deck, next, { prepareOnly: true }); } finally { preparingNext = null; }
+}
+async function triggerCrossfade(plan) {
+  if (Engine.isFading || DJ.fadeLock) return;
+  DJ.fadeLock = true;
+  const fromDeck = DJ.currentDeck, toDeck = getNextDeck();
   const nextTrack = DJ.queue[DJ.trackIndex + 1];
-  if (!nextTrack) {
-    setStatus('Fetching next track...');
-    fetchMoreOnline().then(async () => {
-      if (DJ.queue[DJ.trackIndex + 1]) await triggerCrossfade();
+  try {
+    if (!nextTrack) { await fetchMoreOnline(); return; }
+    if (preparingNext) return;
+    if (Engine.decks[toDeck].track !== nextTrack || getDeckAudio(toDeck).readyState < 3) {
+      if (!await loadTrackOnDeck(toDeck, nextTrack, { prepareOnly: true })) return;
+    }
+    const outgoing = getDeckAudio(fromDeck);
+    plan ||= AudioTransitions.plan(Engine.decks[fromDeck].track?._analysis, nextTrack._analysis, outgoing.duration || 30);
+    const duration = Math.max(.5, Math.min(plan.overlap, Math.max(.5, outgoing.duration - outgoing.currentTime)));
+    getDeckAudio(toDeck).currentTime = plan.cue || 0;
+    document.getElementById('fade-btn').classList.add('opacity-50');
+    setStatus('Crossfading → ' + nextTrack.title);
+    await Engine.crossfade(fromDeck, toDeck, duration, () => {
+      recordListening(Engine.decks[fromDeck].track, getDeckAudio(fromDeck));
+      DJ.trackIndex = DJ.queue.indexOf(nextTrack); DJ.currentDeck = toDeck;
+      DJ.fadeLock = false;
+      setDeckLive('a', toDeck === 'a'); setDeckLive('b', toDeck === 'b');
+      document.getElementById('fade-btn').classList.remove('opacity-50');
+      void broadcastDeckState({ isFading: false }); renderQueue();
+      void prepareUpcomingDeck();
     });
-    return;
-  }
-  DJ.trackIndex++;
-  await loadTrackOnDeck(toDeck, nextTrack, { prepareOnly: true });
-  document.getElementById('fade-btn').classList.add('opacity-50');
-  setStatus(`⇄ Crossfading → ${nextTrack.title}`);
-  Engine.broadcastNowPlaying({ isFading: true });
-  Engine.crossfade(fromDeck, toDeck, dur, () => {
-    DJ.currentDeck = toDeck;
-    DJ.fadeLock = false;
-    setDeckLive('a', toDeck==='a');
-    setDeckLive('b', toDeck==='b');
-    document.getElementById('fade-btn').classList.remove('opacity-50');
-    setStatus(`▶ ${nextTrack.title} — ${nextTrack.artist}`);
-    applyXfaderGains();
-    void broadcastDeckState();
-    renderQueue();
-    Engine.broadcastNowPlaying({ isFading: false });
-    if (DJ.queue.length - DJ.trackIndex < 3) fetchMoreOnline();
-  });
+    void broadcastDeckState({ isFading: true });
+  } catch (error) { setStatus('Transition deferred: ' + error.message); }
+  finally { if (!Engine.isFading) DJ.fadeLock = false; }
 }
 
 // ─── TAP BPM ────────────────────────────────────────
@@ -2175,6 +2221,7 @@ function sourceBadge(src) {
 
 // ─── Queue ──────────────────────────────────────────
 function renderQueue() {
+  updateLikeButton();
   const list = document.getElementById('queue-list');
   const countEl = document.getElementById('q-count');
   const sideCount = document.getElementById('q-count-sidebar');
@@ -2197,24 +2244,23 @@ function renderQueue() {
     ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)"
     ondrop="onDrop(event,${i})" ondragleave="onDragLeave(event)">
     <div class="q-num">${i+1}</div>
-    <div class="q-src">${sb}</div>
-    <div class="min-w-0 overflow-hidden">
-      <div class="text-[0.75rem] text-white truncate font-medium">${escHtml(t.title || '—')}</div>
-      <div class="text-[0.625rem] text-[var(--text-muted)] truncate">${escHtml(t.artist || '—')}${t.album ? ' · ' + escHtml(t.album) : ''}</div>
-    </div>
+    <div class="q-details"><div class="q-title">${escHtml(t.title || '—')}</div>
+      <div class="q-title text-[var(--text-secondary)] text-xs">${escHtml(t.artist || '—')}${t.album ? ' · ' + escHtml(t.album) : ''}</div>
+      <div class="text-[var(--text-secondary)] text-xs">${sb} · ${cacheBadge(t)} · ${t.duration ? fmt(t.duration) : '—'}</div></div>
     <span class="q-badge ${badgeClass}">${badgeText}</span>
-    ${sourceDot(t._source)}
-    ${cacheBadge(t)}
-    ${t._badDuration
-      ? `<div class="text-[0.625rem] font-mono duration-bad" title="Invalid duration">---</div>`
-      : `<div class="text-[0.625rem] font-mono text-[var(--text-secondary)]">${t.duration ? fmt(t.duration) : '—'}</div>`}
+    <div class="q-actions"><button class="btn btn-xs" aria-label="Like song" aria-pressed="${isSongLiked(t)}" onclick="toggleSongLike(DJ.queue[${i}])">${isSongLiked(t) ? '♥' : '♡'}</button>
     ${!isPast && !isPlay ? `<button class="btn btn-xs" onclick="playQueueTrack(${i})" title="Play now">▶</button>` : ''}
-    ${(t._failed || cacheStatus(t) === 'failed' || cacheStatus(t) === 'exhausted') ? `<button class="btn btn-xs btn-danger" onclick="retryTrack(${i})" title="Retry download">Retry</button>` : ''}
+    ${!isPlay ? `<button class="btn btn-xs" onclick="removeFromQueue(${i})" aria-label="Remove song from queue">Remove</button>` : ''}
+    ${(t._failed || cacheStatus(t) === 'failed' || cacheStatus(t) === 'exhausted') ? `<button class="btn btn-xs btn-danger" onclick="retryTrack(${i})">Retry</button>` : ''}</div>
     </div>`;
   }).join('');
   list.querySelector('.playing')?.scrollIntoView({ block:'nearest', behavior:'smooth' });
   renderConsoleUpNext();
   persistQueue();
+  scheduleAutoQueue();
+  if (!DJ.started && DJ.trackIndex < 0 && !playbackStartPromise && !DJ.queue[0]._failed) {
+    void startPlayback().catch(() => setStatus('Press Play to enable browser audio'));
+  }
 }
 
 function renderConsoleUpNext() {
@@ -2276,6 +2322,8 @@ async function cueQueueTrack(deck, queueIdx) {
   setStatus(`Cue Deck ${deck.toUpperCase()} from queue #${queueIdx + 1}: ${t.title}`);
 }
 function removeFromQueue(i) {
+  if (Engine.isFading || playbackStartPromise) { setStatus('Wait for playback preparation or the transition to finish'); return; }
+  if (!Number.isInteger(i) || i < 0 || i >= DJ.queue.length) return;
   if (i===DJ.trackIndex) return;
   DJ.queue.splice(i,1);
   if (i < DJ.trackIndex) DJ.trackIndex--;
@@ -2308,67 +2356,43 @@ function clearAllAndReset() {
 }
 
 // ─── Discovery ──────────────────────────────────────
-async function startAutoDiscover() {
-  const artist = document.getElementById('seed-artist')?.value.trim();
-  const track = document.getElementById('seed-track')?.value.trim();
-  if (!artist) { setStatus('Enter a seed artist'); return; }
-  if (!DJ.hasLastfm) { setStatus('Add a Last.fm API key first'); return; }
-  setStatus('Starting discovery...');
-  DJ.knownArtists = [artist];
-  DJ.usedTracks.clear();
-  DJ.seedTags = [];
-  try {
-    const info = track ? await Engine.getTrackInfo(artist, track) : await Engine.getArtistInfo(artist);
-    DJ.seedTags = info.tags || [];
-    setStatus(`Tags: ${DJ.seedTags.slice(0,4).join(', ') || 'none'}`);
-    let seeds = track ? [{title:track,artist}] : [];
-    const tops = await Engine.getTopTracks(artist, 4);
-    seeds.push(...tops);
-    for (const t of seeds.slice(0, 3)) await enqueueOnlineTrack(t);
-    if (DJ.trackIndex < 0 && DJ.queue.length > 0) { DJ.trackIndex = 0; startPlayback(); renderQueue(); }
-    setTimeout(() => fetchMoreOnline(), 2000);
-  } catch(e) { setStatus('Discovery error: ' + e.message); }
+function discoverySeed() {
+  const track = DJ.queue[DJ.trackIndex] || DJ.queue.find(track => !track._failed) || Engine.decks[DJ.currentDeck]?.track;
+  const artist = document.getElementById('seed-artist')?.value.trim() || track?.artist || DJ.knownArtists[0] || '';
+  const title = document.getElementById('seed-track')?.value.trim() || track?.title || '';
+  return { artist, title: AutoDJUI.seedTitle(title, artist) };
 }
-
+let autoQueueTimer = null, lastAutoQueueAt = 0;
+function scheduleAutoQueue() {
+  if (!document.getElementById('automix')?.checked || document.getElementById('queue-mode')?.value === 'local-only') return;
+  if (!DJ.queue.length || DJ.discovering || autoQueueTimer || Date.now() - lastAutoQueueAt < 30000) return;
+  const remaining = DJ.queue.slice(Math.max(0, DJ.trackIndex + 1)).filter(track => !track._failed).length;
+  if (remaining >= 3 || (DJ.config.queueLimit > 0 && DJ.queue.length >= DJ.config.queueLimit)) return;
+  autoQueueTimer = setTimeout(() => {
+    autoQueueTimer = null;
+    lastAutoQueueAt = Date.now();
+    void fetchMoreOnline();
+  }, 500);
+}
+async function startAutoDiscover() {
+  await fetchMoreOnline();
+  if (DJ.trackIndex < 0 && DJ.queue.length) await startPlayback();
+}
 async function fetchMoreOnline() {
-  if (DJ.discovering || !DJ.hasLastfm) return;
+  if (DJ.discovering) return;
+  const seed = discoverySeed();
+  if (!seed.artist) { setStatus('Queue a track or choose an artist for suggestions'); return; }
   DJ.discovering = true;
-  const mode = document.getElementById('discovery-mode')?.value || 'both';
-  let candidates = [];
   try {
-    if ((mode === 'similar' || mode === 'both') && DJ.knownArtists.length) {
-      const base = DJ.knownArtists[Math.floor(Math.random() * Math.min(DJ.knownArtists.length, 5))];
-      const similar = await Engine.getSimilarArtists(base, 6);
-      for (const a of similar.slice(0, 3)) {
-        const tracks = await Engine.getTopTracks(a, 2);
-        candidates.push(...tracks);
-      }
-    }
-    if ((mode === 'tag' || mode === 'both') && DJ.seedTags.length) {
-      const tag = DJ.seedTags[Math.floor(Math.random() * DJ.seedTags.length)];
-      const tagTracks = await Engine.getTagTracks(tag, 5);
-      candidates.push(...tagTracks);
-    }
-    const cur = DJ.queue[DJ.trackIndex];
-    if (cur && cur.type === 'online') {
-      const sim = await Engine.getSimilarTracks(cur.artist, cur.title, 5);
-      candidates.push(...sim);
-    }
-    candidates = candidates.filter(c => {
-      if (!c.artist || !c.title) return false;
-      const key = `${dedupKey(c.artist)}::${dedupKey(c.title)}`;
-      if (DJ.usedTracks.has(key)) return false;
-      if (isRecentlyPlayed(c.artist, c.title)) return false;
-      if (isInQueue(c.artist, c.title)) return false;
-      return true;
-    }).sort(() => Math.random() - 0.5);
+    const response = await AutoDJUI.requestJSON('/api/discovery/recommendations?' + new URLSearchParams({ ...seed, count: 8 }), { signal: AbortSignal.timeout(25000) });
     let added = 0;
-    for (const t of candidates) {
-      if (added >= 4) break;
-      if (await enqueueOnlineTrack(t)) added++;
+    for (const candidate of response.recommendations || []) {
+      if (added >= 4 || (DJ.config.queueLimit > 0 && DJ.queue.length >= DJ.config.queueLimit)) break;
+      if (await enqueueOnlineTrack(candidate)) added++;
     }
-    if (added > 0) { renderQueue(); setStatus(`Queued ${added} new track${added!==1?'s':''}`); }
-  } catch(e) { setStatus('Discovery error: ' + e.message); }
+    setStatus(added ? 'Autoqueue added ' + added + ' tracks (' + response.source + ')' : 'No new suggestions after duplicate filtering');
+    renderQueue();
+  } catch (error) { setStatus('Autoqueue failed: ' + error.message); }
   finally { DJ.discovering = false; }
 }
 
@@ -2383,7 +2407,6 @@ async function enqueueOnlineTrack(t) {
   if (!result || !result.videoId) { setStatus(`No source for: ${t.artist} — ${t.title}`); return false; }
   let info = { tags: [], album: '', image: '', duration: 0 };
   if (DJ.hasLastfm) { try { info = await Engine.getTrackInfo(t.artist, t.title); } catch(e) {} }
-  DJ.usedTracks.add(key);
   const fromSearch = result.lengthSeconds != null ? normalizeClientDuration(result.lengthSeconds) : 0;
   const maxMin = parseInt(document.getElementById('cfg-max-track')?.value) || 0;
   const durSec = info.duration || t.duration || fromSearch || 0;
@@ -2394,8 +2417,9 @@ async function enqueueOnlineTrack(t) {
     title: t.title, artist: t.artist,
     album: info.album || '', tags: info.tags || [],
     duration: info.duration || t.duration || fromSearch || 0,
-    image: info.image || '', artwork: info.image || ''
+    image: info.image || result.artwork || '', artwork: info.image || result.artwork || ''
   };
+  DJ.usedTracks.add(key);
   DJ.queue.push(track);
   if (!DJ.knownArtists.includes(t.artist)) DJ.knownArtists.push(t.artist);
   (info.tags||[]).forEach(tag => { if (!DJ.seedTags.includes(tag)) DJ.seedTags.push(tag); });
@@ -2413,6 +2437,7 @@ async function unifiedQueueSearch() {
   try {
     const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`);
     const results = await r.json();
+    if (!r.ok) throw new Error(results.error || `Search failed (${r.status})`);
     if (!Array.isArray(results) || !results.length) {
       box.innerHTML = '<div class="text-[0.6875rem] text-[var(--text-secondary)] p-2">No results</div>';
       return;
@@ -2437,6 +2462,7 @@ async function unifiedQueueSearch() {
         <div class="flex-1 min-w-0">
           <div class="text-white truncate font-medium">${escHtml(it.title || '—')}</div>
           <div class="text-[var(--text-muted)] truncate">${escHtml(it.author || it.uploader || '')}</div>
+          <div>${sourceBadge(it._source)}${it._source === 'youtube' ? ' · Audio via yt-dlp, MeTube or worker' : ''}</div>
         </div>
         <button class="btn btn-xs btn-signal" data-add="${payload}">+ Queue</button>
       </div>`;
@@ -2471,6 +2497,7 @@ async function discoverSearch() {
   try {
     const r = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`);
     const results = await r.json();
+    if (!r.ok) throw new Error(results.error || `Search failed (${r.status})`);
     if (!Array.isArray(results) || !results.length) {
       box.innerHTML = '<div class="col-span-full text-center text-[0.75rem] text-[var(--text-secondary)] py-8">No results</div>';
       return;
@@ -2495,6 +2522,7 @@ async function discoverSearch() {
         <div class="p-2">
           <div class="text-[0.6875rem] text-white truncate font-medium">${escHtml(it.title || '—')}</div>
           <div class="text-[0.5625rem] text-[var(--text-muted)] truncate">${escHtml(it.author || it.uploader || '')}</div>
+          <div>${sourceBadge(it._source)}${it._source === 'youtube' ? ' · Audio via MeTube / worker / proxy' : ''}</div>
         </div>
         <div class="overlay">
           <button class="btn btn-xs btn-signal" onclick="quickQueue('${payload}')">▶ Play</button>
@@ -2522,19 +2550,29 @@ function setMood(mood) {
 
 // ─── AI ─────────────────────────────────────────────
 async function aiAnalyzeAndRecommend() {
-  if (!DJ.hasAI) { setStatus('Configure an AI key in Settings first'); return; }
   const el = document.getElementById('ai-result');
-  el.innerHTML = '<span class="text-[var(--text-secondary)]"><span class="spinner"></span> Consulting AI...</span>';
+  const seed = discoverySeed();
+  el.textContent = 'Finding song suggestions…';
   try {
-    const cur = DJ.queue[DJ.trackIndex];
-    const recs = await Engine.aiRecommend(cur, DJ.history, DJ.seedTags, document.getElementById('ai-mood')?.value);
-    el.innerHTML = (Array.isArray(recs) ? recs : []).map(r =>
-      `<div class="mb-2 pb-2 border-b border-[var(--border-color)] last:border-0">
-        <div class="text-white text-[0.75rem] font-medium">${r.title} — ${r.artist}</div>
-        <div class="text-flow text-[0.625rem]">${r.reason||''}</div>
-        <button class="btn btn-xs btn-signal mt-1" onclick="enqueueAITrack('${r.artist.replace(/'/g,"\\'")}','${r.title.replace(/'/g,"\\'")}')">+ Queue</button>
-      </div>`).join('') || '<span class="text-[var(--text-secondary)]">No recommendations returned</span>';
-  } catch(e) { el.innerHTML = `<span class="text-signal">Error: ${e.message}</span>`; }
+    let recs, source = 'AI';
+    try {
+      if (!DJ.hasAI) throw new Error('AI unavailable');
+      recs = await Engine.aiRecommend(seed, DJ.history, DJ.seedTags, document.getElementById('ai-mood')?.value);
+    } catch (error) {
+      const response = await AutoDJUI.requestJSON('/api/discovery/recommendations?' + new URLSearchParams({ ...seed, count: 8 }), { signal: AbortSignal.timeout(25000) });
+      recs = response.recommendations;
+      source = response.source + ' (AI unavailable)';
+    }
+    el.innerHTML = '<div>' + escHtml(source) + '</div>' + (recs || []).map(track => {
+      const payload = encodeURIComponent(JSON.stringify({ artist: track.artist, title: track.title }));
+      return '<div class="mb-2 pb-2 border-b"><div>' + escHtml(track.title) + ' — ' + escHtml(track.artist) + '</div><div>' + escHtml(track.reason || '') + '</div><button class="btn btn-xs" data-recommend="' + payload + '">+ Queue</button></div>';
+    }).join('');
+    if (!recs?.length) el.textContent = 'No song suggestions found. Choose an artist or queue a track.';
+    el.querySelectorAll('[data-recommend]').forEach(button => button.onclick = () => {
+      const track = JSON.parse(decodeURIComponent(button.dataset.recommend));
+      void enqueueOnlineTrack(track);
+    });
+  } catch (error) { el.textContent = 'Suggestions failed: ' + error.message; }
 }
 
 async function enqueueAITrack(artist, title) {
@@ -2546,7 +2584,7 @@ async function enqueueAITrack(artist, title) {
 }
 
 async function aiRefillQueue() {
-  if (!DJ.hasAI) { setStatus('Configure an AI key first'); return; }
+  if (!DJ.hasAI) return fetchMoreOnline();
   setStatus('AI refilling queue...');
   try {
     const recs = await Engine.aiRecommend(DJ.queue[DJ.trackIndex], DJ.history, DJ.seedTags, document.getElementById('ai-mood')?.value||'');
@@ -2556,29 +2594,11 @@ async function aiRefillQueue() {
       if (result?.videoId) { DJ.queue.push({type:'online',youtubeId:result.videoId,_source:result._source||'',_instance:result._instance||'',title:r.title,artist:r.artist,tags:[]}); added++; }
     }
     renderQueue(); setStatus(`AI added ${added} tracks`);
-  } catch(e) { setStatus('AI error: '+e.message); }
+  } catch(e) { await fetchMoreOnline(); }
 }
 
 // ─── Pre-download ahead ─────────────────────────────
-async function preDownloadAhead() {
-  const count = parseInt(document.getElementById('cfg-predownload')?.value) || 3;
-  const pending = [];
-  for (let i = DJ.trackIndex + 1; i < DJ.queue.length && pending.length < count; i++) {
-    const t = DJ.queue[i];
-    if (t.type === 'online' && t.youtubeId && !t._downloadStarted) {
-      pending.push(t); t._downloadStarted = true;
-    }
-  }
-  if (!pending.length) return;
-  try {
-    const r = await fetch('/api/cache/downloadBatch', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tracks: pending.map(t => ({ videoId: t.youtubeId, title: t.title, artist: t.artist, _source: t._source || '', _instance: t._instance || '' })) })
-    });
-    const data = await r.json();
-    if (data.results) { const ok = data.results.filter(r => r.ok).length; if (ok > 0) console.debug(`Pre-downloaded ${ok}/${data.results.length}`); }
-  } catch(e) {}
-}
+async function preDownloadAhead() { await prepareUpcomingDeck(); }
 
 // ─── System Stats ───────────────────────────────────
 function fmtBytes(b) { if (!b) return '0 B'; const k=1024, s=['B','KB','MB','GB','TB']; const i=Math.floor(Math.log(b)/Math.log(k)); return (b/Math.pow(k,i)).toFixed(1)+' '+s[i]; }
@@ -2699,34 +2719,17 @@ async function testSources() {
   try {
     const d = await (await fetch('/api/test/sources')).json();
     const lines = [];
-    lines.push(`Up ${d.summary?.up ?? 0} / ${d.summary?.total ?? 0}`);
+    lines.push(`Search APIs up ${d.summary?.up ?? 0} / ${d.summary?.total ?? 0}`);
     for (const [type, arr] of Object.entries(d.results || {})) {
       const upc = (arr || []).filter(x => x.ok).length;
-      lines.push(`${type}: ${upc}/${(arr || []).length}`);
+      const failures = [...new Set((arr || []).filter(x => !x.ok).map(x => x.status))];
+      lines.push(`${type}: ${upc}/${(arr || []).length}${failures.length ? ' (' + failures.join(', ') + ')' : ''}`);
     }
     out.textContent = lines.join(' · ');
   } catch(e) { out.textContent = 'Error: ' + e.message; }
 }
 
 // ─── WebRTC ─────────────────────────────────────────
-async function toggleWebRTC() {
-  const btn = document.getElementById('share-audio-btn');
-  if (DJ._webrtcActive) {
-    Engine.stopWebRTCBroadcast();
-    if (DJ._webrtcReceiver) { clearInterval(DJ._webrtcReceiver.poll); DJ._webrtcReceiver.pc.close(); DJ._webrtcReceiver = null; }
-    DJ._webrtcActive = false;
-    if (btn) btn.textContent = '🔊 Share';
-    setStatus('Audio sharing stopped');
-    return;
-  }
-  try {
-    await Engine.startWebRTCBroadcast();
-    DJ._webrtcActive = true;
-    if (btn) btn.textContent = '🔇 Stop';
-    setStatus('Sharing audio');
-  } catch(e) { setStatus('Failed: ' + e.message); }
-}
-
 // ─── Helpers ────────────────────────────────────────
 function fmt(s) {
   if (!s || isNaN(s) || s < 0) return '0:00';
@@ -2760,7 +2763,27 @@ function updateMediaSession(track) {
     navigator.mediaSession.setActionHandler('nexttrack', () => forceSkipNext());
   } catch(e) {}
 }
-function forceSkipNext() { getDeckAudio(DJ.currentDeck).pause(); void advanceQueue(); }
+function forceSkipNext() {
+  if (Engine.isFading || playbackStartPromise) { setStatus('Wait for the transition to finish'); return; }
+  if (DJ.trackIndex < 0) return;
+  getDeckAudio(DJ.currentDeck).pause(); void advanceQueue();
+}
+let likedSongs = [];
+function isSongLiked(track) { return !!track && likedSongs.some(t => dedupKey(t.artist) === dedupKey(track.artist) && dedupKey(t.title) === dedupKey(track.title)); }
+function updateLikeButton() {
+  const button = document.getElementById('like-current'), liked = isSongLiked(DJ.queue[DJ.trackIndex]);
+  if (!button) return;
+  button.textContent = liked ? '♥ Liked' : '♡ Like'; button.setAttribute('aria-pressed',String(liked));
+  button.disabled = !DJ.queue[DJ.trackIndex];
+}
+async function toggleSongLike(track) {
+  if (!track) return;
+  try {
+    const data = await AutoDJUI.requestJSON('/api/listening/likes', { method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({artist:track.artist,title:track.title,videoId:track.youtubeId || track.videoId,liked:!isSongLiked(track)}) });
+    likedSongs = data.likes || []; updateLikeButton(); renderQueue();
+  } catch { setStatus('Could not save like. Please try again.'); }
+}
+void AutoDJUI.requestJSON('/api/listening/likes').then(data => { likedSongs=data.likes || []; updateLikeButton(); }).catch(() => {});
 function pruneUsedTracks() { if (DJ.usedTracks && DJ.usedTracks.size > 200) { const arr = [...DJ.usedTracks]; DJ.usedTracks = new Set(arr.slice(arr.length - 150)); } }
 
 // ─── Temp Upload (simplified) ──────────────────────
@@ -2798,7 +2821,7 @@ setInterval(() => {
   el.textContent = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
 }, 1000);
 
-console.log('⟡ AutoDJ v7 — Signal & Flow Control Room initialized');
+console.log('⟡ AutoDJ v8 — Signal & Flow Control Room initialized');
 
 // ─── V7 Functions ────────────────────────────────────────────────────────
 function cacheStatus(t) {
