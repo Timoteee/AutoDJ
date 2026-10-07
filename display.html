@@ -65,7 +65,7 @@
 html, body { height: 100%; background: var(--bg); color: var(--text-primary); }
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  overflow: hidden; /* full-screen no scroll */
+  overflow-x:hidden; overflow-y:auto;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -117,9 +117,9 @@ body {
 .app {
   position: relative; z-index: 1;
   display: flex; flex-direction: column;
-  height: 100vh; height: 100dvh;
-  padding: 32px 48px 48px;
-  overflow: hidden;
+  min-height:calc(100dvh - 36px); height:auto;
+  padding:24px 48px 12px;
+  overflow:visible;
 }
 @media (max-width: 900px) {
   .app { padding: 20px 24px 40px; }
@@ -192,11 +192,11 @@ body {
 
 /* ─── Main content area ────────────────────────────────────────────────── */
 .main-area {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  gap: 40px; min-height: 0;
+  flex:1; display:grid; grid-template-columns:minmax(180px,300px) minmax(0,1fr) minmax(240px,1fr);
+  align-items:start; gap:40px; min-height:0; margin:16px 0;
 }
 @media (max-width: 900px) {
-  .main-area { flex-direction: column; gap: 24px; }
+  .main-area { display:flex; flex-direction:column; align-items:center; gap:24px; }
 }
 
 /* ─── Album art ────────────────────────────────────────────────────────── */
@@ -214,7 +214,7 @@ body {
   position: absolute; inset: -40px; z-index: -1;
   border-radius: 50%; filter: blur(60px);
   background: radial-gradient(ellipse at 25% 35%, rgb(var(--art-color-a, 166 230 255) / .75), transparent 65%), radial-gradient(ellipse at 75% 65%, rgb(var(--art-color-b, 255 179 172) / .65), transparent 65%);
-  opacity: 0; transition: opacity 1.5s ease;
+  opacity:0; transition:opacity .18s ease;
   pointer-events:none; animation: backlightDrift 18s ease-in-out infinite alternate;
 }
 .album-art-glow.active { opacity: var(--backlight-opacity, .14); }
@@ -224,7 +224,7 @@ body {
   width: 100%; height: 100%; object-fit: cover;
   display: block; border-radius: var(--radius-lg);
   background: var(--surface-2);
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  box-shadow:0 12px 35px rgba(0,0,0,0.25);
 }
 .art-placeholder {
   display: none; width: 100%; height: 100%;
@@ -317,7 +317,7 @@ body {
 }
 #vu-container {
   display: flex; align-items: flex-end; gap: 3px;
-  height: 32px;
+  height:40px;
 }
 .vu-bar {
   flex: 1; min-width: 3px; max-width: 8px;
@@ -379,7 +379,7 @@ body {
 
 /* ─── RSS news marquee ─────────────────────────────────────────────────── */
 .marquee-bar {
-  position: fixed; bottom: 0; left: 0; right: 0;
+  position:relative; left:0; right:0; flex-shrink:0;
   background: linear-gradient(90deg, rgba(255,179,172,0.04), rgba(166,230,255,0.04));
   border-top: 1px solid var(--border-dim);
   padding: 9px 0; overflow: hidden; z-index: 10;
@@ -466,13 +466,20 @@ body {
 
 /* ─── Lyrics panel ─────────────────────────────────────────────────────── */
 #lyrics-panel {
-  display: none; margin-top: 10px;
-  padding: 8px 14px; background: var(--surface-1);
-  border: 1px solid var(--border-dim); border-radius: var(--radius-sm);
-  max-height: 200px; overflow-y: auto;
-  text-align: center;
+  display:none; margin-top:0; padding:0 0 0 28px;
+  border-left:1px solid var(--border); min-width:0;
+  text-align:left;
 }
-#lyrics-content { font-size: 12px; line-height: 1.7; color: var(--text-secondary); }
+.lyrics-label { font:11px 'JetBrains Mono',monospace; letter-spacing:2px; color:var(--flow); margin-bottom:20px; }
+#lyrics-content { font-size:18px; line-height:1.8; color:var(--text-secondary); max-height:60vh; overflow-y:auto; overflow-wrap:anywhere; white-space:pre-line; }
+@media(min-width:901px) and (max-width:1150px) {
+  .main-area { grid-template-columns:minmax(180px,240px) minmax(0,1fr); }
+  #lyrics-panel { grid-column:1/-1; border-left:0; border-top:1px solid var(--border); padding:24px 0 0; }
+}
+@media(max-width:900px) {
+  #lyrics-panel { width:100%; border-left:0; border-top:1px solid var(--border); padding:20px 0 0; }
+  #lyrics-content { font-size:16px; max-height:320px; }
+}
 #lyrics-content .lrc-line {
   transition: color 0.25s, opacity 0.25s; opacity: 0.5;
 }
@@ -658,12 +665,12 @@ body {
         </div>
       </div>
 
-      <!-- Lyrics -->
-      <div id="lyrics-panel">
-        <div id="lyrics-content"></div>
-        <div id="lyrics-source"></div>
-      </div>
     </div>
+    <aside id="lyrics-panel" aria-label="Song lyrics">
+      <div class="lyrics-label">LYRICS</div>
+      <div id="lyrics-content"></div>
+      <div id="lyrics-source"></div>
+    </aside>
   </div>
 </div>
 
@@ -1009,7 +1016,7 @@ function updateProgress() {
 setInterval(updateProgress, 300);
 
 // ─── Palette and measured mixer energy ───────────────────────────────────────
-let paletteRequest = 0, visualSignalAt = 0, smoothedBass = 0;
+let paletteRequest = 0, visualSignalAt = 0, smoothedBass = 0, bassBaseline = 0;
 const visualBands = new Array(6).fill(0);
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 async function sampleArtworkColors(url) {
@@ -1052,14 +1059,21 @@ function animateVUMeter() {
   const signal = state.visualizer?.bands || [];
   for (let i=0;i<6;i++) {
     const target = playing ? Math.max(0,Math.min(1,Number(signal[i]) || 0)) : 0;
-    visualBands[i] += (target-visualBands[i]) * .08;
+    visualBands[i] += (target-visualBands[i]) * .2;
   }
-  smoothedBass += ((playing ? visualBands[0] : 0)-smoothedBass) * .025;
-  document.getElementById('album-art-glow').style.setProperty('--backlight-opacity',reducedMotion.matches ? '.14' : String(.12 + smoothedBass * .2));
+  smoothedBass += ((playing ? visualBands[0] : 0)-smoothedBass) * .15;
+  bassBaseline += (smoothedBass-bassBaseline) * .008;
+  const pulse = Math.max(0,smoothedBass-bassBaseline);
+  const glow = document.getElementById('album-art-glow');
+  glow.style.setProperty('--backlight-opacity',reducedMotion.matches ? '.22' : String(Math.min(.65,.2 + smoothedBass * .3 + pulse * .35)));
+  glow.style.animationPlayState = playing ? 'running' : 'paused';
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i];
     if (playing && !reducedMotion.matches) {
-      const height = 2 + visualBands[Math.min(5,Math.floor(i / Math.ceil(bars.length/6)))] * 26;
+      const position = i / Math.max(1,bars.length-1) * 5;
+      const low = Math.floor(position), high = Math.min(5,low+1);
+      const level = visualBands[low] + (visualBands[high]-visualBands[low]) * (position-low);
+      const height = 2 + Math.sqrt(level) * 36;
       b.style.height = height + 'px';
       b.classList.add('playing');
     } else {
@@ -1191,7 +1205,7 @@ function updateLrcHighlight(elapsed) {
     }
   });
   if (active >= 0 && lines[active]) {
-    const panel = document.getElementById('lyrics-panel');
+    const panel = document.getElementById('lyrics-content');
     if (panel) {
       const panelRect = panel.getBoundingClientRect();
       const lineRect = lines[active].getBoundingClientRect();
